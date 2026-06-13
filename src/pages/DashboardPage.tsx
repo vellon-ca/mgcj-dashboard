@@ -137,25 +137,6 @@ interface Stats {
   avgFare: number;
   cancelRate: number;
 }
-interface Review {
-  id: string;
-  ride_id: string;
-  rating: number;
-  comment: string | null;
-  created_at: string;
-  driver_id: string;
-  driver_name: string | null;
-  passenger_name: string | null;
-  pickup_address: string;
-  dropoff_address: string;
-}
-interface DriverRatingSummary {
-  driver_id: string;
-  driver_name: string | null;
-  average: number;
-  count: number;
-  flagged: number;
-}
 
 export default function DashboardPage({
   profile,
@@ -172,7 +153,6 @@ export default function DashboardPage({
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [pendingInvites, setPendingInvites] = useState<DriverInvite[]>([]);
-  const [usedInvites, setUsedInvites] = useState<DriverInvite[]>([]);
   const [stats, setStats] = useState<Stats>({
     activeRides: 0,
     driversOnline: 0,
@@ -360,20 +340,12 @@ export default function DashboardPage({
   }
 
   async function fetchInvites() {
-    const [{ data: pending }, { data: used }] = await Promise.all([
-      supabase
-        .from("driver_invites")
-        .select("*")
-        .eq("used", false)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("driver_invites")
-        .select("*")
-        .eq("used", true)
-        .order("created_at", { ascending: false }),
-    ]);
+    const { data: pending } = await supabase
+      .from("driver_invites")
+      .select("*")
+      .eq("used", false)
+      .order("created_at", { ascending: false });
     if (pending) setPendingInvites(pending);
-    if (used) setUsedInvites(used);
   }
 
   async function fetchReviewsBadge() {
