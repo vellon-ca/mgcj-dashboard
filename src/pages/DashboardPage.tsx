@@ -26,6 +26,164 @@ const STATUS_LABELS: Record<string, string> = {
 
 type Tab = "rides" | "drivers" | "revenue" | "invites" | "reviews";
 
+const NAV_ITEMS: { tab: Tab; label: string }[] = [
+  { tab: "rides", label: "Rides" },
+  { tab: "drivers", label: "Drivers" },
+  { tab: "revenue", label: "Revenue" },
+  { tab: "invites", label: "Invites" },
+  { tab: "reviews", label: "Reviews" },
+];
+
+// SVG icon components — thin line, no fill, matches Linear/Vercel style
+function IconRides() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="1" y="3" width="15" height="13" rx="2" />
+      <path d="M16 8h4l3 3v5h-7V8z" />
+      <circle cx="5.5" cy="18.5" r="2.5" />
+      <circle cx="18.5" cy="18.5" r="2.5" />
+    </svg>
+  );
+}
+function IconDrivers() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+function IconRevenue() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+function IconInvites() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <polyline points="22,6 12,13 2,6" />
+    </svg>
+  );
+}
+function IconReviews() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+function IconAnalytics() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+function IconSignOut() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+function IconMenu() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+const NAV_ICONS: Record<Tab, JSX.Element> = {
+  rides: <IconRides />,
+  drivers: <IconDrivers />,
+  revenue: <IconRevenue />,
+  invites: <IconInvites />,
+  reviews: <IconReviews />,
+};
+
 interface Stats {
   activeRides: number;
   driversOnline: number;
@@ -36,7 +194,6 @@ interface Stats {
   avgFare: number;
   cancelRate: number;
 }
-
 interface Review {
   id: string;
   ride_id: string;
@@ -49,7 +206,6 @@ interface Review {
   pickup_address: string;
   dropoff_address: string;
 }
-
 interface DriverRatingSummary {
   driver_id: string;
   driver_name: string | null;
@@ -106,10 +262,9 @@ export default function DashboardPage({
   const [driverRatings, setDriverRatings] = useState<DriverRatingSummary[]>([]);
   const [reviewsTab, setReviewsTab] = useState<"recent" | "drivers">("recent");
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [navExpanded, setNavExpanded] = useState(false);
 
-  // ── Map init ─────────────────────────────────────────────────
-  // The map container stays in the DOM always via CSS visibility
-  // We only ever initialize the map once
+  // ── Map init ──────────────────────────────────────────────────────────
   useEffect(() => {
     const tryInit = () => {
       if (mapInitialized.current) return;
@@ -130,7 +285,6 @@ export default function DashboardPage({
       }
       initMap();
     };
-
     function initMap() {
       if (mapInitialized.current || !mapRef.current) return;
       mapInitialized.current = true;
@@ -142,29 +296,26 @@ export default function DashboardPage({
         zoomControl: true,
       });
     }
-
     tryInit();
   }, []);
 
-  // When returning from analytics, trigger a resize so map redraws correctly
   useEffect(() => {
     if (!showAnalytics && googleMapRef.current) {
       setTimeout(() => {
-        if (googleMapRef.current) {
+        if (googleMapRef.current)
           google.maps.event.trigger(googleMapRef.current, "resize");
-        }
       }, 50);
     }
   }, [showAnalytics]);
 
   useEffect(() => {
     fetchAll();
-    const interval = setInterval(fetchAll, 15000);
-    return () => clearInterval(interval);
+    const i = setInterval(fetchAll, 15000);
+    return () => clearInterval(i);
   }, []);
 
   useEffect(() => {
-    const channel = supabase
+    const ch = supabase
       .channel("dashboard-rt")
       .on(
         "postgres_changes",
@@ -178,7 +329,7 @@ export default function DashboardPage({
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(ch);
     };
   }, []);
 
@@ -285,9 +436,7 @@ export default function DashboardPage({
   }
 
   async function fetchReviews() {
-    // (inside DashboardPage component)
     setReviewsLoading(true);
-
     const { data: reviewRows } = await supabase
       .from("ride_reviews")
       .select(
@@ -295,12 +444,10 @@ export default function DashboardPage({
       )
       .order("created_at", { ascending: false })
       .limit(100);
-
     if (!reviewRows) {
       setReviewsLoading(false);
       return;
     }
-
     const enriched: Review[] = await Promise.all(
       reviewRows.map(async (rv: any) => {
         const [{ data: driver }, { data: passenger }, { data: ride }] =
@@ -335,10 +482,7 @@ export default function DashboardPage({
         };
       }),
     );
-
     setReviews(enriched);
-
-    // Build per-driver summaries
     const grouped: Record<string, { name: string | null; ratings: number[] }> =
       {};
     enriched.forEach((rv) => {
@@ -346,7 +490,6 @@ export default function DashboardPage({
         grouped[rv.driver_id] = { name: rv.driver_name, ratings: [] };
       grouped[rv.driver_id].ratings.push(rv.rating);
     });
-
     const summaries: DriverRatingSummary[] = Object.entries(grouped).map(
       ([id, g]) => ({
         driver_id: id,
@@ -576,830 +719,1185 @@ export default function DashboardPage({
     );
 
   return (
-    <div style={s.page}>
-      {/* ── TOP BAR ── */}
-      <div style={s.topBar}>
-        {showAnalytics ? (
-          <>
-            <button style={s.backBtn} onClick={() => setShowAnalytics(false)}>
-              ← Back to dashboard
-            </button>
-            <div style={s.logo}>M&G C&J · Analytics</div>
-            <div style={{ width: 160 }} />
-          </>
-        ) : (
-          <>
-            <div style={s.topLeft}>
-              <span style={s.logo}>M&G C&J</span>
-              <span style={s.topLabel}>Dispatch Dashboard</span>
-            </div>
-            <div style={s.statPills}>
-              <div style={s.statPill}>
-                <span style={{ color: "#F59E0B" }}>●</span>
-                <span>{stats.activeRides} active</span>
-              </div>
-              <div style={s.statPill}>
-                <span style={{ color: "#1D9E75" }}>●</span>
-                <span>{stats.driversOnline} online</span>
-              </div>
-              <div style={s.statPill}>
-                <span style={{ color: "#9CA3AF" }}>✓</span>
-                <span>{stats.completedToday} today</span>
-              </div>
-              <div style={s.statPill}>
-                <span style={{ color: "#1D9E75" }}>$</span>
-                <span>${stats.revenueToday.toFixed(2)} today</span>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <button
-                style={s.analyticsBtn}
-                onClick={() => setShowAnalytics(true)}
-              >
-                📊 Analytics
-              </button>
-              <button style={s.newRideBtn} onClick={() => setBookingOpen(true)}>
-                + New ride
-              </button>
-              <button style={s.signOutBtn} onClick={onSignOut}>
-                Sign out
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+    <>
+      <style>{`
+        *, *::before, *::after { box-sizing: border-box; }
 
-      {/* ── ANALYTICS OVERLAY — floats above dashboard, map stays mounted ── */}
-      <div
-        style={{
-          position: "absolute",
-          top: 53,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "#111827",
-          zIndex: 10,
-          overflowY: "auto",
-          display: showAnalytics ? "block" : "none",
-        }}
-      >
-        <AnalyticsPage />
-      </div>
+        .db-page {
+          display: flex; height: 100vh;
+          background: #111827; font-family: system-ui, -apple-system, sans-serif;
+          overflow: hidden; position: relative;
+        }
 
-      {/* ── DASHBOARD BODY — always in DOM, map never unmounts ── */}
-      <div
-        style={{ ...s.body, visibility: showAnalytics ? "hidden" : "visible" }}
-      >
-        {/* SIDEBAR */}
-        <div style={s.sidebar}>
-          <div style={s.tabs}>
-            {(
-              ["rides", "drivers", "revenue", "invites", "reviews"] as Tab[]
-            ).map((t) => (
+        /* ── NAV RAIL ── */
+        .db-nav {
+          width: 56px; background: #0F1723;
+          border-right: 1px solid rgba(255,255,255,0.06);
+          display: flex; flex-direction: column; align-items: center;
+          padding: 0; flex-shrink: 0; z-index: 30;
+          transition: width 0.18s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+        }
+        .db-nav.expanded { width: 196px; }
+
+        .db-nav-logo {
+          width: 100%; height: 54px; display: flex; align-items: center;
+          padding: 0 18px; flex-shrink: 0;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .db-nav-logo-text {
+          font-size: 14px; font-weight: 700; color: #E8500A;
+          letter-spacing: -0.3px; white-space: nowrap;
+        }
+
+        .db-nav-items { flex: 1; display: flex; flex-direction: column; padding: 8px 0; width: 100%; }
+
+        .db-nav-item {
+          display: flex; align-items: center; gap: 11px;
+          width: 100%; height: 40px; padding: 0 19px;
+          background: none; border: none; cursor: pointer;
+          border-left: 2px solid transparent;
+          transition: background 0.12s, border-color 0.12s; white-space: nowrap;
+        }
+        .db-nav-item:hover { background: rgba(255,255,255,0.05); }
+        .db-nav-item.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
+
+        .db-nav-icon { color: #4B5563; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; }
+        .db-nav-item:hover .db-nav-icon { color: #9CA3AF; }
+        .db-nav-item.active .db-nav-icon { color: #E8500A; }
+
+        .db-nav-label { font-size: 13px; font-weight: 500; color: #4B5563; transition: color 0.12s; }
+        .db-nav-item:hover .db-nav-label { color: #9CA3AF; }
+        .db-nav-item.active .db-nav-label { color: #E8500A; }
+
+        .db-nav-bottom {
+          padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06);
+          width: 100%; display: flex; flex-direction: column;
+        }
+        .db-nav-utility {
+          display: flex; align-items: center; gap: 11px;
+          width: 100%; height: 40px; padding: 0 19px;
+          background: none; border: none; cursor: pointer; white-space: nowrap;
+          transition: background 0.12s;
+        }
+        .db-nav-utility:hover { background: rgba(255,255,255,0.05); }
+        .db-nav-utility .db-nav-icon { color: #374151; }
+        .db-nav-utility:hover .db-nav-icon { color: #9CA3AF; }
+        .db-nav-utility .db-nav-label { color: #374151; }
+        .db-nav-utility:hover .db-nav-label { color: #9CA3AF; }
+        .db-nav-analytics .db-nav-icon { color: #6B7280; }
+        .db-nav-analytics:hover .db-nav-icon { color: #A855F7; }
+        .db-nav-analytics .db-nav-label { color: #6B7280; }
+        .db-nav-analytics:hover .db-nav-label { color: #A855F7; }
+        .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
+        .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
+
+        /* ── MAIN ── */
+        .db-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+        .db-topbar {
+          height: 54px; background: #0F1723;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+          display: flex; align-items: center; padding: 0 20px; gap: 20px;
+          flex-shrink: 0; z-index: 20;
+        }
+        .db-topbar-title { font-size: 14px; font-weight: 600; color: #F1F5F9; margin-right: auto; }
+
+        .db-stat-row { display: flex; align-items: center; gap: 28px; margin-right: 20px; }
+        .db-stat { display: flex; flex-direction: column; align-items: flex-end; }
+        .db-stat-value { font-size: 15px; font-weight: 700; color: #F1F5F9; line-height: 1; }
+        .db-stat-label { font-size: 10px; color: #4B5563; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
+        .db-stat-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; position: relative; top: -1px; }
+
+        .db-new-ride-btn {
+          background: #E8500A; color: #fff; border: none; border-radius: 7px;
+          padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: opacity 0.15s; white-space: nowrap;
+        }
+        .db-new-ride-btn:hover { opacity: 0.88; }
+
+        .db-back-btn {
+          background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s;
+        }
+        .db-back-btn:hover { color: #9CA3AF; border-color: rgba(255,255,255,0.15); }
+
+        /* ── BODY ── */
+        .db-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+        /* ── PANEL ── */
+        .db-panel {
+          width: 336px; background: #111827;
+          border-right: 1px solid rgba(255,255,255,0.06);
+          display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+        }
+        .db-panel-header {
+          padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+        }
+        .db-panel-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; }
+        .db-panel-count { font-size: 22px; font-weight: 700; color: #F1F5F9; margin-top: 2px; line-height: 1; }
+        .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
+        .db-panel-scroll::-webkit-scrollbar { width: 3px; }
+        .db-panel-scroll::-webkit-scrollbar-track { background: transparent; }
+        .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+        .db-section-label {
+          font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em;
+          text-transform: uppercase; padding: 12px 2px 6px;
+        }
+        .db-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
+
+        /* ── RIDE CARD ── */
+        .db-ride-card {
+          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
+          border: 1px solid rgba(255,255,255,0.05); cursor: pointer;
+          transition: border-color 0.12s, background 0.12s;
+        }
+        .db-ride-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
+        .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
+        .db-ride-card.dimmed { opacity: 0.7; }
+        .db-ride-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+
+        .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; }
+        .db-ride-time { font-size: 11px; color: #4B5563; }
+        .db-ride-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
+        .db-ride-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-ride-addr.dest { color: rgba(232,80,10,0.8); }
+        .db-ride-fare { font-size: 12px; font-weight: 600; color: #6B7280; margin-top: 4px; }
+
+        .db-pending-badge {
+          font-size: 11px; color: #F59E0B; background: rgba(245,158,11,0.08);
+          border-radius: 6px; padding: 4px 8px; margin-top: 6px;
+          border: 1px solid rgba(245,158,11,0.15);
+        }
+
+        .db-assign-btn {
+          width: 100%; background: rgba(74,158,255,0.07); color: #4a9eff;
+          border: 1px solid rgba(74,158,255,0.2); border-radius: 7px;
+          padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer;
+          font-family: system-ui, sans-serif; margin-top: 8px; transition: background 0.12s;
+        }
+        .db-assign-btn:hover { background: rgba(74,158,255,0.13); }
+
+        .db-assign-label { font-size: 11px; color: #4B5563; margin: 8px 0 4px; }
+        .db-assign-driver-btn {
+          width: 100%; background: rgba(29,158,117,0.07); color: #1D9E75;
+          border: 1px solid rgba(29,158,117,0.2); border-radius: 7px;
+          padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer;
+          font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s;
+        }
+        .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
+        .db-cancel-assign-btn {
+          background: transparent; color: #4B5563; border: none; font-size: 11px;
+          cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s;
+        }
+        .db-cancel-assign-btn:hover { color: #9CA3AF; }
+
+        /* ── DRIVER CARD ── */
+        .db-driver-card {
+          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
+          border: 1px solid rgba(255,255,255,0.05);
+        }
+        .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+        .db-driver-avatar {
+          width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0;
+          border: 1px solid rgba(74,158,255,0.12);
+        }
+        .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
+        .db-driver-phone { font-size: 11px; color: #4B5563; margin-top: 3px; }
+        .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
+
+        /* ── REVENUE ── */
+        .db-revenue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 6px; }
+        .db-revenue-card { background: #1E2A3A; border-radius: 10px; padding: 14px; border: 1px solid rgba(255,255,255,0.05); }
+        .db-revenue-label { font-size: 10px; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; margin-bottom: 6px; }
+        .db-revenue-value { font-size: 20px; font-weight: 700; color: #F1F5F9; line-height: 1; }
+        .db-revenue-sub { font-size: 10px; color: #374151; margin-top: 4px; }
+        .db-driver-rev-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .db-driver-rev-name { font-size: 13px; color: #9CA3AF; }
+        .db-driver-rev-stats { display: flex; gap: 12px; align-items: center; }
+        .db-driver-rev-count { font-size: 11px; color: #4B5563; }
+        .db-driver-rev-amount { font-size: 13px; font-weight: 600; color: #1D9E75; }
+
+        /* ── INVITES ── */
+        .db-invite-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .db-invite-input {
+          background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+          padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none;
+          font-family: system-ui, sans-serif; transition: border-color 0.15s;
+        }
+        .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
+        .db-invite-input::placeholder { color: #374151; }
+        .db-invite-btn {
+          background: #E8500A; color: #fff; border: none; border-radius: 8px;
+          padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: opacity 0.15s;
+        }
+        .db-invite-btn:hover { opacity: 0.88; }
+        .db-invite-btn:disabled { opacity: 0.5; }
+        .db-invite-success {
+          background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2);
+          border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px;
+        }
+        .db-invite-card {
+          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
+          border: 1px solid rgba(255,255,255,0.05);
+        }
+        .db-invite-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .db-invite-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .db-invite-phone { font-size: 11px; color: #6B7280; margin-bottom: 8px; }
+        .db-invite-code-row { display: flex; align-items: center; justify-content: space-between; }
+        .db-invite-code { font-size: 15px; font-weight: 700; color: #E8500A; letter-spacing: 0.18em; }
+        .db-revoke-btn {
+          background: rgba(226,75,74,0.08); color: #F87171;
+          border: 1px solid rgba(226,75,74,0.2); border-radius: 6px;
+          padding: 3px 10px; font-size: 11px; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: background 0.12s;
+        }
+        .db-revoke-btn:hover { background: rgba(226,75,74,0.14); }
+
+        /* ── REVIEWS ── */
+        .db-reviews-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+        .db-reviews-tab {
+          flex: 1; padding: 7px 0; font-size: 12px; font-weight: 600;
+          border-radius: 7px; border: 1px solid rgba(255,255,255,0.07);
+          cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s;
+        }
+        .db-reviews-tab.active { background: #E8500A; color: #fff; border-color: #E8500A; }
+        .db-reviews-tab:not(.active) { background: #1E2A3A; color: #6B7280; }
+        .db-review-card {
+          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
+          border: 1px solid rgba(255,255,255,0.05); cursor: default;
+        }
+        .db-review-card.flagged { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
+        .db-review-flag { font-size: 11px; color: #F87171; background: rgba(248,113,113,0.08); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; }
+
+        /* ── MAP ── */
+        .db-map-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
+        .db-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+        /* ── ANALYTICS ── */
+        .db-analytics-overlay {
+          flex: 1; overflow-y: auto; background: #111827;
+        }
+
+        /* ── MODAL ── */
+        .db-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1000; backdrop-filter: blur(3px);
+        }
+        .db-modal {
+          background: #1E2A3A; border-radius: 14px; padding: 26px;
+          width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08);
+          max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
+        .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+        .db-modal-input {
+          background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+          padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none;
+          width: 100%; font-family: system-ui, sans-serif; transition: border-color 0.15s;
+        }
+        .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
+        .db-modal-input::placeholder { color: #374151; }
+        .db-modal-select {
+          background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+          padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none;
+          width: 100%; cursor: pointer; font-family: system-ui, sans-serif;
+        }
+        .db-modal-cancel-btn {
+          flex: 1; background: transparent; color: #6B7280;
+          border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+          padding: 10px; font-size: 14px; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: background 0.12s;
+        }
+        .db-modal-cancel-btn:hover { background: rgba(255,255,255,0.04); }
+        .db-modal-submit-btn {
+          flex: 2; background: #E8500A; color: #fff; border: none; border-radius: 8px;
+          padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+          font-family: system-ui, sans-serif; transition: opacity 0.15s;
+        }
+        .db-modal-submit-btn:hover { opacity: 0.88; }
+        .db-modal-submit-btn:disabled { opacity: 0.5; }
+        .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; }
+        .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
+      `}</style>
+
+      <div className="db-page">
+        {/* NAV RAIL */}
+        <nav
+          className={`db-nav${navExpanded ? " expanded" : ""}`}
+          onMouseEnter={() => setNavExpanded(true)}
+          onMouseLeave={() => setNavExpanded(false)}
+        >
+          <div className="db-nav-logo">
+            {navExpanded ? (
+              <span className="db-nav-logo-text">M&amp;G C&amp;J</span>
+            ) : (
+              <IconMenu />
+            )}
+          </div>
+          <div className="db-nav-items">
+            {NAV_ITEMS.map(({ tab: t, label }) => (
               <button
                 key={t}
-                style={{ ...s.tab, ...(tab === t ? s.tabActive : {}) }}
-                onClick={() => setTab(t)}
+                className={`db-nav-item${tab === t && !showAnalytics ? " active" : ""}`}
+                onClick={() => {
+                  setTab(t);
+                  setShowAnalytics(false);
+                }}
               >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
+                <span className="db-nav-icon">{NAV_ICONS[t]}</span>
+                {navExpanded && <span className="db-nav-label">{label}</span>}
               </button>
             ))}
           </div>
+          <div className="db-nav-bottom">
+            <button
+              className="db-nav-utility db-nav-analytics"
+              onClick={() => setShowAnalytics(true)}
+            >
+              <span className="db-nav-icon">
+                <IconAnalytics />
+              </span>
+              {navExpanded && <span className="db-nav-label">Analytics</span>}
+            </button>
+            <button
+              className="db-nav-utility db-nav-signout"
+              onClick={onSignOut}
+            >
+              <span className="db-nav-icon">
+                <IconSignOut />
+              </span>
+              {navExpanded && <span className="db-nav-label">Sign out</span>}
+            </button>
+          </div>
+        </nav>
 
-          <div style={s.sidebarContent}>
-            {tab === "rides" && (
-              <>
-                <div style={s.sectionTitle}>
-                  Active rides ({activeRides.length})
+        {/* MAIN */}
+        <div className="db-main">
+          {/* TOP BAR */}
+          <div className="db-topbar">
+            <span className="db-topbar-title">
+              {showAnalytics
+                ? "Analytics"
+                : tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </span>
+            {!showAnalytics && (
+              <div className="db-stat-row">
+                <div className="db-stat">
+                  <span className="db-stat-value">
+                    <span
+                      className="db-stat-dot"
+                      style={{ background: "#F59E0B" }}
+                    />
+                    {stats.activeRides}
+                  </span>
+                  <span className="db-stat-label">Active</span>
                 </div>
-                {activeRides.length === 0 && (
-                  <div style={s.empty}>No active rides</div>
-                )}
-                {activeRides.map((ride) => (
-                  <div
-                    key={ride.id}
-                    style={{
-                      ...s.rideCard,
-                      ...(selectedRide === ride.id ? s.rideCardSelected : {}),
-                    }}
-                    onClick={() => focusRideOnMap(ride)}
-                  >
-                    <div style={s.rideCardTop}>
-                      <span
-                        style={{
-                          ...s.statusBadge,
-                          background: STATUS_COLORS[ride.status] + "22",
-                          color: STATUS_COLORS[ride.status],
-                          border: `0.5px solid ${STATUS_COLORS[ride.status]}44`,
-                        }}
-                      >
-                        {STATUS_LABELS[ride.status]}
-                      </span>
-                      <span style={s.rideTime}>
-                        {new Date(ride.created_at).toLocaleTimeString("en-CA", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                    <div style={s.rideName}>
-                      {(ride as any).passenger?.name ?? "Unknown passenger"}
-                    </div>
-                    <div style={s.rideAddr}>{ride.pickup_address}</div>
-                    <div style={{ ...s.rideAddr, color: "#E8500A" }}>
-                      {ride.dropoff_address}
-                    </div>
-                    {ride.fare_estimate && (
-                      <div style={s.rideFare}>
-                        ${ride.fare_estimate.toFixed(2)}
-                      </div>
-                    )}
-                    {(ride.status === "pending" ||
-                      ride.status === "assigned") && (
-                      <div style={{ marginTop: 8 }}>
-                        {assigningRide === ride.id ? (
-                          <div>
-                            <div style={s.assignLabel}>Assign driver:</div>
-                            {onlineDrivers.map((d) => (
-                              <button
-                                key={d.id}
-                                style={s.assignDriverBtn}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  assignDriver(ride.id, d.id);
-                                }}
-                              >
-                                {(d as any).profile?.name ?? "Driver"}
-                              </button>
-                            ))}
-                            <button
-                              style={s.cancelAssignBtn}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setAssigningRide(null);
-                              }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            style={s.assignBtn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAssigningRide(ride.id);
-                            }}
-                          >
-                            {ride.driver_id
-                              ? "Reassign driver"
-                              : "Assign driver"}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {ride.status === "assigned" && (
-                      <div style={s.pendingConfirmBadge}>
-                        ⏳ Awaiting driver confirmation
-                      </div>
-                    )}
-                  </div>
-                ))}
+                <div className="db-stat">
+                  <span className="db-stat-value">
+                    <span
+                      className="db-stat-dot"
+                      style={{ background: "#1D9E75" }}
+                    />
+                    {stats.driversOnline}
+                  </span>
+                  <span className="db-stat-label">Online</span>
+                </div>
+                <div className="db-stat">
+                  <span className="db-stat-value">{stats.completedToday}</span>
+                  <span className="db-stat-label">Today</span>
+                </div>
+                <div className="db-stat">
+                  <span className="db-stat-value" style={{ color: "#1D9E75" }}>
+                    ${stats.revenueToday.toFixed(2)}
+                  </span>
+                  <span className="db-stat-label">Revenue</span>
+                </div>
+              </div>
+            )}
+            {!showAnalytics ? (
+              <button
+                className="db-new-ride-btn"
+                onClick={() => setBookingOpen(true)}
+              >
+                + New ride
+              </button>
+            ) : (
+              <button
+                className="db-back-btn"
+                onClick={() => setShowAnalytics(false)}
+              >
+                ← Back
+              </button>
+            )}
+          </div>
 
-                {scheduledRides.length > 0 && (
-                  <>
-                    <div style={{ ...s.sectionTitle, marginTop: 16 }}>
-                      Scheduled ({scheduledRides.length})
-                    </div>
-                    {scheduledRides.map((ride) => (
+          {/* ANALYTICS OVERLAY */}
+          {showAnalytics && (
+            <div className="db-analytics-overlay">
+              <AnalyticsPage />
+            </div>
+          )}
+
+          {/* DASHBOARD BODY */}
+          <div
+            className="db-body"
+            style={{ display: showAnalytics ? "none" : "flex" }}
+          >
+            {/* PANEL */}
+            <div className="db-panel">
+              {tab === "rides" && (
+                <>
+                  <div className="db-panel-header">
+                    <div className="db-panel-title">Active rides</div>
+                    <div className="db-panel-count">{activeRides.length}</div>
+                  </div>
+                  <div className="db-panel-scroll">
+                    {activeRides.length === 0 && (
+                      <div className="db-empty">No active rides</div>
+                    )}
+                    {activeRides.map((ride) => (
                       <div
                         key={ride.id}
-                        style={s.rideCard}
-                        onClick={() => setRideDetail(ride)}
+                        className={`db-ride-card${selectedRide === ride.id ? " selected" : ""}`}
+                        onClick={() => focusRideOnMap(ride)}
                       >
-                        <div style={s.rideCardTop}>
+                        <div className="db-ride-card-top">
                           <span
+                            className="db-status-badge"
                             style={{
-                              ...s.statusBadge,
-                              background: "#A855F722",
-                              color: "#A855F7",
-                              border: "0.5px solid #A855F744",
+                              background: STATUS_COLORS[ride.status] + "18",
+                              color: STATUS_COLORS[ride.status],
+                              border: `1px solid ${STATUS_COLORS[ride.status]}30`,
                             }}
                           >
-                            Scheduled
+                            {STATUS_LABELS[ride.status]}
                           </span>
-                          <span style={s.rideTime}>
-                            {ride.scheduled_at
-                              ? new Date(ride.scheduled_at).toLocaleString(
-                                  "en-CA",
-                                  {
-                                    month: "short",
-                                    day: "numeric",
-                                    hour: "numeric",
-                                    minute: "2-digit",
-                                  } as any,
-                                )
-                              : ""}
+                          <span className="db-ride-time">
+                            {new Date(ride.created_at).toLocaleTimeString(
+                              "en-CA",
+                              { hour: "numeric", minute: "2-digit" },
+                            )}
                           </span>
                         </div>
-                        <div style={s.rideName}>
-                          {(ride as any).passenger?.name ?? "Unknown"}
+                        <div className="db-ride-name">
+                          {(ride as any).passenger?.name ?? "Unknown passenger"}
                         </div>
-                        <div style={s.rideAddr}>
-                          {ride.pickup_address} → {ride.dropoff_address}
+                        <div className="db-ride-addr">
+                          {ride.pickup_address}
+                        </div>
+                        <div className="db-ride-addr dest">
+                          {ride.dropoff_address}
                         </div>
                         {ride.fare_estimate && (
-                          <div style={s.rideFare}>
+                          <div className="db-ride-fare">
                             ${ride.fare_estimate.toFixed(2)}
                           </div>
                         )}
+                        {(ride.status === "pending" ||
+                          ride.status === "assigned") && (
+                          <div style={{ marginTop: 8 }}>
+                            {assigningRide === ride.id ? (
+                              <>
+                                <div className="db-assign-label">
+                                  Assign driver:
+                                </div>
+                                {onlineDrivers.map((d) => (
+                                  <button
+                                    key={d.id}
+                                    className="db-assign-driver-btn"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      assignDriver(ride.id, d.id);
+                                    }}
+                                  >
+                                    {(d as any).profile?.name ?? "Driver"}
+                                  </button>
+                                ))}
+                                <button
+                                  className="db-cancel-assign-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setAssigningRide(null);
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="db-assign-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAssigningRide(ride.id);
+                                }}
+                              >
+                                {ride.driver_id
+                                  ? "Reassign driver"
+                                  : "Assign driver"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {ride.status === "assigned" && (
+                          <div className="db-pending-badge">
+                            ⏳ Awaiting driver confirmation
+                          </div>
+                        )}
                       </div>
                     ))}
-                  </>
-                )}
 
-                <div style={{ ...s.sectionTitle, marginTop: 16 }}>
-                  Recent ({recentRides.length})
-                </div>
-                {recentRides.map((ride) => (
-                  <div
-                    key={ride.id}
-                    style={{ ...s.rideCard, opacity: 0.75 }}
-                    onClick={() => setRideDetail(ride)}
-                  >
-                    <div style={s.rideCardTop}>
-                      <span
-                        style={{
-                          ...s.statusBadge,
-                          background: STATUS_COLORS[ride.status] + "22",
-                          color: STATUS_COLORS[ride.status],
-                          border: `0.5px solid ${STATUS_COLORS[ride.status]}44`,
-                        }}
-                      >
-                        {STATUS_LABELS[ride.status]}
-                      </span>
-                      <span style={s.rideFare}>
-                        {ride.fare_final
-                          ? `$${ride.fare_final.toFixed(2)}`
-                          : ride.fare_estimate
-                            ? `$${ride.fare_estimate.toFixed(2)}`
-                            : ""}
-                      </span>
-                    </div>
-                    <div style={s.rideName}>
-                      {(ride as any).passenger?.name ?? "Unknown"}
-                    </div>
-                    <div style={s.rideAddr}>
-                      {ride.pickup_address} → {ride.dropoff_address}
-                    </div>
-                    <div
-                      style={{ fontSize: 10, color: "#4B5563", marginTop: 3 }}
-                    >
-                      Click for details
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
+                    {scheduledRides.length > 0 && (
+                      <>
+                        <div className="db-section-label">
+                          Scheduled ({scheduledRides.length})
+                        </div>
+                        {scheduledRides.map((ride) => (
+                          <div
+                            key={ride.id}
+                            className="db-ride-card"
+                            onClick={() => setRideDetail(ride)}
+                          >
+                            <div className="db-ride-card-top">
+                              <span
+                                className="db-status-badge"
+                                style={{
+                                  background: "#A855F718",
+                                  color: "#A855F7",
+                                  border: "1px solid #A855F730",
+                                }}
+                              >
+                                Scheduled
+                              </span>
+                              <span className="db-ride-time">
+                                {ride.scheduled_at
+                                  ? new Date(ride.scheduled_at).toLocaleString(
+                                      "en-CA",
+                                      {
+                                        month: "short",
+                                        day: "numeric",
+                                        hour: "numeric",
+                                        minute: "2-digit",
+                                      } as any,
+                                    )
+                                  : ""}
+                              </span>
+                            </div>
+                            <div className="db-ride-name">
+                              {(ride as any).passenger?.name ?? "Unknown"}
+                            </div>
+                            <div className="db-ride-addr">
+                              {ride.pickup_address} → {ride.dropoff_address}
+                            </div>
+                            {ride.fare_estimate && (
+                              <div className="db-ride-fare">
+                                ${ride.fare_estimate.toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </>
+                    )}
 
-            {tab === "drivers" && (
-              <>
-                <div style={s.sectionTitle}>All drivers ({drivers.length})</div>
-                {drivers.map((driver) => (
-                  <div key={driver.id} style={s.driverCard}>
-                    <div style={s.driverCardTop}>
-                      <div style={s.driverAvatar}>
-                        {((driver as any).profile?.name ?? "D")
-                          .split(" ")
-                          .map((n: string) => n[0])
-                          .join("")
-                          .slice(0, 2)}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={s.driverName}>
-                          {(driver as any).profile?.name ?? "Unknown"}
-                        </div>
-                        <div style={s.driverSub}>
-                          {driver.vehicle_make} {driver.vehicle_model} ·{" "}
-                          {driver.plate_number}
-                        </div>
-                      </div>
+                    <div className="db-section-label">
+                      Recent ({recentRides.length})
+                    </div>
+                    {recentRides.map((ride) => (
                       <div
-                        style={{
-                          ...s.onlineDot,
-                          background: driver.is_active ? "#1D9E75" : "#4B5563",
-                        }}
-                      />
-                    </div>
-                    <div style={s.driverPhone}>
-                      {(driver as any).profile?.phone ?? ""}
-                    </div>
+                        key={ride.id}
+                        className="db-ride-card dimmed"
+                        onClick={() => setRideDetail(ride)}
+                      >
+                        <div className="db-ride-card-top">
+                          <span
+                            className="db-status-badge"
+                            style={{
+                              background: STATUS_COLORS[ride.status] + "18",
+                              color: STATUS_COLORS[ride.status],
+                              border: `1px solid ${STATUS_COLORS[ride.status]}30`,
+                            }}
+                          >
+                            {STATUS_LABELS[ride.status]}
+                          </span>
+                          <span
+                            className="db-ride-fare"
+                            style={{ marginTop: 0 }}
+                          >
+                            {ride.fare_final
+                              ? `$${ride.fare_final.toFixed(2)}`
+                              : ride.fare_estimate
+                                ? `$${ride.fare_estimate.toFixed(2)}`
+                                : ""}
+                          </span>
+                        </div>
+                        <div className="db-ride-name">
+                          {(ride as any).passenger?.name ?? "Unknown"}
+                        </div>
+                        <div className="db-ride-addr">
+                          {ride.pickup_address} → {ride.dropoff_address}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </>
-            )}
+                </>
+              )}
 
-            {tab === "revenue" && (
-              <>
-                <div style={s.sectionTitle}>Revenue overview</div>
-                <div style={s.revenueGrid}>
-                  <div style={s.revenueCard}>
-                    <div style={s.revenueLabel}>Today</div>
-                    <div style={s.revenueValue}>
-                      ${stats.revenueToday.toFixed(2)}
-                    </div>
-                    <div style={s.revenueSubLabel}>
-                      {stats.completedToday} rides
-                    </div>
+              {tab === "drivers" && (
+                <>
+                  <div className="db-panel-header">
+                    <div className="db-panel-title">All drivers</div>
+                    <div className="db-panel-count">{drivers.length}</div>
                   </div>
-                  <div style={s.revenueCard}>
-                    <div style={s.revenueLabel}>This week</div>
-                    <div style={s.revenueValue}>
-                      ${stats.revenueWeek.toFixed(2)}
-                    </div>
+                  <div className="db-panel-scroll">
+                    {drivers.map((driver) => (
+                      <div key={driver.id} className="db-driver-card">
+                        <div className="db-driver-card-top">
+                          <div className="db-driver-avatar">
+                            {((driver as any).profile?.name ?? "D")
+                              .split(" ")
+                              .map((n: string) => n[0])
+                              .join("")
+                              .slice(0, 2)}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div className="db-driver-name">
+                              {(driver as any).profile?.name ?? "Unknown"}
+                            </div>
+                            <div className="db-driver-sub">
+                              {driver.vehicle_make} {driver.vehicle_model} ·{" "}
+                              {driver.plate_number}
+                            </div>
+                          </div>
+                          <div
+                            className="db-online-dot"
+                            style={{
+                              background: driver.is_active
+                                ? "#1D9E75"
+                                : "#374151",
+                            }}
+                          />
+                        </div>
+                        <div className="db-driver-phone">
+                          {(driver as any).profile?.phone ?? ""}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div style={s.revenueCard}>
-                    <div style={s.revenueLabel}>This month</div>
-                    <div style={{ ...s.revenueValue, color: "#1D9E75" }}>
+                </>
+              )}
+
+              {tab === "revenue" && (
+                <>
+                  <div className="db-panel-header">
+                    <div className="db-panel-title">Revenue overview</div>
+                    <div
+                      className="db-panel-count"
+                      style={{ color: "#1D9E75" }}
+                    >
                       ${stats.revenueMonth.toFixed(2)}
                     </div>
                   </div>
-                  <div style={s.revenueCard}>
-                    <div style={s.revenueLabel}>Avg fare</div>
-                    <div style={s.revenueValue}>
-                      ${stats.avgFare.toFixed(2)}
-                    </div>
-                  </div>
-                  <div style={s.revenueCard}>
-                    <div style={s.revenueLabel}>Cancel rate</div>
-                    <div
-                      style={{
-                        ...s.revenueValue,
-                        color: stats.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
-                      }}
-                    >
-                      {stats.cancelRate.toFixed(1)}%
-                    </div>
-                  </div>
-                </div>
-                <div style={{ ...s.sectionTitle, marginTop: 20 }}>
-                  Per driver (this month)
-                </div>
-                {drivers.map((driver) => {
-                  const driverRides = rides.filter(
-                    (r) =>
-                      r.driver_id === driver.id &&
-                      r.status === "completed" &&
-                      new Date(r.created_at) >=
-                        new Date(
-                          new Date().getFullYear(),
-                          new Date().getMonth(),
-                          1,
-                        ),
-                  );
-                  const earnings = driverRides.reduce(
-                    (sum, r) => sum + (r.fare_final ?? r.fare_estimate ?? 0),
-                    0,
-                  );
-                  return (
-                    <div key={driver.id} style={s.driverRevenueRow}>
-                      <div style={s.driverRevName}>
-                        {(driver as any).profile?.name ?? "Unknown"}
+                  <div className="db-panel-scroll">
+                    <div className="db-revenue-grid">
+                      <div className="db-revenue-card">
+                        <div className="db-revenue-label">Today</div>
+                        <div className="db-revenue-value">
+                          ${stats.revenueToday.toFixed(2)}
+                        </div>
+                        <div className="db-revenue-sub">
+                          {stats.completedToday} rides
+                        </div>
                       </div>
-                      <div style={s.driverRevStats}>
-                        <span style={s.driverRevCount}>
-                          {driverRides.length} rides
-                        </span>
-                        <span style={s.driverRevAmount}>
-                          ${earnings.toFixed(2)}
-                        </span>
+                      <div className="db-revenue-card">
+                        <div className="db-revenue-label">This week</div>
+                        <div className="db-revenue-value">
+                          ${stats.revenueWeek.toFixed(2)}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-
-            {tab === "invites" && (
-              <>
-                <div style={s.sectionTitle}>Register new driver</div>
-                <form onSubmit={createInvite} style={s.inviteForm}>
-                  <input
-                    style={s.inviteInput}
-                    placeholder="Driver full name"
-                    value={inviteName}
-                    onChange={(e) => setInviteName(e.target.value)}
-                  />
-                  <input
-                    style={s.inviteInput}
-                    placeholder="Phone e.g. +19021234567"
-                    value={invitePhone}
-                    onChange={(e) => setInvitePhone(e.target.value)}
-                  />
-                  <button
-                    style={s.inviteBtn}
-                    type="submit"
-                    disabled={inviteLoading}
-                  >
-                    {inviteLoading ? "Creating…" : "Generate invite code"}
-                  </button>
-                </form>
-                {inviteSuccess && (
-                  <div style={s.inviteSuccess}>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        color: "#1D9E75",
-                        marginBottom: 4,
-                      }}
-                    >
-                      Invite code created!
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 24,
-                        fontWeight: 700,
-                        letterSpacing: "0.2em",
-                        color: "#F1F5F9",
-                      }}
-                    >
-                      {inviteSuccess}
-                    </div>
-                    <div
-                      style={{ fontSize: 11, color: "#6B7280", marginTop: 4 }}
-                    >
-                      Code only works for the registered phone number above.
-                    </div>
-                    <button
-                      style={{ ...s.cancelAssignBtn, marginTop: 8 }}
-                      onClick={() => setInviteSuccess("")}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-                <div style={{ ...s.sectionTitle, marginTop: 16 }}>
-                  Pending invites ({pendingInvites.length})
-                </div>
-                {pendingInvites.length === 0 && (
-                  <div style={s.empty}>No pending invites</div>
-                )}
-                {pendingInvites.map((invite) => (
-                  <div key={invite.id} style={s.inviteCard}>
-                    <div style={s.inviteCardTop}>
-                      <div style={s.inviteName}>{invite.name}</div>
-                      <span
-                        style={{
-                          ...s.statusBadge,
-                          background: "#F59E0B22",
-                          color: "#F59E0B",
-                          border: "0.5px solid #F59E0B44",
-                        }}
-                      >
-                        Pending
-                      </span>
-                    </div>
-                    <div style={s.invitePhone}>{invite.phone}</div>
-                    <div style={s.inviteCodeRow}>
-                      <span style={s.inviteCode}>{invite.code}</span>
-                      <button
-                        style={s.revokeBtn}
-                        onClick={() => revokeInvite(invite.id)}
-                      >
-                        Revoke
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <div style={{ ...s.sectionTitle, marginTop: 16 }}>
-                  Registered drivers ({usedInvites.length})
-                </div>
-                {usedInvites.length === 0 && (
-                  <div style={s.empty}>No registered drivers yet</div>
-                )}
-                {usedInvites.map((invite) => (
-                  <div
-                    key={invite.id}
-                    style={{
-                      ...s.inviteCard,
-                      borderColor: "rgba(29,158,117,0.2)",
-                    }}
-                  >
-                    <div style={s.inviteCardTop}>
-                      <div style={s.inviteName}>{invite.name}</div>
-                      <span
-                        style={{
-                          ...s.statusBadge,
-                          background: "#1D9E7522",
-                          color: "#1D9E75",
-                          border: "0.5px solid #1D9E7544",
-                        }}
-                      >
-                        ✓ Registered
-                      </span>
-                    </div>
-                    <div style={s.invitePhone}>{invite.phone}</div>
-                    <div
-                      style={{ fontSize: 11, color: "#4B5563", marginTop: 4 }}
-                    >
-                      Registered{" "}
-                      {new Date(invite.created_at).toLocaleDateString("en-CA", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-            {tab === "reviews" && (
-              <>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                  {(["recent", "drivers"] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setReviewsTab(t)}
-                      style={{
-                        flex: 1,
-                        padding: "7px 0",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        borderRadius: 8,
-                        border: "0.5px solid rgba(255,255,255,0.08)",
-                        cursor: "pointer",
-                        background: reviewsTab === t ? "#E8500A" : "#1E2A3A",
-                        color: reviewsTab === t ? "#fff" : "#6B7280",
-                      }}
-                    >
-                      {t === "recent" ? "Recent" : "By Driver"}
-                    </button>
-                  ))}
-                </div>
-
-                {reviewsLoading ? (
-                  <div
-                    style={{
-                      textAlign: "center",
-                      color: "#6B7280",
-                      padding: "40px 0",
-                    }}
-                  >
-                    Loading…
-                  </div>
-                ) : reviewsTab === "recent" ? (
-                  reviews.length === 0 ? (
-                    <div style={s.empty}>No reviews yet</div>
-                  ) : (
-                    <>
-                      {reviews.map((rv) => (
+                      <div className="db-revenue-card">
+                        <div className="db-revenue-label">This month</div>
                         <div
-                          key={rv.id}
+                          className="db-revenue-value"
+                          style={{ color: "#1D9E75" }}
+                        >
+                          ${stats.revenueMonth.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="db-revenue-card">
+                        <div className="db-revenue-label">Avg fare</div>
+                        <div className="db-revenue-value">
+                          ${stats.avgFare.toFixed(2)}
+                        </div>
+                      </div>
+                      <div
+                        className="db-revenue-card"
+                        style={{ gridColumn: "1 / -1" }}
+                      >
+                        <div className="db-revenue-label">Cancel rate</div>
+                        <div
+                          className="db-revenue-value"
                           style={{
-                            ...s.rideCard,
-                            cursor: "default",
-                            borderColor:
-                              rv.rating <= 2
-                                ? "rgba(248,113,113,0.3)"
-                                : "rgba(255,255,255,0.06)",
-                            background: rv.rating <= 2 ? "#1A0F0F" : "#1E2A3A",
+                            color:
+                              stats.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
                           }}
                         >
-                          {rv.rating <= 2 && (
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: "#F87171",
-                                background: "rgba(248,113,113,0.1)",
-                                borderRadius: 6,
-                                padding: "4px 8px",
-                                marginBottom: 8,
-                              }}
-                            >
-                              ⚠ Low rating — may need follow-up
-                            </div>
-                          )}
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginBottom: 6,
-                            }}
-                          >
-                            <div>
-                              <span
-                                style={{
-                                  color: "#F59E0B",
-                                  fontSize: 14,
-                                  letterSpacing: 1,
-                                }}
-                              >
-                                {"★".repeat(rv.rating)}
-                                {"☆".repeat(5 - rv.rating)}
-                              </span>
-                              <span
-                                style={{
-                                  fontSize: 11,
-                                  color: "#6B7280",
-                                  marginLeft: 6,
-                                }}
-                              >
-                                {rv.rating}/5
-                              </span>
-                            </div>
-                            <span style={{ fontSize: 10, color: "#4B5563" }}>
-                              {new Date(rv.created_at).toLocaleDateString(
-                                "en-CA",
-                                { month: "short", day: "numeric" },
-                              )}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#94A3B8",
-                              marginBottom: 2,
-                            }}
-                          >
-                            <span style={{ color: "#6B7280" }}>Driver: </span>
-                            {rv.driver_name ?? "—"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#94A3B8",
-                              marginBottom: 4,
-                            }}
-                          >
-                            <span style={{ color: "#6B7280" }}>
-                              Passenger:{" "}
-                            </span>
-                            {rv.passenger_name ?? "—"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 10,
-                              color: "#4B5563",
-                              marginBottom: rv.comment ? 6 : 0,
-                            }}
-                          >
-                            {rv.pickup_address} → {rv.dropoff_address}
-                          </div>
-                          {rv.comment && (
-                            <div
-                              style={{
-                                background: "rgba(255,255,255,0.04)",
-                                borderRadius: 6,
-                                padding: "6px 10px",
-                                borderLeft: "2px solid #374151",
-                                fontSize: 12,
-                                color: "#94A3B8",
-                                fontStyle: "italic",
-                              }}
-                            >
-                              "{rv.comment}"
-                            </div>
-                          )}
+                          {stats.cancelRate.toFixed(1)}%
                         </div>
-                      ))}
-                    </>
-                  )
-                ) : driverRatings.length === 0 ? (
-                  <div style={s.empty}>No driver ratings yet</div>
-                ) : (
-                  <>
-                    {driverRatings.map((ds) => (
-                      <div
-                        key={ds.driver_id}
-                        style={{
-                          ...s.rideCard,
-                          cursor: "default",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          borderColor:
-                            ds.flagged > 0
-                              ? "rgba(248,113,113,0.25)"
-                              : "rgba(255,255,255,0.06)",
-                        }}
+                      </div>
+                    </div>
+                    <div className="db-section-label">
+                      Per driver (this month)
+                    </div>
+                    {drivers.map((driver) => {
+                      const driverRides = rides.filter(
+                        (r) =>
+                          r.driver_id === driver.id &&
+                          r.status === "completed" &&
+                          new Date(r.created_at) >=
+                            new Date(
+                              new Date().getFullYear(),
+                              new Date().getMonth(),
+                              1,
+                            ),
+                      );
+                      const earnings = driverRides.reduce(
+                        (sum, r) =>
+                          sum + (r.fare_final ?? r.fare_estimate ?? 0),
+                        0,
+                      );
+                      return (
+                        <div key={driver.id} className="db-driver-rev-row">
+                          <div className="db-driver-rev-name">
+                            {(driver as any).profile?.name ?? "Unknown"}
+                          </div>
+                          <div className="db-driver-rev-stats">
+                            <span className="db-driver-rev-count">
+                              {driverRides.length} rides
+                            </span>
+                            <span className="db-driver-rev-amount">
+                              ${earnings.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {tab === "invites" && (
+                <>
+                  <div className="db-panel-header">
+                    <div className="db-panel-title">Driver registration</div>
+                  </div>
+                  <div className="db-panel-scroll">
+                    <div className="db-section-label">New invite</div>
+                    <form onSubmit={createInvite} className="db-invite-form">
+                      <input
+                        className="db-invite-input"
+                        placeholder="Driver full name"
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                      />
+                      <input
+                        className="db-invite-input"
+                        placeholder="Phone e.g. +19021234567"
+                        value={invitePhone}
+                        onChange={(e) => setInvitePhone(e.target.value)}
+                      />
+                      <button
+                        className="db-invite-btn"
+                        type="submit"
+                        disabled={inviteLoading}
                       >
-                        <div>
-                          <div style={s.rideName}>
-                            {ds.driver_name ?? "Unknown"}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6B7280" }}>
-                            {ds.count} rating{ds.count !== 1 ? "s" : ""}
-                            {ds.flagged > 0 && (
-                              <span style={{ color: "#F87171" }}>
-                                {" "}
-                                · {ds.flagged} low
-                              </span>
-                            )}
-                          </div>
+                        {inviteLoading ? "Creating…" : "Generate invite code"}
+                      </button>
+                    </form>
+                    {inviteSuccess && (
+                      <div className="db-invite-success">
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#1D9E75",
+                            marginBottom: 4,
+                          }}
+                        >
+                          Invite code created!
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ color: "#F59E0B", fontSize: 14 }}>
-                            {"★".repeat(Math.round(ds.average))}
-                            {"☆".repeat(5 - Math.round(ds.average))}
-                          </div>
-                          <div
+                        <div
+                          style={{
+                            fontSize: 24,
+                            fontWeight: 700,
+                            letterSpacing: "0.2em",
+                            color: "#F1F5F9",
+                          }}
+                        >
+                          {inviteSuccess}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#4B5563",
+                            marginTop: 4,
+                          }}
+                        >
+                          Only works for the registered number.
+                        </div>
+                        <button
+                          className="db-cancel-assign-btn"
+                          style={{ marginTop: 8 }}
+                          onClick={() => setInviteSuccess("")}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    )}
+                    <div className="db-section-label">
+                      Pending ({pendingInvites.length})
+                    </div>
+                    {pendingInvites.length === 0 && (
+                      <div className="db-empty">No pending invites</div>
+                    )}
+                    {pendingInvites.map((invite) => (
+                      <div key={invite.id} className="db-invite-card">
+                        <div className="db-invite-card-top">
+                          <div className="db-invite-name">{invite.name}</div>
+                          <span
+                            className="db-status-badge"
                             style={{
-                              fontSize: 14,
-                              fontWeight: 700,
+                              background: "#F59E0B18",
                               color: "#F59E0B",
+                              border: "1px solid #F59E0B30",
                             }}
                           >
-                            {ds.average.toFixed(1)}/5
-                          </div>
+                            Pending
+                          </span>
+                        </div>
+                        <div className="db-invite-phone">{invite.phone}</div>
+                        <div className="db-invite-code-row">
+                          <span className="db-invite-code">{invite.code}</span>
+                          <button
+                            className="db-revoke-btn"
+                            onClick={() => revokeInvite(invite.id)}
+                          >
+                            Revoke
+                          </button>
                         </div>
                       </div>
                     ))}
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+                    <div className="db-section-label">
+                      Registered ({usedInvites.length})
+                    </div>
+                    {usedInvites.length === 0 && (
+                      <div className="db-empty">No registered drivers yet</div>
+                    )}
+                    {usedInvites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="db-invite-card"
+                        style={{ borderColor: "rgba(29,158,117,0.15)" }}
+                      >
+                        <div className="db-invite-card-top">
+                          <div className="db-invite-name">{invite.name}</div>
+                          <span
+                            className="db-status-badge"
+                            style={{
+                              background: "#1D9E7518",
+                              color: "#1D9E75",
+                              border: "1px solid #1D9E7530",
+                            }}
+                          >
+                            ✓ Registered
+                          </span>
+                        </div>
+                        <div className="db-invite-phone">{invite.phone}</div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#4B5563",
+                            marginTop: 2,
+                          }}
+                        >
+                          {new Date(invite.created_at).toLocaleDateString(
+                            "en-CA",
+                            { month: "short", day: "numeric", year: "numeric" },
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
 
-        {/* MAP — always in DOM */}
-        <div style={s.mapWrap}>
-          <div ref={mapRef} style={s.map} />
+              {tab === "reviews" && (
+                <>
+                  <div className="db-panel-header">
+                    <div className="db-panel-title">Ride reviews</div>
+                    <div className="db-panel-count">{reviews.length}</div>
+                  </div>
+                  <div className="db-panel-scroll">
+                    <div className="db-reviews-tabs">
+                      {(["recent", "drivers"] as const).map((t) => (
+                        <button
+                          key={t}
+                          className={`db-reviews-tab${reviewsTab === t ? " active" : ""}`}
+                          onClick={() => setReviewsTab(t)}
+                        >
+                          {t === "recent" ? "Recent" : "By Driver"}
+                        </button>
+                      ))}
+                    </div>
+                    {reviewsLoading ? (
+                      <div className="db-empty">Loading…</div>
+                    ) : reviewsTab === "recent" ? (
+                      reviews.length === 0 ? (
+                        <div className="db-empty">No reviews yet</div>
+                      ) : (
+                        reviews.map((rv) => (
+                          <div
+                            key={rv.id}
+                            className={`db-review-card${rv.rating <= 2 ? " flagged" : ""}`}
+                          >
+                            {rv.rating <= 2 && (
+                              <div className="db-review-flag">
+                                ⚠ Low rating — may need follow-up
+                              </div>
+                            )}
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                marginBottom: 6,
+                              }}
+                            >
+                              <div>
+                                <span
+                                  style={{
+                                    color: "#F59E0B",
+                                    fontSize: 13,
+                                    letterSpacing: 1,
+                                  }}
+                                >
+                                  {"★".repeat(rv.rating)}
+                                  {"☆".repeat(5 - rv.rating)}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    color: "#4B5563",
+                                    marginLeft: 5,
+                                  }}
+                                >
+                                  {rv.rating}/5
+                                </span>
+                              </div>
+                              <span style={{ fontSize: 10, color: "#374151" }}>
+                                {new Date(rv.created_at).toLocaleDateString(
+                                  "en-CA",
+                                  { month: "short", day: "numeric" },
+                                )}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#6B7280",
+                                marginBottom: 2,
+                              }}
+                            >
+                              <span style={{ color: "#4B5563" }}>Driver: </span>
+                              {rv.driver_name ?? "—"}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#6B7280",
+                                marginBottom: 4,
+                              }}
+                            >
+                              <span style={{ color: "#4B5563" }}>
+                                Passenger:{" "}
+                              </span>
+                              {rv.passenger_name ?? "—"}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#4B5563",
+                                marginBottom: rv.comment ? 6 : 0,
+                              }}
+                            >
+                              {rv.pickup_address} → {rv.dropoff_address}
+                            </div>
+                            {rv.comment && (
+                              <div
+                                style={{
+                                  background: "rgba(255,255,255,0.03)",
+                                  borderRadius: 6,
+                                  padding: "6px 10px",
+                                  borderLeft: "2px solid #2D3F52",
+                                  fontSize: 12,
+                                  color: "#6B7280",
+                                  fontStyle: "italic",
+                                }}
+                              >
+                                "{rv.comment}"
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )
+                    ) : driverRatings.length === 0 ? (
+                      <div className="db-empty">No driver ratings yet</div>
+                    ) : (
+                      driverRatings.map((ds) => (
+                        <div
+                          key={ds.driver_id}
+                          className={`db-review-card${ds.flagged > 0 ? " flagged" : ""}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <div>
+                            <div className="db-ride-name">
+                              {ds.driver_name ?? "Unknown"}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#4B5563" }}>
+                              {ds.count} rating{ds.count !== 1 ? "s" : ""}
+                              {ds.flagged > 0 && (
+                                <span style={{ color: "#F87171" }}>
+                                  {" "}
+                                  · {ds.flagged} low
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ color: "#F59E0B", fontSize: 13 }}>
+                              {"★".repeat(Math.round(ds.average))}
+                              {"☆".repeat(5 - Math.round(ds.average))}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 14,
+                                fontWeight: 700,
+                                color: "#F59E0B",
+                              }}
+                            >
+                              {ds.average.toFixed(1)}/5
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* MAP */}
+            <div className="db-map-wrap">
+              <div ref={mapRef} className="db-map" />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* NEW RIDE MODAL */}
       {bookingOpen && (
-        <div style={s.modalOverlay}>
-          <div style={s.modal}>
-            <div style={s.modalTitle}>New ride</div>
+        <div className="db-modal-overlay">
+          <div className="db-modal">
+            <div className="db-modal-title">New ride</div>
             <form
               onSubmit={createManualBooking}
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
             >
-              <label style={s.modalLabel}>Passenger phone number *</label>
-              <input
-                style={s.modalInput}
-                placeholder="+19021234567"
-                value={bookPassenger}
-                onChange={(e) => setBookPassenger(e.target.value)}
-                required
-              />
-              <label style={s.modalLabel}>Pickup address *</label>
-              <input
-                style={s.modalInput}
-                placeholder="123 Main St, Kentville"
-                value={bookPickup}
-                onChange={(e) => setBookPickup(e.target.value)}
-                required
-              />
-              <label style={s.modalLabel}>Drop-off address *</label>
-              <input
-                style={s.modalInput}
-                placeholder="456 Elm St, Wolfville"
-                value={bookDropoff}
-                onChange={(e) => setBookDropoff(e.target.value)}
-                required
-              />
-              <label style={s.modalLabel}>Estimated fare (optional)</label>
-              <input
-                style={s.modalInput}
-                placeholder="12.50"
-                type="number"
-                step="0.01"
-                value={bookFare}
-                onChange={(e) => setBookFare(e.target.value)}
-              />
-              <label style={s.modalLabel}>Assign driver (optional)</label>
-              <select
-                style={s.modalSelect}
-                value={bookDriver}
-                onChange={(e) => setBookDriver(e.target.value)}
-              >
-                <option value="">— No driver assigned yet —</option>
-                {onlineDrivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
-                    {d.vehicle_model}
-                  </option>
-                ))}
-              </select>
-              <label style={s.modalLabel}>Schedule for (optional)</label>
-              <input
-                style={s.modalInput}
-                type="datetime-local"
-                value={bookScheduled}
-                onChange={(e) => setBookScheduled(e.target.value)}
-              />
+              <div>
+                <label className="db-modal-label">Passenger phone *</label>
+                <input
+                  className="db-modal-input"
+                  placeholder="+19021234567"
+                  value={bookPassenger}
+                  onChange={(e) => setBookPassenger(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="db-modal-label">Pickup address *</label>
+                <input
+                  className="db-modal-input"
+                  placeholder="123 Main St, Kentville"
+                  value={bookPickup}
+                  onChange={(e) => setBookPickup(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="db-modal-label">Drop-off address *</label>
+                <input
+                  className="db-modal-input"
+                  placeholder="456 Elm St, Wolfville"
+                  value={bookDropoff}
+                  onChange={(e) => setBookDropoff(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="db-modal-label">Estimated fare</label>
+                <input
+                  className="db-modal-input"
+                  placeholder="12.50"
+                  type="number"
+                  step="0.01"
+                  value={bookFare}
+                  onChange={(e) => setBookFare(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="db-modal-label">Assign driver</label>
+                <select
+                  className="db-modal-select"
+                  value={bookDriver}
+                  onChange={(e) => setBookDriver(e.target.value)}
+                >
+                  <option value="">— No driver yet —</option>
+                  {onlineDrivers.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                      {d.vehicle_model}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="db-modal-label">Schedule for</label>
+                <input
+                  className="db-modal-input"
+                  type="datetime-local"
+                  value={bookScheduled}
+                  onChange={(e) => setBookScheduled(e.target.value)}
+                />
+              </div>
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button
-                  style={s.modalCancelBtn}
+                  className="db-modal-cancel-btn"
                   type="button"
                   onClick={() => setBookingOpen(false)}
                 >
                   Cancel
                 </button>
                 <button
-                  style={s.modalSubmitBtn}
+                  className="db-modal-submit-btn"
                   type="submit"
                   disabled={bookLoading}
                 >
@@ -1411,11 +1909,12 @@ export default function DashboardPage({
         </div>
       )}
 
-      {/* RIDE DETAIL POPUP */}
+      {/* RIDE DETAIL */}
       {rideDetail && (
-        <div style={s.modalOverlay} onClick={() => setRideDetail(null)}>
+        <div className="db-modal-overlay" onClick={() => setRideDetail(null)}>
           <div
-            style={{ ...s.modal, maxWidth: 480 }}
+            className="db-modal"
+            style={{ maxWidth: 480 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -1426,12 +1925,14 @@ export default function DashboardPage({
                 marginBottom: 16,
               }}
             >
-              <div style={s.modalTitle}>Ride details</div>
+              <div className="db-modal-title" style={{ marginBottom: 0 }}>
+                Ride details
+              </div>
               <button
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#6B7280",
+                  color: "#4B5563",
                   cursor: "pointer",
                   fontSize: 20,
                 }}
@@ -1449,16 +1950,16 @@ export default function DashboardPage({
               }}
             >
               <span
+                className="db-status-badge"
                 style={{
-                  ...s.statusBadge,
-                  background: STATUS_COLORS[rideDetail.status] + "22",
+                  background: STATUS_COLORS[rideDetail.status] + "18",
                   color: STATUS_COLORS[rideDetail.status],
-                  border: `0.5px solid ${STATUS_COLORS[rideDetail.status]}44`,
+                  border: `1px solid ${STATUS_COLORS[rideDetail.status]}30`,
                 }}
               >
                 {STATUS_LABELS[rideDetail.status]}
               </span>
-              <span style={{ fontSize: 12, color: "#6B7280" }}>
+              <span style={{ fontSize: 12, color: "#4B5563" }}>
                 {new Date(rideDetail.created_at).toLocaleString("en-CA", {
                   dateStyle: "medium",
                   timeStyle: "short",
@@ -1496,31 +1997,14 @@ export default function DashboardPage({
                 ],
               ] as [string, string][]
             ).map(([label, value]) => (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  padding: "8px 0",
-                  borderBottom: "0.5px solid rgba(255,255,255,0.06)",
-                }}
-              >
-                <span style={{ fontSize: 12, color: "#6B7280" }}>{label}</span>
-                <span
-                  style={{
-                    fontSize: 13,
-                    color: "#F1F5F9",
-                    fontWeight: 500,
-                    maxWidth: "60%",
-                    textAlign: "right",
-                  }}
-                >
-                  {value}
-                </span>
+              <div key={label} className="db-detail-row">
+                <span className="db-detail-label">{label}</span>
+                <span className="db-detail-value">{value}</span>
               </div>
             ))}
             <button
-              style={{ ...s.modalCancelBtn, width: "100%", marginTop: 16 }}
+              className="db-modal-cancel-btn"
+              style={{ width: "100%", marginTop: 16 }}
               onClick={() => setRideDetail(null)}
             >
               Close
@@ -1528,394 +2012,9 @@ export default function DashboardPage({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
-
-const s: Record<string, React.CSSProperties> = {
-  page: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    background: "#111827",
-    fontFamily: "system-ui, sans-serif",
-    overflow: "hidden",
-    position: "relative",
-  },
-  topBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "12px 20px",
-    background: "#1E2A3A",
-    borderBottom: "0.5px solid rgba(255,255,255,0.08)",
-    flexShrink: 0,
-    zIndex: 20,
-    position: "relative",
-  },
-  topLeft: { display: "flex", alignItems: "center", gap: 12 },
-  logo: { fontSize: 22, fontWeight: 700, color: "#E8500A", letterSpacing: 0.5 },
-  topLabel: { fontSize: 13, color: "#6B7280" },
-  backBtn: {
-    background: "transparent",
-    color: "#9CA3AF",
-    border: "none",
-    fontSize: 14,
-    cursor: "pointer",
-    padding: "6px 0",
-  },
-  statPills: { display: "flex", gap: 16 },
-  statPill: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 13,
-    color: "#9CA3AF",
-  },
-  analyticsBtn: {
-    background: "rgba(168,85,247,0.15)",
-    color: "#A855F7",
-    border: "0.5px solid rgba(168,85,247,0.3)",
-    borderRadius: 8,
-    padding: "8px 14px",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-  },
-  newRideBtn: {
-    background: "#E8500A",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "8px 16px",
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  signOutBtn: {
-    background: "transparent",
-    color: "#6B7280",
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "8px 14px",
-    fontSize: 13,
-    cursor: "pointer",
-  },
-  body: { display: "flex", flex: 1, overflow: "hidden", minHeight: 0 },
-  sidebar: {
-    width: 320,
-    background: "#111827",
-    borderRight: "0.5px solid rgba(255,255,255,0.08)",
-    display: "flex",
-    flexDirection: "column",
-    flexShrink: 0,
-  },
-  tabs: {
-    display: "flex",
-    borderBottom: "0.5px solid rgba(255,255,255,0.08)",
-    flexShrink: 0,
-  },
-  tab: {
-    flex: 1,
-    padding: "10px 4px",
-    fontSize: 12,
-    fontWeight: 500,
-    background: "transparent",
-    border: "none",
-    color: "#6B7280",
-    cursor: "pointer",
-    borderBottom: "2px solid transparent",
-  },
-  tabActive: { color: "#E8500A", borderBottom: "2px solid #E8500A" },
-  sidebarContent: { flex: 1, overflowY: "auto", padding: 12 },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: "#4B5563",
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  empty: {
-    fontSize: 13,
-    color: "#4B5563",
-    textAlign: "center",
-    padding: "20px 0",
-  },
-  rideCard: {
-    background: "#1E2A3A",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    border: "0.5px solid rgba(255,255,255,0.06)",
-    cursor: "pointer",
-  },
-  rideCardSelected: { border: "0.5px solid rgba(232,80,10,0.5)" },
-  rideCardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  statusBadge: {
-    fontSize: 10,
-    fontWeight: 600,
-    padding: "2px 8px",
-    borderRadius: 20,
-  },
-  rideTime: { fontSize: 11, color: "#6B7280" },
-  rideName: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#F1F5F9",
-    marginBottom: 3,
-  },
-  rideAddr: {
-    fontSize: 11,
-    color: "#6B7280",
-    marginBottom: 1,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  rideFare: { fontSize: 12, fontWeight: 600, color: "#9CA3AF", marginTop: 4 },
-  pendingConfirmBadge: {
-    fontSize: 11,
-    color: "#F59E0B",
-    background: "rgba(245,158,11,0.1)",
-    borderRadius: 6,
-    padding: "4px 8px",
-    marginTop: 6,
-    border: "0.5px solid rgba(245,158,11,0.25)",
-  },
-  assignBtn: {
-    width: "100%",
-    background: "rgba(74,158,255,0.1)",
-    color: "#4a9eff",
-    border: "0.5px solid rgba(74,158,255,0.3)",
-    borderRadius: 8,
-    padding: "6px 0",
-    fontSize: 12,
-    cursor: "pointer",
-    fontWeight: 500,
-  },
-  assignLabel: { fontSize: 11, color: "#6B7280", marginBottom: 4 },
-  assignDriverBtn: {
-    width: "100%",
-    background: "rgba(29,158,117,0.1)",
-    color: "#1D9E75",
-    border: "0.5px solid rgba(29,158,117,0.3)",
-    borderRadius: 8,
-    padding: "6px 0",
-    fontSize: 12,
-    cursor: "pointer",
-    marginBottom: 4,
-  },
-  cancelAssignBtn: {
-    background: "transparent",
-    color: "#6B7280",
-    border: "none",
-    fontSize: 11,
-    cursor: "pointer",
-    padding: "4px 0",
-  },
-  driverCard: {
-    background: "#1E2A3A",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    border: "0.5px solid rgba(255,255,255,0.06)",
-  },
-  driverCardTop: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 4,
-  },
-  driverAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    background: "#1E3A5F",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 13,
-    fontWeight: 700,
-    color: "#93C5FD",
-    flexShrink: 0,
-  },
-  driverName: { fontSize: 13, fontWeight: 600, color: "#F1F5F9" },
-  driverSub: { fontSize: 11, color: "#6B7280" },
-  driverPhone: { fontSize: 11, color: "#4B5563", marginTop: 2 },
-  onlineDot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-  revenueGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
-  revenueCard: {
-    background: "#1E2A3A",
-    borderRadius: 12,
-    padding: 12,
-    border: "0.5px solid rgba(255,255,255,0.06)",
-  },
-  revenueLabel: {
-    fontSize: 10,
-    color: "#6B7280",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: "0.06em",
-  },
-  revenueValue: { fontSize: 22, fontWeight: 700, color: "#F1F5F9" },
-  revenueSubLabel: { fontSize: 10, color: "#4B5563", marginTop: 2 },
-  driverRevenueRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "10px 0",
-    borderBottom: "0.5px solid rgba(255,255,255,0.05)",
-  },
-  driverRevName: { fontSize: 13, color: "#CBD5E1" },
-  driverRevStats: { display: "flex", gap: 12, alignItems: "center" },
-  driverRevCount: { fontSize: 11, color: "#6B7280" },
-  driverRevAmount: { fontSize: 14, fontWeight: 600, color: "#1D9E75" },
-  inviteForm: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    marginBottom: 12,
-  },
-  inviteInput: {
-    background: "#1E2A3A",
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 13,
-    color: "#F1F5F9",
-    outline: "none",
-  },
-  inviteBtn: {
-    background: "#E8500A",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px",
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-  inviteSuccess: {
-    background: "rgba(29,158,117,0.1)",
-    border: "0.5px solid rgba(29,158,117,0.3)",
-    borderRadius: 12,
-    padding: 16,
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  inviteCard: {
-    background: "#1E2A3A",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    border: "0.5px solid rgba(255,255,255,0.06)",
-  },
-  inviteCardTop: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  inviteName: { fontSize: 13, fontWeight: 600, color: "#F1F5F9" },
-  invitePhone: { fontSize: 11, color: "#6B7280", marginBottom: 6 },
-  inviteCodeRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  inviteCode: {
-    fontSize: 16,
-    fontWeight: 700,
-    color: "#E8500A",
-    letterSpacing: "0.15em",
-  },
-  revokeBtn: {
-    background: "rgba(226,75,74,0.1)",
-    color: "#F87171",
-    border: "0.5px solid rgba(226,75,74,0.25)",
-    borderRadius: 6,
-    padding: "3px 10px",
-    fontSize: 11,
-    cursor: "pointer",
-  },
-  mapWrap: { flex: 1, position: "relative", minHeight: 0, overflow: "hidden" },
-  map: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
-  modalOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.7)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  modal: {
-    background: "#1E2A3A",
-    borderRadius: 16,
-    padding: 28,
-    width: "100%",
-    maxWidth: 440,
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    maxHeight: "90vh",
-    overflowY: "auto",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#F1F5F9",
-    marginBottom: 20,
-  },
-  modalLabel: { fontSize: 12, color: "#9CA3AF", fontWeight: 500 },
-  modalInput: {
-    background: "#111827",
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 14,
-    color: "#F1F5F9",
-    outline: "none",
-    width: "100%",
-  },
-  modalSelect: {
-    background: "#111827",
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 14,
-    color: "#F1F5F9",
-    outline: "none",
-    width: "100%",
-    cursor: "pointer",
-  },
-  modalCancelBtn: {
-    flex: 1,
-    background: "transparent",
-    color: "#9CA3AF",
-    border: "0.5px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    padding: "10px",
-    fontSize: 14,
-    cursor: "pointer",
-  },
-  modalSubmitBtn: {
-    flex: 2,
-    background: "#E8500A",
-    color: "#fff",
-    border: "none",
-    borderRadius: 8,
-    padding: "10px",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-  },
-};
 
 const darkMapStyle = [
   { elementType: "geometry", stylers: [{ color: "#1d2c3f" }] },
