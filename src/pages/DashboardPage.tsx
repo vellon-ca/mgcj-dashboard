@@ -24,7 +24,7 @@ const STATUS_LABELS: Record<string, string> = {
   scheduled: "Scheduled",
 };
 
-type Tab = "rides" | "drivers" | "revenue" | "invites";
+type Tab = "rides" | "drivers" | "revenue" | "invites" | "reviews";
 
 interface Stats {
   activeRides: number;
@@ -35,6 +35,27 @@ interface Stats {
   revenueMonth: number;
   avgFare: number;
   cancelRate: number;
+}
+
+interface Review {
+  id: string;
+  ride_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  driver_id: string;
+  driver_name: string | null;
+  passenger_name: string | null;
+  pickup_address: string;
+  dropoff_address: string;
+}
+
+interface DriverRatingSummary {
+  driver_id: string;
+  driver_name: string | null;
+  average: number;
+  count: number;
+  flagged: number;
 }
 
 export default function DashboardPage({
@@ -81,6 +102,10 @@ export default function DashboardPage({
   const [bookLoading, setBookLoading] = useState(false);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [driverRatings, setDriverRatings] = useState<DriverRatingSummary[]>([]);
+  const [reviewsTab, setReviewsTab] = useState<"recent" | "drivers">("recent");
+  const [reviewsLoading, setReviewsLoading] = useState(false);
 
   // ── Map init ─────────────────────────────────────────────────
   // The map container stays in the DOM always via CSS visibility
@@ -156,6 +181,10 @@ export default function DashboardPage({
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (tab === "reviews") fetchReviews();
+  }, [tab]);
 
   async function fetchAll() {
     await Promise.all([fetchRides(), fetchDrivers(), fetchInvites()]);
@@ -253,6 +282,86 @@ export default function DashboardPage({
     ]);
     if (pending) setPendingInvites(pending);
     if (used) setUsedInvites(used);
+  }
+
+  async function fetchReviews() {
+    // (inside DashboardPage component)
+    setReviewsLoading(true);
+
+    const { data: reviewRows } = await supabase
+      .from("ride_reviews")
+      .select(
+        "id, ride_id, rating, comment, created_at, driver_id, passenger_id",
+      )
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (!reviewRows) {
+      setReviewsLoading(false);
+      return;
+    }
+
+    const enriched: Review[] = await Promise.all(
+      reviewRows.map(async (rv: any) => {
+        const [{ data: driver }, { data: passenger }, { data: ride }] =
+          await Promise.all([
+            supabase
+              .from("profiles")
+              .select("name")
+              .eq("id", rv.driver_id)
+              .single(),
+            supabase
+              .from("profiles")
+              .select("name")
+              .eq("id", rv.passenger_id)
+              .single(),
+            supabase
+              .from("rides")
+              .select("pickup_address, dropoff_address")
+              .eq("id", rv.ride_id)
+              .single(),
+          ]);
+        return {
+          id: rv.id,
+          ride_id: rv.ride_id,
+          rating: rv.rating,
+          comment: rv.comment,
+          created_at: rv.created_at,
+          driver_id: rv.driver_id,
+          driver_name: driver?.name ?? null,
+          passenger_name: passenger?.name ?? null,
+          pickup_address: ride?.pickup_address ?? "—",
+          dropoff_address: ride?.dropoff_address ?? "—",
+        };
+      }),
+    );
+
+    setReviews(enriched);
+
+    // Build per-driver summaries
+    const grouped: Record<string, { name: string | null; ratings: number[] }> =
+      {};
+    enriched.forEach((rv) => {
+      if (!grouped[rv.driver_id])
+        grouped[rv.driver_id] = { name: rv.driver_name, ratings: [] };
+      grouped[rv.driver_id].ratings.push(rv.rating);
+    });
+
+    const summaries: DriverRatingSummary[] = Object.entries(grouped).map(
+      ([id, g]) => ({
+        driver_id: id,
+        driver_name: g.name,
+        average:
+          Math.round(
+            (g.ratings.reduce((a, b) => a + b, 0) / g.ratings.length) * 10,
+          ) / 10,
+        count: g.ratings.length,
+        flagged: g.ratings.filter((r) => r <= 2).length,
+      }),
+    );
+    summaries.sort((a, b) => a.average - b.average);
+    setDriverRatings(summaries);
+    setReviewsLoading(false);
   }
 
   function computeStats(rideData: Ride[]) {
@@ -357,15 +466,13 @@ export default function DashboardPage({
     if (!inviteName.trim() || !invitePhone.trim()) return;
     setInviteLoading(true);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const { error } = await supabase
-      .from("driver_invites")
-      .insert({
-        name: inviteName.trim(),
-        phone: invitePhone.trim(),
-        code,
-        used: false,
-        created_by: profile.id,
-      });
+    const { error } = await supabase.from("driver_invites").insert({
+      name: inviteName.trim(),
+      phone: invitePhone.trim(),
+      code,
+      used: false,
+      created_by: profile.id,
+    });
     setInviteLoading(false);
     if (error) {
       alert(error.message);
@@ -546,7 +653,9 @@ export default function DashboardPage({
         {/* SIDEBAR */}
         <div style={s.sidebar}>
           <div style={s.tabs}>
-            {(["rides", "drivers", "revenue", "invites"] as Tab[]).map((t) => (
+            {(
+              ["rides", "drivers", "revenue", "invites", "reviews"] as Tab[]
+            ).map((t) => (
               <button
                 key={t}
                 style={{ ...s.tab, ...(tab === t ? s.tabActive : {}) }}
@@ -1001,6 +1110,212 @@ export default function DashboardPage({
                     </div>
                   </div>
                 ))}
+              </>
+            )}
+            {tab === "reviews" && (
+              <>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  {(["recent", "drivers"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setReviewsTab(t)}
+                      style={{
+                        flex: 1,
+                        padding: "7px 0",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        borderRadius: 8,
+                        border: "0.5px solid rgba(255,255,255,0.08)",
+                        cursor: "pointer",
+                        background: reviewsTab === t ? "#E8500A" : "#1E2A3A",
+                        color: reviewsTab === t ? "#fff" : "#6B7280",
+                      }}
+                    >
+                      {t === "recent" ? "Recent" : "By Driver"}
+                    </button>
+                  ))}
+                </div>
+
+                {reviewsLoading ? (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      color: "#6B7280",
+                      padding: "40px 0",
+                    }}
+                  >
+                    Loading…
+                  </div>
+                ) : reviewsTab === "recent" ? (
+                  reviews.length === 0 ? (
+                    <div style={s.empty}>No reviews yet</div>
+                  ) : (
+                    <>
+                      {reviews.map((rv) => (
+                        <div
+                          key={rv.id}
+                          style={{
+                            ...s.rideCard,
+                            cursor: "default",
+                            borderColor:
+                              rv.rating <= 2
+                                ? "rgba(248,113,113,0.3)"
+                                : "rgba(255,255,255,0.06)",
+                            background: rv.rating <= 2 ? "#1A0F0F" : "#1E2A3A",
+                          }}
+                        >
+                          {rv.rating <= 2 && (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "#F87171",
+                                background: "rgba(248,113,113,0.1)",
+                                borderRadius: 6,
+                                padding: "4px 8px",
+                                marginBottom: 8,
+                              }}
+                            >
+                              ⚠ Low rating — may need follow-up
+                            </div>
+                          )}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              marginBottom: 6,
+                            }}
+                          >
+                            <div>
+                              <span
+                                style={{
+                                  color: "#F59E0B",
+                                  fontSize: 14,
+                                  letterSpacing: 1,
+                                }}
+                              >
+                                {"★".repeat(rv.rating)}
+                                {"☆".repeat(5 - rv.rating)}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  color: "#6B7280",
+                                  marginLeft: 6,
+                                }}
+                              >
+                                {rv.rating}/5
+                              </span>
+                            </div>
+                            <span style={{ fontSize: 10, color: "#4B5563" }}>
+                              {new Date(rv.created_at).toLocaleDateString(
+                                "en-CA",
+                                { month: "short", day: "numeric" },
+                              )}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#94A3B8",
+                              marginBottom: 2,
+                            }}
+                          >
+                            <span style={{ color: "#6B7280" }}>Driver: </span>
+                            {rv.driver_name ?? "—"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#94A3B8",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <span style={{ color: "#6B7280" }}>
+                              Passenger:{" "}
+                            </span>
+                            {rv.passenger_name ?? "—"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "#4B5563",
+                              marginBottom: rv.comment ? 6 : 0,
+                            }}
+                          >
+                            {rv.pickup_address} → {rv.dropoff_address}
+                          </div>
+                          {rv.comment && (
+                            <div
+                              style={{
+                                background: "rgba(255,255,255,0.04)",
+                                borderRadius: 6,
+                                padding: "6px 10px",
+                                borderLeft: "2px solid #374151",
+                                fontSize: 12,
+                                color: "#94A3B8",
+                                fontStyle: "italic",
+                              }}
+                            >
+                              "{rv.comment}"
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </>
+                  )
+                ) : driverRatings.length === 0 ? (
+                  <div style={s.empty}>No driver ratings yet</div>
+                ) : (
+                  <>
+                    {driverRatings.map((ds) => (
+                      <div
+                        key={ds.driver_id}
+                        style={{
+                          ...s.rideCard,
+                          cursor: "default",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          borderColor:
+                            ds.flagged > 0
+                              ? "rgba(248,113,113,0.25)"
+                              : "rgba(255,255,255,0.06)",
+                        }}
+                      >
+                        <div>
+                          <div style={s.rideName}>
+                            {ds.driver_name ?? "Unknown"}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6B7280" }}>
+                            {ds.count} rating{ds.count !== 1 ? "s" : ""}
+                            {ds.flagged > 0 && (
+                              <span style={{ color: "#F87171" }}>
+                                {" "}
+                                · {ds.flagged} low
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ color: "#F59E0B", fontSize: 14 }}>
+                            {"★".repeat(Math.round(ds.average))}
+                            {"☆".repeat(5 - Math.round(ds.average))}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: "#F59E0B",
+                            }}
+                          >
+                            {ds.average.toFixed(1)}/5
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </div>
