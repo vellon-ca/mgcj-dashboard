@@ -176,7 +176,7 @@ function IconMenu() {
   );
 }
 
-const NAV_ICONS: Record<Tab, JSX.Element> = {
+const NAV_ICONS: Record<Tab, React.ReactElement> = {
   rides: <IconRides />,
   drivers: <IconDrivers />,
   revenue: <IconRevenue />,
