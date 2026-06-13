@@ -24,17 +24,13 @@ const STATUS_LABELS: Record<string, string> = {
   scheduled: "Scheduled",
 };
 
-type Tab = "rides" | "drivers" | "revenue" | "invites" | "reviews";
+type Tab = "rides" | "drivers";
 
 const NAV_ITEMS: { tab: Tab; label: string }[] = [
   { tab: "rides", label: "Rides" },
   { tab: "drivers", label: "Drivers" },
-  { tab: "revenue", label: "Revenue" },
-  { tab: "invites", label: "Invites" },
-  { tab: "reviews", label: "Reviews" },
 ];
 
-// SVG icon components — thin line, no fill, matches Linear/Vercel style
 function IconRides() {
   return (
     <svg
@@ -68,56 +64,6 @@ function IconDrivers() {
     >
       <circle cx="12" cy="8" r="4" />
       <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-    </svg>
-  );
-}
-function IconRevenue() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-    </svg>
-  );
-}
-function IconInvites() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-      <polyline points="22,6 12,13 2,6" />
-    </svg>
-  );
-}
-function IconReviews() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   );
 }
@@ -179,9 +125,6 @@ function IconMenu() {
 const NAV_ICONS: Record<Tab, React.ReactElement> = {
   rides: <IconRides />,
   drivers: <IconDrivers />,
-  revenue: <IconRevenue />,
-  invites: <IconInvites />,
-  reviews: <IconReviews />,
 };
 
 interface Stats {
@@ -258,10 +201,7 @@ export default function DashboardPage({
   const [bookLoading, setBookLoading] = useState(false);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [driverRatings, setDriverRatings] = useState<DriverRatingSummary[]>([]);
-  const [reviewsTab, setReviewsTab] = useState<"recent" | "drivers">("recent");
-  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [flaggedReviews, setFlaggedReviews] = useState(0);
   const [navExpanded, setNavExpanded] = useState(false);
 
   // ── Map init ──────────────────────────────────────────────────────────
@@ -333,12 +273,13 @@ export default function DashboardPage({
     };
   }, []);
 
-  useEffect(() => {
-    if (tab === "reviews") fetchReviews();
-  }, [tab]);
-
   async function fetchAll() {
-    await Promise.all([fetchRides(), fetchDrivers(), fetchInvites()]);
+    await Promise.all([
+      fetchRides(),
+      fetchDrivers(),
+      fetchInvites(),
+      fetchReviewsBadge(),
+    ]);
     setLoading(false);
   }
 
@@ -435,76 +376,12 @@ export default function DashboardPage({
     if (used) setUsedInvites(used);
   }
 
-  async function fetchReviews() {
-    setReviewsLoading(true);
-    const { data: reviewRows } = await supabase
+  async function fetchReviewsBadge() {
+    const { data } = await supabase
       .from("ride_reviews")
-      .select(
-        "id, ride_id, rating, comment, created_at, driver_id, passenger_id",
-      )
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (!reviewRows) {
-      setReviewsLoading(false);
-      return;
-    }
-    const enriched: Review[] = await Promise.all(
-      reviewRows.map(async (rv: any) => {
-        const [{ data: driver }, { data: passenger }, { data: ride }] =
-          await Promise.all([
-            supabase
-              .from("profiles")
-              .select("name")
-              .eq("id", rv.driver_id)
-              .single(),
-            supabase
-              .from("profiles")
-              .select("name")
-              .eq("id", rv.passenger_id)
-              .single(),
-            supabase
-              .from("rides")
-              .select("pickup_address, dropoff_address")
-              .eq("id", rv.ride_id)
-              .single(),
-          ]);
-        return {
-          id: rv.id,
-          ride_id: rv.ride_id,
-          rating: rv.rating,
-          comment: rv.comment,
-          created_at: rv.created_at,
-          driver_id: rv.driver_id,
-          driver_name: driver?.name ?? null,
-          passenger_name: passenger?.name ?? null,
-          pickup_address: ride?.pickup_address ?? "—",
-          dropoff_address: ride?.dropoff_address ?? "—",
-        };
-      }),
-    );
-    setReviews(enriched);
-    const grouped: Record<string, { name: string | null; ratings: number[] }> =
-      {};
-    enriched.forEach((rv) => {
-      if (!grouped[rv.driver_id])
-        grouped[rv.driver_id] = { name: rv.driver_name, ratings: [] };
-      grouped[rv.driver_id].ratings.push(rv.rating);
-    });
-    const summaries: DriverRatingSummary[] = Object.entries(grouped).map(
-      ([id, g]) => ({
-        driver_id: id,
-        driver_name: g.name,
-        average:
-          Math.round(
-            (g.ratings.reduce((a, b) => a + b, 0) / g.ratings.length) * 10,
-          ) / 10,
-        count: g.ratings.length,
-        flagged: g.ratings.filter((r) => r <= 2).length,
-      }),
-    );
-    summaries.sort((a, b) => a.average - b.average);
-    setDriverRatings(summaries);
-    setReviewsLoading(false);
+      .select("rating")
+      .lte("rating", 2);
+    setFlaggedReviews(data?.length ?? 0);
   }
 
   function computeStats(rideData: Ride[]) {
@@ -609,13 +486,15 @@ export default function DashboardPage({
     if (!inviteName.trim() || !invitePhone.trim()) return;
     setInviteLoading(true);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const { error } = await supabase.from("driver_invites").insert({
-      name: inviteName.trim(),
-      phone: invitePhone.trim(),
-      code,
-      used: false,
-      created_by: profile.id,
-    });
+    const { error } = await supabase
+      .from("driver_invites")
+      .insert({
+        name: inviteName.trim(),
+        phone: invitePhone.trim(),
+        code,
+        used: false,
+        created_by: profile.id,
+      });
     setInviteLoading(false);
     if (error) {
       alert(error.message);
@@ -744,10 +623,7 @@ export default function DashboardPage({
           padding: 0 18px; flex-shrink: 0;
           border-bottom: 1px solid rgba(255,255,255,0.06);
         }
-        .db-nav-logo-text {
-          font-size: 14px; font-weight: 700; color: #E8500A;
-          letter-spacing: -0.3px; white-space: nowrap;
-        }
+        .db-nav-logo-text { font-size: 14px; font-weight: 700; color: #E8500A; letter-spacing: -0.3px; white-space: nowrap; }
 
         .db-nav-items { flex: 1; display: flex; flex-direction: column; padding: 8px 0; width: 100%; }
 
@@ -761,7 +637,7 @@ export default function DashboardPage({
         .db-nav-item:hover { background: rgba(255,255,255,0.05); }
         .db-nav-item.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
 
-        .db-nav-icon { color: #4B5563; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; }
+        .db-nav-icon { color: #4B5563; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
         .db-nav-item:hover .db-nav-icon { color: #9CA3AF; }
         .db-nav-item.active .db-nav-icon { color: #E8500A; }
 
@@ -790,6 +666,17 @@ export default function DashboardPage({
         .db-nav-analytics:hover .db-nav-label { color: #A855F7; }
         .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
         .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
+
+        .db-badge-dot {
+          position: absolute; top: -3px; right: -4px;
+          width: 7px; height: 7px; border-radius: 50%;
+          background: #E24B4A; border: 1.5px solid #0F1723;
+        }
+        .db-badge-count {
+          margin-left: auto; font-size: 10px; font-weight: 700;
+          background: rgba(226,75,74,0.15); color: #F87171;
+          border-radius: 10px; padding: 1px 6px;
+        }
 
         /* ── MAIN ── */
         .db-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -831,9 +718,7 @@ export default function DashboardPage({
           border-right: 1px solid rgba(255,255,255,0.06);
           display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
         }
-        .db-panel-header {
-          padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
-        }
+        .db-panel-header { padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
         .db-panel-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; }
         .db-panel-count { font-size: 22px; font-weight: 700; color: #F1F5F9; margin-top: 2px; line-height: 1; }
         .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
@@ -841,10 +726,7 @@ export default function DashboardPage({
         .db-panel-scroll::-webkit-scrollbar-track { background: transparent; }
         .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
-        .db-section-label {
-          font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em;
-          text-transform: uppercase; padding: 12px 2px 6px;
-        }
+        .db-section-label { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 12px 2px 6px; }
         .db-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
 
         /* ── RIDE CARD ── */
@@ -865,11 +747,7 @@ export default function DashboardPage({
         .db-ride-addr.dest { color: rgba(232,80,10,0.8); }
         .db-ride-fare { font-size: 12px; font-weight: 600; color: #6B7280; margin-top: 4px; }
 
-        .db-pending-badge {
-          font-size: 11px; color: #F59E0B; background: rgba(245,158,11,0.08);
-          border-radius: 6px; padding: 4px 8px; margin-top: 6px;
-          border: 1px solid rgba(245,158,11,0.15);
-        }
+        .db-pending-badge { font-size: 11px; color: #F59E0B; background: rgba(245,158,11,0.08); border-radius: 6px; padding: 4px 8px; margin-top: 6px; border: 1px solid rgba(245,158,11,0.15); }
 
         .db-assign-btn {
           width: 100%; background: rgba(74,158,255,0.07); color: #4a9eff;
@@ -878,7 +756,6 @@ export default function DashboardPage({
           font-family: system-ui, sans-serif; margin-top: 8px; transition: background 0.12s;
         }
         .db-assign-btn:hover { background: rgba(74,158,255,0.13); }
-
         .db-assign-label { font-size: 11px; color: #4B5563; margin: 8px 0 4px; }
         .db-assign-driver-btn {
           width: 100%; background: rgba(29,158,117,0.07); color: #1D9E75;
@@ -887,140 +764,55 @@ export default function DashboardPage({
           font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s;
         }
         .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
-        .db-cancel-assign-btn {
-          background: transparent; color: #4B5563; border: none; font-size: 11px;
-          cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s;
-        }
+        .db-cancel-assign-btn { background: transparent; color: #4B5563; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
         .db-cancel-assign-btn:hover { color: #9CA3AF; }
 
         /* ── DRIVER CARD ── */
-        .db-driver-card {
-          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
-          border: 1px solid rgba(255,255,255,0.05);
-        }
+        .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); }
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-        .db-driver-avatar {
-          width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0;
-          border: 1px solid rgba(74,158,255,0.12);
-        }
+        .db-driver-avatar { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.12); }
         .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
         .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
         .db-driver-phone { font-size: 11px; color: #4B5563; margin-top: 3px; }
         .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
 
-        /* ── REVENUE ── */
-        .db-revenue-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 6px; }
-        .db-revenue-card { background: #1E2A3A; border-radius: 10px; padding: 14px; border: 1px solid rgba(255,255,255,0.05); }
-        .db-revenue-label { font-size: 10px; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; font-weight: 600; margin-bottom: 6px; }
-        .db-revenue-value { font-size: 20px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .db-revenue-sub { font-size: 10px; color: #374151; margin-top: 4px; }
-        .db-driver-rev-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
-        .db-driver-rev-name { font-size: 13px; color: #9CA3AF; }
-        .db-driver-rev-stats { display: flex; gap: 12px; align-items: center; }
-        .db-driver-rev-count { font-size: 11px; color: #4B5563; }
-        .db-driver-rev-amount { font-size: 13px; font-weight: 600; color: #1D9E75; }
-
         /* ── INVITES ── */
         .db-invite-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-        .db-invite-input {
-          background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
-          padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none;
-          font-family: system-ui, sans-serif; transition: border-color 0.15s;
-        }
+        .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
         .db-invite-input::placeholder { color: #374151; }
-        .db-invite-btn {
-          background: #E8500A; color: #fff; border: none; border-radius: 8px;
-          padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
-          font-family: system-ui, sans-serif; transition: opacity 0.15s;
-        }
+        .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-invite-btn:hover { opacity: 0.88; }
         .db-invite-btn:disabled { opacity: 0.5; }
-        .db-invite-success {
-          background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2);
-          border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px;
-        }
-        .db-invite-card {
-          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
-          border: 1px solid rgba(255,255,255,0.05);
-        }
+        .db-invite-success { background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px; }
+        .db-invite-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); }
         .db-invite-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
         .db-invite-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
         .db-invite-phone { font-size: 11px; color: #6B7280; margin-bottom: 8px; }
         .db-invite-code-row { display: flex; align-items: center; justify-content: space-between; }
         .db-invite-code { font-size: 15px; font-weight: 700; color: #E8500A; letter-spacing: 0.18em; }
-        .db-revoke-btn {
-          background: rgba(226,75,74,0.08); color: #F87171;
-          border: 1px solid rgba(226,75,74,0.2); border-radius: 6px;
-          padding: 3px 10px; font-size: 11px; cursor: pointer;
-          font-family: system-ui, sans-serif; transition: background 0.12s;
-        }
+        .db-revoke-btn { background: rgba(226,75,74,0.08); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
         .db-revoke-btn:hover { background: rgba(226,75,74,0.14); }
-
-        /* ── REVIEWS ── */
-        .db-reviews-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-        .db-reviews-tab {
-          flex: 1; padding: 7px 0; font-size: 12px; font-weight: 600;
-          border-radius: 7px; border: 1px solid rgba(255,255,255,0.07);
-          cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s;
-        }
-        .db-reviews-tab.active { background: #E8500A; color: #fff; border-color: #E8500A; }
-        .db-reviews-tab:not(.active) { background: #1E2A3A; color: #6B7280; }
-        .db-review-card {
-          background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px;
-          border: 1px solid rgba(255,255,255,0.05); cursor: default;
-        }
-        .db-review-card.flagged { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
-        .db-review-flag { font-size: 11px; color: #F87171; background: rgba(248,113,113,0.08); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; }
 
         /* ── MAP ── */
         .db-map-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
         .db-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
 
         /* ── ANALYTICS ── */
-        .db-analytics-overlay {
-          flex: 1; overflow-y: auto; background: #111827;
-        }
+        .db-analytics-overlay { flex: 1; overflow-y: auto; background: #111827; }
 
         /* ── MODAL ── */
-        .db-modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.72);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 1000; backdrop-filter: blur(3px);
-        }
-        .db-modal {
-          background: #1E2A3A; border-radius: 14px; padding: 26px;
-          width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08);
-          max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-        }
+        .db-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .db-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
         .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
         .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
-        .db-modal-input {
-          background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
-          padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none;
-          width: 100%; font-family: system-ui, sans-serif; transition: border-color 0.15s;
-        }
+        .db-modal-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none; width: 100%; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
         .db-modal-input::placeholder { color: #374151; }
-        .db-modal-select {
-          background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
-          padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none;
-          width: 100%; cursor: pointer; font-family: system-ui, sans-serif;
-        }
-        .db-modal-cancel-btn {
-          flex: 1; background: transparent; color: #6B7280;
-          border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
-          padding: 10px; font-size: 14px; cursor: pointer;
-          font-family: system-ui, sans-serif; transition: background 0.12s;
-        }
+        .db-modal-select { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #F1F5F9; outline: none; width: 100%; cursor: pointer; font-family: system-ui, sans-serif; }
+        .db-modal-cancel-btn { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
         .db-modal-cancel-btn:hover { background: rgba(255,255,255,0.04); }
-        .db-modal-submit-btn {
-          flex: 2; background: #E8500A; color: #fff; border: none; border-radius: 8px;
-          padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
-          font-family: system-ui, sans-serif; transition: opacity 0.15s;
-        }
+        .db-modal-submit-btn { flex: 2; background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-modal-submit-btn:hover { opacity: 0.88; }
         .db-modal-submit-btn:disabled { opacity: 0.5; }
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
@@ -1064,8 +856,12 @@ export default function DashboardPage({
             >
               <span className="db-nav-icon">
                 <IconAnalytics />
+                {flaggedReviews > 0 && <span className="db-badge-dot" />}
               </span>
               {navExpanded && <span className="db-nav-label">Analytics</span>}
+              {navExpanded && flaggedReviews > 0 && (
+                <span className="db-badge-count">{flaggedReviews}</span>
+              )}
             </button>
             <button
               className="db-nav-utility db-nav-signout"
@@ -1139,20 +935,20 @@ export default function DashboardPage({
             )}
           </div>
 
-          {/* ANALYTICS OVERLAY */}
+          {/* ANALYTICS */}
           {showAnalytics && (
             <div className="db-analytics-overlay">
               <AnalyticsPage />
             </div>
           )}
 
-          {/* DASHBOARD BODY */}
+          {/* BODY */}
           <div
             className="db-body"
             style={{ display: showAnalytics ? "none" : "flex" }}
           >
-            {/* PANEL */}
             <div className="db-panel">
+              {/* ── RIDES ── */}
               {tab === "rides" && (
                 <>
                   <div className="db-panel-header">
@@ -1349,160 +1145,20 @@ export default function DashboardPage({
                 </>
               )}
 
+              {/* ── DRIVERS ── */}
               {tab === "drivers" && (
                 <>
                   <div className="db-panel-header">
-                    <div className="db-panel-title">All drivers</div>
+                    <div className="db-panel-title">Drivers</div>
                     <div className="db-panel-count">{drivers.length}</div>
                   </div>
                   <div className="db-panel-scroll">
-                    {drivers.map((driver) => (
-                      <div key={driver.id} className="db-driver-card">
-                        <div className="db-driver-card-top">
-                          <div className="db-driver-avatar">
-                            {((driver as any).profile?.name ?? "D")
-                              .split(" ")
-                              .map((n: string) => n[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div className="db-driver-name">
-                              {(driver as any).profile?.name ?? "Unknown"}
-                            </div>
-                            <div className="db-driver-sub">
-                              {driver.vehicle_make} {driver.vehicle_model} ·{" "}
-                              {driver.plate_number}
-                            </div>
-                          </div>
-                          <div
-                            className="db-online-dot"
-                            style={{
-                              background: driver.is_active
-                                ? "#1D9E75"
-                                : "#374151",
-                            }}
-                          />
-                        </div>
-                        <div className="db-driver-phone">
-                          {(driver as any).profile?.phone ?? ""}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {tab === "revenue" && (
-                <>
-                  <div className="db-panel-header">
-                    <div className="db-panel-title">Revenue overview</div>
-                    <div
-                      className="db-panel-count"
-                      style={{ color: "#1D9E75" }}
-                    >
-                      ${stats.revenueMonth.toFixed(2)}
-                    </div>
-                  </div>
-                  <div className="db-panel-scroll">
-                    <div className="db-revenue-grid">
-                      <div className="db-revenue-card">
-                        <div className="db-revenue-label">Today</div>
-                        <div className="db-revenue-value">
-                          ${stats.revenueToday.toFixed(2)}
-                        </div>
-                        <div className="db-revenue-sub">
-                          {stats.completedToday} rides
-                        </div>
-                      </div>
-                      <div className="db-revenue-card">
-                        <div className="db-revenue-label">This week</div>
-                        <div className="db-revenue-value">
-                          ${stats.revenueWeek.toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="db-revenue-card">
-                        <div className="db-revenue-label">This month</div>
-                        <div
-                          className="db-revenue-value"
-                          style={{ color: "#1D9E75" }}
-                        >
-                          ${stats.revenueMonth.toFixed(2)}
-                        </div>
-                      </div>
-                      <div className="db-revenue-card">
-                        <div className="db-revenue-label">Avg fare</div>
-                        <div className="db-revenue-value">
-                          ${stats.avgFare.toFixed(2)}
-                        </div>
-                      </div>
-                      <div
-                        className="db-revenue-card"
-                        style={{ gridColumn: "1 / -1" }}
-                      >
-                        <div className="db-revenue-label">Cancel rate</div>
-                        <div
-                          className="db-revenue-value"
-                          style={{
-                            color:
-                              stats.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
-                          }}
-                        >
-                          {stats.cancelRate.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-                    <div className="db-section-label">
-                      Per driver (this month)
-                    </div>
-                    {drivers.map((driver) => {
-                      const driverRides = rides.filter(
-                        (r) =>
-                          r.driver_id === driver.id &&
-                          r.status === "completed" &&
-                          new Date(r.created_at) >=
-                            new Date(
-                              new Date().getFullYear(),
-                              new Date().getMonth(),
-                              1,
-                            ),
-                      );
-                      const earnings = driverRides.reduce(
-                        (sum, r) =>
-                          sum + (r.fare_final ?? r.fare_estimate ?? 0),
-                        0,
-                      );
-                      return (
-                        <div key={driver.id} className="db-driver-rev-row">
-                          <div className="db-driver-rev-name">
-                            {(driver as any).profile?.name ?? "Unknown"}
-                          </div>
-                          <div className="db-driver-rev-stats">
-                            <span className="db-driver-rev-count">
-                              {driverRides.length} rides
-                            </span>
-                            <span className="db-driver-rev-amount">
-                              ${earnings.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {tab === "invites" && (
-                <>
-                  <div className="db-panel-header">
-                    <div className="db-panel-title">Driver registration</div>
-                  </div>
-                  <div className="db-panel-scroll">
-                    <div className="db-section-label">New invite</div>
+                    {/* Add driver */}
+                    <div className="db-section-label">Add driver</div>
                     <form onSubmit={createInvite} className="db-invite-form">
                       <input
                         className="db-invite-input"
-                        placeholder="Driver full name"
+                        placeholder="Full name"
                         value={inviteName}
                         onChange={(e) => setInviteName(e.target.value)}
                       />
@@ -1559,247 +1215,89 @@ export default function DashboardPage({
                         </button>
                       </div>
                     )}
-                    <div className="db-section-label">
-                      Pending ({pendingInvites.length})
-                    </div>
-                    {pendingInvites.length === 0 && (
-                      <div className="db-empty">No pending invites</div>
-                    )}
-                    {pendingInvites.map((invite) => (
-                      <div key={invite.id} className="db-invite-card">
-                        <div className="db-invite-card-top">
-                          <div className="db-invite-name">{invite.name}</div>
-                          <span
-                            className="db-status-badge"
-                            style={{
-                              background: "#F59E0B18",
-                              color: "#F59E0B",
-                              border: "1px solid #F59E0B30",
-                            }}
-                          >
-                            Pending
-                          </span>
-                        </div>
-                        <div className="db-invite-phone">{invite.phone}</div>
-                        <div className="db-invite-code-row">
-                          <span className="db-invite-code">{invite.code}</span>
-                          <button
-                            className="db-revoke-btn"
-                            onClick={() => revokeInvite(invite.id)}
-                          >
-                            Revoke
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="db-section-label">
-                      Registered ({usedInvites.length})
-                    </div>
-                    {usedInvites.length === 0 && (
-                      <div className="db-empty">No registered drivers yet</div>
-                    )}
-                    {usedInvites.map((invite) => (
-                      <div
-                        key={invite.id}
-                        className="db-invite-card"
-                        style={{ borderColor: "rgba(29,158,117,0.15)" }}
-                      >
-                        <div className="db-invite-card-top">
-                          <div className="db-invite-name">{invite.name}</div>
-                          <span
-                            className="db-status-badge"
-                            style={{
-                              background: "#1D9E7518",
-                              color: "#1D9E75",
-                              border: "1px solid #1D9E7530",
-                            }}
-                          >
-                            ✓ Registered
-                          </span>
-                        </div>
-                        <div className="db-invite-phone">{invite.phone}</div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#4B5563",
-                            marginTop: 2,
-                          }}
-                        >
-                          {new Date(invite.created_at).toLocaleDateString(
-                            "en-CA",
-                            { month: "short", day: "numeric", year: "numeric" },
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
 
-              {tab === "reviews" && (
-                <>
-                  <div className="db-panel-header">
-                    <div className="db-panel-title">Ride reviews</div>
-                    <div className="db-panel-count">{reviews.length}</div>
-                  </div>
-                  <div className="db-panel-scroll">
-                    <div className="db-reviews-tabs">
-                      {(["recent", "drivers"] as const).map((t) => (
-                        <button
-                          key={t}
-                          className={`db-reviews-tab${reviewsTab === t ? " active" : ""}`}
-                          onClick={() => setReviewsTab(t)}
-                        >
-                          {t === "recent" ? "Recent" : "By Driver"}
-                        </button>
-                      ))}
-                    </div>
-                    {reviewsLoading ? (
-                      <div className="db-empty">Loading…</div>
-                    ) : reviewsTab === "recent" ? (
-                      reviews.length === 0 ? (
-                        <div className="db-empty">No reviews yet</div>
-                      ) : (
-                        reviews.map((rv) => (
-                          <div
-                            key={rv.id}
-                            className={`db-review-card${rv.rating <= 2 ? " flagged" : ""}`}
-                          >
-                            {rv.rating <= 2 && (
-                              <div className="db-review-flag">
-                                ⚠ Low rating — may need follow-up
+                    {/* Pending invites — only shown when there are some */}
+                    {pendingInvites.length > 0 && (
+                      <>
+                        <div className="db-section-label">
+                          Pending invites ({pendingInvites.length})
+                        </div>
+                        {pendingInvites.map((invite) => (
+                          <div key={invite.id} className="db-invite-card">
+                            <div className="db-invite-card-top">
+                              <div className="db-invite-name">
+                                {invite.name}
                               </div>
-                            )}
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: 6,
-                              }}
-                            >
-                              <div>
-                                <span
-                                  style={{
-                                    color: "#F59E0B",
-                                    fontSize: 13,
-                                    letterSpacing: 1,
-                                  }}
-                                >
-                                  {"★".repeat(rv.rating)}
-                                  {"☆".repeat(5 - rv.rating)}
-                                </span>
-                                <span
-                                  style={{
-                                    fontSize: 11,
-                                    color: "#4B5563",
-                                    marginLeft: 5,
-                                  }}
-                                >
-                                  {rv.rating}/5
-                                </span>
-                              </div>
-                              <span style={{ fontSize: 10, color: "#374151" }}>
-                                {new Date(rv.created_at).toLocaleDateString(
-                                  "en-CA",
-                                  { month: "short", day: "numeric" },
-                                )}
-                              </span>
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: "#6B7280",
-                                marginBottom: 2,
-                              }}
-                            >
-                              <span style={{ color: "#4B5563" }}>Driver: </span>
-                              {rv.driver_name ?? "—"}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: "#6B7280",
-                                marginBottom: 4,
-                              }}
-                            >
-                              <span style={{ color: "#4B5563" }}>
-                                Passenger:{" "}
-                              </span>
-                              {rv.passenger_name ?? "—"}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 10,
-                                color: "#4B5563",
-                                marginBottom: rv.comment ? 6 : 0,
-                              }}
-                            >
-                              {rv.pickup_address} → {rv.dropoff_address}
-                            </div>
-                            {rv.comment && (
-                              <div
+                              <span
+                                className="db-status-badge"
                                 style={{
-                                  background: "rgba(255,255,255,0.03)",
-                                  borderRadius: 6,
-                                  padding: "6px 10px",
-                                  borderLeft: "2px solid #2D3F52",
-                                  fontSize: 12,
-                                  color: "#6B7280",
-                                  fontStyle: "italic",
+                                  background: "#F59E0B18",
+                                  color: "#F59E0B",
+                                  border: "1px solid #F59E0B30",
                                 }}
                               >
-                                "{rv.comment}"
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )
-                    ) : driverRatings.length === 0 ? (
-                      <div className="db-empty">No driver ratings yet</div>
-                    ) : (
-                      driverRatings.map((ds) => (
-                        <div
-                          key={ds.driver_id}
-                          className={`db-review-card${ds.flagged > 0 ? " flagged" : ""}`}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                          }}
-                        >
-                          <div>
-                            <div className="db-ride-name">
-                              {ds.driver_name ?? "Unknown"}
+                                Pending
+                              </span>
                             </div>
-                            <div style={{ fontSize: 11, color: "#4B5563" }}>
-                              {ds.count} rating{ds.count !== 1 ? "s" : ""}
-                              {ds.flagged > 0 && (
-                                <span style={{ color: "#F87171" }}>
-                                  {" "}
-                                  · {ds.flagged} low
-                                </span>
-                              )}
+                            <div className="db-invite-phone">
+                              {invite.phone}
+                            </div>
+                            <div className="db-invite-code-row">
+                              <span className="db-invite-code">
+                                {invite.code}
+                              </span>
+                              <button
+                                className="db-revoke-btn"
+                                onClick={() => revokeInvite(invite.id)}
+                              >
+                                Revoke
+                              </button>
                             </div>
                           </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ color: "#F59E0B", fontSize: 13 }}>
-                              {"★".repeat(Math.round(ds.average))}
-                              {"☆".repeat(5 - Math.round(ds.average))}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 14,
-                                fontWeight: 700,
-                                color: "#F59E0B",
-                              }}
-                            >
-                              {ds.average.toFixed(1)}/5
-                            </div>
-                          </div>
-                        </div>
-                      ))
+                        ))}
+                      </>
                     )}
+
+                    {/* Driver list */}
+                    <div className="db-section-label">
+                      All drivers ({drivers.length})
+                    </div>
+                    {drivers.length === 0 && (
+                      <div className="db-empty">No drivers registered yet</div>
+                    )}
+                    {drivers.map((driver) => (
+                      <div key={driver.id} className="db-driver-card">
+                        <div className="db-driver-card-top">
+                          <div className="db-driver-avatar">
+                            {((driver as any).profile?.name ?? "D")
+                              .split(" ")
+                              .map((n: string) => n[0])
+                              .join("")
+                              .slice(0, 2)}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div className="db-driver-name">
+                              {(driver as any).profile?.name ?? "Unknown"}
+                            </div>
+                            <div className="db-driver-sub">
+                              {driver.vehicle_make} {driver.vehicle_model} ·{" "}
+                              {driver.plate_number}
+                            </div>
+                          </div>
+                          <div
+                            className="db-online-dot"
+                            style={{
+                              background: driver.is_active
+                                ? "#1D9E75"
+                                : "#374151",
+                            }}
+                          />
+                        </div>
+                        <div className="db-driver-phone">
+                          {(driver as any).profile?.phone ?? ""}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </>
               )}
