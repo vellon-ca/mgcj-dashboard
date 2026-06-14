@@ -157,6 +157,242 @@ interface Stats {
   cancelRate: number;
 }
 
+// ── Driver Detail Panel ───────────────────────────────────────────────────────
+function DriverDetailPanel({
+  driver,
+  rides,
+  onClose,
+}: {
+  driver: any;
+  rides: Ride[];
+  onClose: () => void;
+}) {
+  const [history, setHistory] = useState<any[]>([]);
+  const [avgRating, setAvgRating] = useState<number | null>(null);
+  const [totalRides, setTotalRides] = useState(0);
+  const [openReports, setOpenReports] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchDriverDetail();
+  }, [driver.id]);
+
+  async function fetchDriverDetail() {
+    setLoading(true);
+    const [ridesRes, reviewsRes, reportsRes] = await Promise.all([
+      supabase
+        .from("rides")
+        .select(
+          "id, status, pickup_address, dropoff_address, fare_final, fare_estimate, created_at, passenger_id",
+        )
+        .eq("driver_id", driver.id)
+        .order("created_at", { ascending: false })
+        .limit(30),
+      supabase.from("ride_reviews").select("rating").eq("driver_id", driver.id),
+      supabase
+        .from("driver_reports")
+        .select("id")
+        .eq("driver_id", driver.id)
+        .eq("status", "open"),
+    ]);
+
+    const rideRows = ridesRes.data ?? [];
+    const passengerIds = rideRows
+      .map((r: any) => r.passenger_id)
+      .filter(Boolean);
+    const nameMap = new Map<string, string>();
+    if (passengerIds.length) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name")
+        .in("id", [...new Set(passengerIds)]);
+      profiles?.forEach((p: any) => nameMap.set(p.id, p.name ?? "—"));
+    }
+
+    const enriched = rideRows.map((r: any) => ({
+      ...r,
+      passenger_name: nameMap.get(r.passenger_id) ?? "—",
+    }));
+
+    const reviews = reviewsRes.data ?? [];
+    const avg = reviews.length
+      ? reviews.reduce((s: number, r: any) => s + r.rating, 0) / reviews.length
+      : null;
+
+    setHistory(enriched);
+    setTotalRides(rideRows.filter((r: any) => r.status === "completed").length);
+    setAvgRating(avg);
+    setOpenReports(reportsRes.data?.length ?? 0);
+    setLoading(false);
+  }
+
+  const name = driver.profile?.name ?? "Unknown";
+  const avatarUrl = driver.profile?.avatar_url ?? null;
+  const initials = name
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .slice(0, 2);
+  const activeRide = rides.find(
+    (r) =>
+      r.driver_id === driver.id &&
+      ["assigned", "driver_arriving", "in_progress"].includes(r.status),
+  );
+
+  return (
+    <div className="dd-panel">
+      <div className="dd-header">
+        <button className="dd-back" onClick={onClose}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+          Back to map
+        </button>
+      </div>
+
+      <div className="dd-scroll">
+        {/* Profile */}
+        <div className="dd-profile">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              className="dd-avatar-photo"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <div className="dd-avatar-initials">{initials}</div>
+          )}
+          <div className="dd-profile-info">
+            <div className="dd-profile-name">{name}</div>
+            <div className="dd-profile-sub">
+              {driver.vehicle_make} {driver.vehicle_model} ·{" "}
+              {driver.plate_number ?? "—"}
+            </div>
+            <div className="dd-profile-phone">
+              {driver.profile?.phone ?? "—"}
+            </div>
+          </div>
+          <div
+            className="dd-status-dot"
+            style={{ background: driver.is_active ? "#1D9E75" : "#374151" }}
+          />
+        </div>
+
+        {/* Status pills */}
+        <div className="dd-status-row">
+          {driver.is_active ? (
+            activeRide ? (
+              <span className="dd-pill dd-pill-orange">● On a ride</span>
+            ) : (
+              <span className="dd-pill dd-pill-green">● Available</span>
+            )
+          ) : (
+            <span className="dd-pill dd-pill-gray">Offline</span>
+          )}
+          {openReports > 0 && (
+            <span className="dd-pill dd-pill-red">
+              ⚠ {openReports} open report{openReports > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="dd-stats">
+          <div className="dd-stat-box">
+            <div className="dd-stat-val">{totalRides}</div>
+            <div className="dd-stat-lbl">Completed</div>
+          </div>
+          <div className="dd-stat-box">
+            <div
+              className="dd-stat-val"
+              style={{
+                color:
+                  avgRating !== null
+                    ? avgRating >= 4
+                      ? "#1D9E75"
+                      : avgRating >= 3
+                        ? "#F59E0B"
+                        : "#E24B4A"
+                    : "#4B5563",
+              }}
+            >
+              {avgRating !== null ? `★ ${avgRating.toFixed(1)}` : "—"}
+            </div>
+            <div className="dd-stat-lbl">Avg rating</div>
+          </div>
+          <div className="dd-stat-box">
+            <div
+              className="dd-stat-val"
+              style={{ color: openReports > 0 ? "#F87171" : "#F1F5F9" }}
+            >
+              {openReports}
+            </div>
+            <div className="dd-stat-lbl">Open reports</div>
+          </div>
+        </div>
+
+        {/* Ride history */}
+        <div className="dd-section-label">Ride history</div>
+        {loading ? (
+          <div className="dd-empty">Loading…</div>
+        ) : history.length === 0 ? (
+          <div className="dd-empty">No rides yet</div>
+        ) : (
+          history.map((ride) => (
+            <div key={ride.id} className="dd-ride-row">
+              <div className="dd-ride-row-left">
+                <span
+                  className="db-status-badge"
+                  style={{
+                    background: STATUS_COLORS[ride.status] + "18",
+                    color: STATUS_COLORS[ride.status],
+                    border: `1px solid ${STATUS_COLORS[ride.status]}30`,
+                    fontSize: 10,
+                  }}
+                >
+                  {STATUS_LABELS[ride.status]}
+                </span>
+                <div className="dd-ride-passenger">{ride.passenger_name}</div>
+                <div className="dd-ride-addr">
+                  {ride.pickup_address} → {ride.dropoff_address}
+                </div>
+                <div className="dd-ride-time">
+                  {new Date(ride.created_at).toLocaleString("en-CA", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  } as any)}
+                </div>
+              </div>
+              <div className="dd-ride-fare">
+                {ride.fare_final
+                  ? `$${ride.fare_final.toFixed(2)}`
+                  : ride.fare_estimate
+                    ? `$${ride.fare_estimate.toFixed(2)}`
+                    : "—"}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard Page ────────────────────────────────────────────────────────────
 export default function DashboardPage({
   profile,
   onSignOut,
@@ -186,6 +422,7 @@ export default function DashboardPage({
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
+  const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
@@ -256,13 +493,18 @@ export default function DashboardPage({
   }, []);
 
   useEffect(() => {
-    if (!showAnalytics && !showReports && googleMapRef.current) {
+    if (
+      !showAnalytics &&
+      !showReports &&
+      !selectedDriver &&
+      googleMapRef.current
+    ) {
       setTimeout(() => {
         if (googleMapRef.current)
           google.maps.event.trigger(googleMapRef.current, "resize");
       }, 50);
     }
-  }, [showAnalytics, showReports]);
+  }, [showAnalytics, showReports, selectedDriver]);
 
   useEffect(() => {
     fetchAll();
@@ -302,16 +544,25 @@ export default function DashboardPage({
 
   async function batchProfiles(
     ids: string[],
-  ): Promise<Map<string, { name: string; phone: string }>> {
+  ): Promise<
+    Map<string, { name: string; phone: string; avatar_url: string | null }>
+  > {
     const unique = [...new Set(ids.filter(Boolean))];
     if (!unique.length) return new Map();
     const { data } = await supabase
       .from("profiles")
-      .select("id, name, phone")
+      .select("id, name, phone, avatar_url")
       .in("id", unique);
-    const map = new Map<string, { name: string; phone: string }>();
+    const map = new Map<
+      string,
+      { name: string; phone: string; avatar_url: string | null }
+    >();
     data?.forEach((p: any) =>
-      map.set(p.id, { name: p.name ?? "—", phone: p.phone ?? "" }),
+      map.set(p.id, {
+        name: p.name ?? "—",
+        phone: p.phone ?? "",
+        avatar_url: p.avatar_url ?? null,
+      }),
     );
     return map;
   }
@@ -358,6 +609,13 @@ export default function DashboardPage({
       ...s,
       driversOnline: enriched.filter((d: any) => d.is_active).length,
     }));
+
+    // Refresh selectedDriver with fresh data
+    setSelectedDriver((prev: any) => {
+      if (!prev) return null;
+      return enriched.find((d: any) => d.id === prev.id) ?? prev;
+    });
+
     if (!googleMapRef.current) return;
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
@@ -506,15 +764,13 @@ export default function DashboardPage({
     if (!inviteName.trim() || !invitePhone.trim()) return;
     setInviteLoading(true);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const { error } = await supabase
-      .from("driver_invites")
-      .insert({
-        name: inviteName.trim(),
-        phone: invitePhone.trim(),
-        code,
-        used: false,
-        created_by: profile.id,
-      });
+    const { error } = await supabase.from("driver_invites").insert({
+      name: inviteName.trim(),
+      phone: invitePhone.trim(),
+      code,
+      used: false,
+      created_by: profile.id,
+    });
     setInviteLoading(false);
     if (error) {
       alert(error.message);
@@ -622,16 +878,13 @@ export default function DashboardPage({
     try {
       const phone = bookPassenger.trim();
 
-      // Look up passenger by phone
       let { data: passengerProfile } = await supabase
         .from("profiles")
         .select("id, name")
         .eq("phone", phone)
         .maybeSingle();
 
-      // If not found, create a guest profile via anonymous auth
       if (!passengerProfile) {
-        // Grab tokens synchronously before anything async
         const currentSession = (await supabase.auth.getSession()).data.session;
         const savedAccessToken = currentSession?.access_token;
         const savedRefreshToken = currentSession?.refresh_token;
@@ -644,13 +897,10 @@ export default function DashboardPage({
           return;
         }
 
-        // Create anonymous auth user
         const { data: anonData, error: anonError } =
           await supabase.auth.signInAnonymously();
 
         if (anonError || !anonData.user) {
-          console.error("Anonymous auth error:", anonError);
-          // Restore dispatch session before returning
           await supabase.auth.setSession({
             access_token: savedAccessToken,
             refresh_token: savedRefreshToken,
@@ -663,11 +913,7 @@ export default function DashboardPage({
         }
 
         const guestId = anonData.user.id;
-        console.log("Created anon user:", guestId);
 
-        // Upsert profile linked to the anonymous auth user
-        // (a DB trigger may auto-create a bare profile row on signup,
-        //  so upsert updates it rather than colliding)
         const { data: newProfile, error: insertError } = await supabase
           .from("profiles")
           .upsert(
@@ -682,14 +928,6 @@ export default function DashboardPage({
           .select("id, name")
           .single();
 
-        console.log(
-          "Profile insert result:",
-          newProfile,
-          "error:",
-          insertError,
-        );
-
-        // Restore dispatch session immediately — before any early returns
         const { data: restoreData, error: restoreError } =
           await supabase.auth.setSession({
             access_token: savedAccessToken,
@@ -850,20 +1088,15 @@ export default function DashboardPage({
         .db-nav-utility .db-nav-label { color: #374151; }
         .db-nav-utility:hover .db-nav-label { color: #9CA3AF; }
         .db-nav-analytics .db-nav-icon { color: #6B7280; }
-        .db-nav-analytics:hover .db-nav-icon,
-        .db-nav-analytics.active-util .db-nav-icon { color: #A855F7; }
+        .db-nav-analytics:hover .db-nav-icon, .db-nav-analytics.active-util .db-nav-icon { color: #A855F7; }
         .db-nav-analytics .db-nav-label { color: #6B7280; }
-        .db-nav-analytics:hover .db-nav-label,
-        .db-nav-analytics.active-util .db-nav-label { color: #A855F7; }
+        .db-nav-analytics:hover .db-nav-label, .db-nav-analytics.active-util .db-nav-label { color: #A855F7; }
         .db-nav-reports .db-nav-icon { color: #6B7280; }
-        .db-nav-reports:hover .db-nav-icon,
-        .db-nav-reports.active-util .db-nav-icon { color: #F87171; }
+        .db-nav-reports:hover .db-nav-icon, .db-nav-reports.active-util .db-nav-icon { color: #F87171; }
         .db-nav-reports .db-nav-label { color: #6B7280; }
-        .db-nav-reports:hover .db-nav-label,
-        .db-nav-reports.active-util .db-nav-label { color: #F87171; }
+        .db-nav-reports:hover .db-nav-label, .db-nav-reports.active-util .db-nav-label { color: #F87171; }
         .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
         .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
-
         .db-badge-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: #E24B4A; border: 1.5px solid #0F1723; }
         .db-badge-count { margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 6px; }
 
@@ -917,9 +1150,11 @@ export default function DashboardPage({
         .db-cancel-assign-btn:hover { color: #9CA3AF; }
 
         /* DRIVER CARD */
-        .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); }
+        .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+        .db-driver-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
         .db-driver-avatar { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.12); }
+        .db-driver-avatar-photo { width: 34px; height: 34px; border-radius: 17px; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.18); }
         .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
         .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
         .db-driver-phone { font-size: 11px; color: #4B5563; margin-top: 3px; }
@@ -963,7 +1198,6 @@ export default function DashboardPage({
         .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
         .db-modal-input::placeholder { color: #374151; }
         .db-modal-select { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
-        /* Google Places autocomplete dropdown dark theme */
         .pac-container { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         .pac-item { padding: 8px 12px; color: #9CA3AF; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
         .pac-item:first-child { border-top: none; }
@@ -980,6 +1214,41 @@ export default function DashboardPage({
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; }
         .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
+
+        /* DRIVER DETAIL PANEL */
+        .dd-panel { position: absolute; inset: 0; background: #111827; display: flex; flex-direction: column; overflow: hidden; }
+        .dd-header { height: 48px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
+        .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
+        .dd-back:hover { color: #9CA3AF; }
+        .dd-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+        .dd-scroll::-webkit-scrollbar { width: 3px; }
+        .dd-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .dd-profile { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+        .dd-avatar-photo { width: 52px; height: 52px; border-radius: 26px; object-fit: cover; border: 2px solid rgba(74,158,255,0.2); flex-shrink: 0; }
+        .dd-avatar-initials { width: 52px; height: 52px; border-radius: 26px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 2px solid rgba(74,158,255,0.12); }
+        .dd-profile-info { flex: 1; min-width: 0; }
+        .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; }
+        .dd-profile-sub { font-size: 12px; color: #6B7280; margin-top: 2px; }
+        .dd-profile-phone { font-size: 12px; color: #4B5563; margin-top: 2px; }
+        .dd-status-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .dd-status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .dd-pill { font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 10px; }
+        .dd-pill-green { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); }
+        .dd-pill-orange { background: rgba(232,80,10,0.1); color: #E8500A; border: 1px solid rgba(232,80,10,0.2); }
+        .dd-pill-gray { background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2); }
+        .dd-pill-red { background: rgba(226,75,74,0.1); color: #F87171; border: 1px solid rgba(226,75,74,0.2); }
+        .dd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+        .dd-stat-box { background: #1E2A3A; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
+        .dd-stat-val { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+        .dd-stat-lbl { font-size: 10px; color: #4B5563; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+        .dd-section-label { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
+        .dd-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
+        .dd-ride-row { background: #1E2A3A; border-radius: 10px; padding: 11px 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .dd-ride-row-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .dd-ride-passenger { font-size: 12px; font-weight: 600; color: #E2E8F0; margin-top: 4px; }
+        .dd-ride-addr { font-size: 11px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dd-ride-time { font-size: 10px; color: #374151; }
+        .dd-ride-fare { font-size: 13px; font-weight: 600; color: #6B7280; white-space: nowrap; padding-top: 2px; }
       `}</style>
 
       <div className="db-page">
@@ -1004,6 +1273,7 @@ export default function DashboardPage({
                 onClick={() => {
                   setTab(t);
                   navigateTo("main");
+                  setSelectedDriver(null);
                 }}
               >
                 <span className="db-nav-icon">{NAV_ICONS[t]}</span>
@@ -1012,10 +1282,12 @@ export default function DashboardPage({
             ))}
           </div>
           <div className="db-nav-bottom">
-            {/* Analytics */}
             <button
               className={`db-nav-utility db-nav-analytics${showAnalytics ? " active-util" : ""}`}
-              onClick={() => navigateTo("analytics")}
+              onClick={() => {
+                navigateTo("analytics");
+                setSelectedDriver(null);
+              }}
             >
               <span className="db-nav-icon">
                 <IconAnalytics />
@@ -1028,10 +1300,12 @@ export default function DashboardPage({
                 <span className="db-badge-count">{flaggedReviews}</span>
               )}
             </button>
-            {/* Reports */}
             <button
               className={`db-nav-utility db-nav-reports${showReports ? " active-util" : ""}`}
-              onClick={() => navigateTo("reports")}
+              onClick={() => {
+                navigateTo("reports");
+                setSelectedDriver(null);
+              }}
             >
               <span className="db-nav-icon">
                 <IconReports />
@@ -1044,7 +1318,6 @@ export default function DashboardPage({
                 <span className="db-badge-count">{openReports}</span>
               )}
             </button>
-            {/* Sign out */}
             <button
               className="db-nav-utility db-nav-signout"
               onClick={onSignOut}
@@ -1061,8 +1334,12 @@ export default function DashboardPage({
         <div className="db-main">
           {/* TOP BAR */}
           <div className="db-topbar">
-            <span className="db-topbar-title">{topbarTitle}</span>
-            {!showAnalytics && !showReports && (
+            <span className="db-topbar-title">
+              {selectedDriver
+                ? (selectedDriver.profile?.name ?? "Driver")
+                : topbarTitle}
+            </span>
+            {!showAnalytics && !showReports && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -1096,7 +1373,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports ? (
+            {!showAnalytics && !showReports && !selectedDriver ? (
               <button
                 className="db-new-ride-btn"
                 onClick={() => setBookingOpen(true)}
@@ -1106,14 +1383,20 @@ export default function DashboardPage({
             ) : (
               <button
                 className="db-back-btn"
-                onClick={() => navigateTo("main")}
+                onClick={() => {
+                  if (selectedDriver) {
+                    setSelectedDriver(null);
+                    return;
+                  }
+                  navigateTo("main");
+                }}
               >
                 ← Back
               </button>
             )}
           </div>
 
-          {/* ANALYTICS — always mounted, hidden when not active */}
+          {/* ANALYTICS */}
           <div
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
@@ -1121,7 +1404,7 @@ export default function DashboardPage({
             <AnalyticsPage />
           </div>
 
-          {/* REPORTS — always mounted, hidden when not active */}
+          {/* REPORTS */}
           <div
             className="db-overlay"
             style={{ display: showReports ? "flex" : "none" }}
@@ -1166,7 +1449,10 @@ export default function DashboardPage({
                           <span className="db-ride-time">
                             {new Date(ride.created_at).toLocaleTimeString(
                               "en-CA",
-                              { hour: "numeric", minute: "2-digit" },
+                              {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              },
                             )}
                           </span>
                         </div>
@@ -1483,16 +1769,33 @@ export default function DashboardPage({
                             "in_progress",
                           ].includes(r.status),
                       );
+                      const avatarUrl = (driver as any).profile?.avatar_url;
                       return (
-                        <div key={driver.id} className="db-driver-card">
+                        <div
+                          key={driver.id}
+                          className="db-driver-card"
+                          onClick={() => setSelectedDriver(driver)}
+                        >
                           <div className="db-driver-card-top">
-                            <div className="db-driver-avatar">
-                              {((driver as any).profile?.name ?? "D")
-                                .split(" ")
-                                .map((n: string) => n[0])
-                                .join("")
-                                .slice(0, 2)}
-                            </div>
+                            {avatarUrl ? (
+                              <img
+                                src={avatarUrl}
+                                alt=""
+                                className="db-driver-avatar-photo"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display =
+                                    "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="db-driver-avatar">
+                                {((driver as any).profile?.name ?? "D")
+                                  .split(" ")
+                                  .map((n: string) => n[0])
+                                  .join("")
+                                  .slice(0, 2)}
+                              </div>
+                            )}
                             <div style={{ flex: 1 }}>
                               <div className="db-driver-name">
                                 {(driver as any).profile?.name ?? "Unknown"}
@@ -1532,9 +1835,20 @@ export default function DashboardPage({
               )}
             </div>
 
-            {/* MAP */}
+            {/* MAP + DRIVER DETAIL */}
             <div className="db-map-wrap">
-              <div ref={mapRef} className="db-map" />
+              {selectedDriver && (
+                <DriverDetailPanel
+                  driver={selectedDriver}
+                  rides={rides}
+                  onClose={() => setSelectedDriver(null)}
+                />
+              )}
+              <div
+                ref={mapRef}
+                className="db-map"
+                style={{ visibility: selectedDriver ? "hidden" : "visible" }}
+              />
             </div>
           </div>
         </div>
@@ -1549,7 +1863,6 @@ export default function DashboardPage({
               onSubmit={createManualBooking}
               style={{ display: "flex", flexDirection: "column", gap: 12 }}
             >
-              {/* Passenger phone */}
               <div>
                 <label className="db-modal-label">Passenger phone *</label>
                 <input
@@ -1560,8 +1873,6 @@ export default function DashboardPage({
                   required
                 />
               </div>
-
-              {/* Guest name — shown with subtle note */}
               <div>
                 <label className="db-modal-label">
                   Passenger name
@@ -1585,8 +1896,6 @@ export default function DashboardPage({
                   onChange={(e) => setBookPassengerName(e.target.value)}
                 />
               </div>
-
-              {/* Pickup */}
               <div style={{ position: "relative" }}>
                 <label className="db-modal-label">Pickup address *</label>
                 <input
@@ -1614,8 +1923,6 @@ export default function DashboardPage({
                   </span>
                 )}
               </div>
-
-              {/* Dropoff */}
               <div style={{ position: "relative" }}>
                 <label className="db-modal-label">Drop-off address *</label>
                 <input
@@ -1643,8 +1950,6 @@ export default function DashboardPage({
                   </span>
                 )}
               </div>
-
-              {/* Fare — auto-filled, still editable */}
               <div>
                 <label className="db-modal-label">
                   Estimated fare
@@ -1685,8 +1990,6 @@ export default function DashboardPage({
                   onChange={(e) => setBookFare(e.target.value)}
                 />
               </div>
-
-              {/* Assign driver */}
               <div>
                 <label className="db-modal-label">Assign driver</label>
                 <select
@@ -1703,8 +2006,6 @@ export default function DashboardPage({
                   ))}
                 </select>
               </div>
-
-              {/* Schedule */}
               <div>
                 <label className="db-modal-label">Schedule for</label>
                 <input
@@ -1714,8 +2015,6 @@ export default function DashboardPage({
                   onChange={(e) => setBookScheduled(e.target.value)}
                 />
               </div>
-
-              {/* Error */}
               {bookError && (
                 <div
                   style={{
@@ -1730,7 +2029,6 @@ export default function DashboardPage({
                   {bookError}
                 </div>
               )}
-
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button
                   className="db-modal-cancel-btn"
