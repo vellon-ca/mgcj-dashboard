@@ -28,7 +28,6 @@ const REASON_LABELS: Record<string, string> = {
 
 const HIGH_SEVERITY = new Set(["unsafe_driving", "harassment"]);
 
-const STATUS_OPTIONS = ["open", "reviewed", "dismissed"] as const;
 const STATUS_LABELS: Record<string, string> = {
   open: "Open",
   reviewed: "Reviewed",
