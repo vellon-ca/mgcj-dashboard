@@ -157,7 +157,7 @@ interface Stats {
   cancelRate: number;
 }
 
-// ── Driver Detail Panel ───────────────────────────────────────────────────────
+// Driver Detail Panel
 function DriverDetailPanel({
   driver,
   rides,
@@ -195,7 +195,6 @@ function DriverDetailPanel({
         .eq("driver_id", driver.id)
         .eq("status", "open"),
     ]);
-
     const rideRows = ridesRes.data ?? [];
     const passengerIds = rideRows
       .map((r: any) => r.passenger_id)
@@ -208,17 +207,14 @@ function DriverDetailPanel({
         .in("id", [...new Set(passengerIds)]);
       profiles?.forEach((p: any) => nameMap.set(p.id, p.name ?? "—"));
     }
-
     const enriched = rideRows.map((r: any) => ({
       ...r,
       passenger_name: nameMap.get(r.passenger_id) ?? "—",
     }));
-
     const reviews = reviewsRes.data ?? [];
     const avg = reviews.length
       ? reviews.reduce((s: number, r: any) => s + r.rating, 0) / reviews.length
       : null;
-
     setHistory(enriched);
     setTotalRides(rideRows.filter((r: any) => r.status === "completed").length);
     setAvgRating(avg);
@@ -258,9 +254,7 @@ function DriverDetailPanel({
           Back to map
         </button>
       </div>
-
       <div className="dd-scroll">
-        {/* Profile */}
         <div className="dd-profile">
           {avatarUrl ? (
             <img
@@ -289,8 +283,6 @@ function DriverDetailPanel({
             style={{ background: driver.is_active ? "#1D9E75" : "#374151" }}
           />
         </div>
-
-        {/* Status pills */}
         <div className="dd-status-row">
           {driver.is_active ? (
             activeRide ? (
@@ -307,8 +299,6 @@ function DriverDetailPanel({
             </span>
           )}
         </div>
-
-        {/* Stats */}
         <div className="dd-stats">
           <div className="dd-stat-box">
             <div className="dd-stat-val">{totalRides}</div>
@@ -342,8 +332,6 @@ function DriverDetailPanel({
             <div className="dd-stat-lbl">Open reports</div>
           </div>
         </div>
-
-        {/* Ride history */}
         <div className="dd-section-label">Ride history</div>
         {loading ? (
           <div className="dd-empty">Loading…</div>
@@ -392,7 +380,142 @@ function DriverDetailPanel({
   );
 }
 
-// ── Dashboard Page ────────────────────────────────────────────────────────────
+// Scheduled Ride Card
+function ScheduledRideCard({
+  ride,
+  assigningRide,
+  onlineDrivers,
+  onCardClick,
+  onAssign,
+  onCancelAssign,
+  onAssignDriver,
+  onCancel,
+}: {
+  ride: any;
+  assigningRide: string | null;
+  onlineDrivers: any[];
+  onCardClick: () => void;
+  onAssign: () => void;
+  onCancelAssign: () => void;
+  onAssignDriver: (driverId: string) => void;
+  onCancel: () => void;
+}) {
+  const scheduledDate = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
+  const formattedDate = scheduledDate
+    ? scheduledDate.toLocaleString("en-CA", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      } as any)
+    : "—";
+  const formattedTime = scheduledDate
+    ? scheduledDate.toLocaleTimeString("en-CA", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "—";
+
+  return (
+    <div className="db-sched-card" onClick={onCardClick}>
+      <div className="db-sched-datetime">
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ flexShrink: 0, marginTop: 1 }}
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span className="db-sched-date">{formattedDate}</span>
+        <span className="db-sched-time-val">{formattedTime}</span>
+      </div>
+      <div className="db-sched-body">
+        <div className="db-sched-name">
+          {(ride as any).passenger?.name ?? "Unknown passenger"}
+        </div>
+        <div className="db-sched-addr">{ride.pickup_address}</div>
+        <div className="db-sched-addr dest">{ride.dropoff_address}</div>
+        {ride.fare_estimate && (
+          <div className="db-sched-fare">${ride.fare_estimate.toFixed(2)}</div>
+        )}
+      </div>
+      {ride.driver_id && (
+        <div className="db-sched-driver-row">
+          <div className="db-sched-driver-dot" />
+          <span className="db-sched-driver-name">
+            {(ride as any).driver?.profile?.name ?? "Driver assigned"}
+          </span>
+        </div>
+      )}
+      {ride.status === "assigned" && !(ride as any).confirmed_by_driver && (
+        <div className="db-pending-badge" style={{ margin: "8px 12px 0" }}>
+          ⏳ Awaiting driver confirmation
+        </div>
+      )}
+      <div style={{ padding: "8px 12px 10px" }}>
+        {assigningRide === ride.id ? (
+          <>
+            <div className="db-assign-label" style={{ marginTop: 0 }}>
+              Assign driver:
+            </div>
+            {onlineDrivers.map((d) => (
+              <button
+                key={d.id}
+                className="db-assign-driver-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAssignDriver(d.id);
+                }}
+              >
+                {(d as any).profile?.name ?? "Driver"}
+              </button>
+            ))}
+            <button
+              className="db-cancel-assign-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancelAssign();
+              }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              className="db-sched-assign-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAssign();
+              }}
+            >
+              {ride.driver_id ? "Reassign driver" : "Assign driver"}
+            </button>
+            <button
+              className="db-cancel-ride-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCancel();
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Dashboard Page
 export default function DashboardPage({
   profile,
   onSignOut,
@@ -457,7 +580,6 @@ export default function DashboardPage({
   const [openReports, setOpenReports] = useState(0);
   const [navExpanded, setNavExpanded] = useState(false);
 
-  // ── Map init ──────────────────────────────────────────────────────────
   useEffect(() => {
     const tryInit = () => {
       if (mapInitialized.current) return;
@@ -574,11 +696,9 @@ export default function DashboardPage({
       .order("created_at", { ascending: false })
       .limit(150);
     if (!data) return;
-
     const passengerIds = data.map((r: any) => r.passenger_id).filter(Boolean);
     const driverIds = data.map((r: any) => r.driver_id).filter(Boolean);
     const profileMap = await batchProfiles([...passengerIds, ...driverIds]);
-
     const enriched = data.map((ride: any) => ({
       ...ride,
       passenger: profileMap.get(ride.passenger_id) ?? null,
@@ -597,9 +717,7 @@ export default function DashboardPage({
       .select("*")
       .order("is_active", { ascending: false });
     if (!data) return;
-
     const profileMap = await batchProfiles(data.map((d: any) => d.id));
-
     const enriched = data.map((d: any) => ({
       ...d,
       profile: profileMap.get(d.id) ?? null,
@@ -609,13 +727,10 @@ export default function DashboardPage({
       ...s,
       driversOnline: enriched.filter((d: any) => d.is_active).length,
     }));
-
-    // Refresh selectedDriver with fresh data
     setSelectedDriver((prev: any) => {
       if (!prev) return null;
       return enriched.find((d: any) => d.id === prev.id) ?? prev;
     });
-
     if (!googleMapRef.current) return;
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
@@ -787,7 +902,6 @@ export default function DashboardPage({
     fetchInvites();
   }
 
-  // ── Autocomplete init when booking modal opens ────────────────────
   useEffect(() => {
     if (!bookingOpen) return;
     const tryInit = () => {
@@ -844,7 +958,6 @@ export default function DashboardPage({
     };
   }, [bookingOpen]);
 
-  // ── Auto-calculate fare when both coords are set ──────────────────
   useEffect(() => {
     if (!bookPickupCoords || !bookDropoffCoords) return;
     if (!(window as any).google?.maps) return;
@@ -864,8 +977,9 @@ export default function DashboardPage({
         setBookFareLoading(false);
         if (status === "OK" && response) {
           const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
-          const fare = Math.round((4 + (metres / 1000) * 1.8) * 100) / 100;
-          setBookFare(fare.toFixed(2));
+          setBookFare(
+            (Math.round((4 + (metres / 1000) * 1.8) * 100) / 100).toFixed(2),
+          );
         }
       },
     );
@@ -877,18 +991,15 @@ export default function DashboardPage({
     setBookError(null);
     try {
       const phone = bookPassenger.trim();
-
       let { data: passengerProfile } = await supabase
         .from("profiles")
         .select("id, name")
         .eq("phone", phone)
         .maybeSingle();
-
       if (!passengerProfile) {
         const currentSession = (await supabase.auth.getSession()).data.session;
         const savedAccessToken = currentSession?.access_token;
         const savedRefreshToken = currentSession?.refresh_token;
-
         if (!savedAccessToken || !savedRefreshToken) {
           setBookError(
             "Session error — please refresh the page and try again.",
@@ -896,10 +1007,8 @@ export default function DashboardPage({
           setBookLoading(false);
           return;
         }
-
         const { data: anonData, error: anonError } =
           await supabase.auth.signInAnonymously();
-
         if (anonError || !anonData.user) {
           await supabase.auth.setSession({
             access_token: savedAccessToken,
@@ -911,9 +1020,7 @@ export default function DashboardPage({
           setBookLoading(false);
           return;
         }
-
         const guestId = anonData.user.id;
-
         const { data: newProfile, error: insertError } = await supabase
           .from("profiles")
           .upsert(
@@ -927,7 +1034,6 @@ export default function DashboardPage({
           )
           .select("id, name")
           .single();
-
         const { data: restoreData, error: restoreError } =
           await supabase.auth.setSession({
             access_token: savedAccessToken,
@@ -939,7 +1045,6 @@ export default function DashboardPage({
           "error:",
           restoreError,
         );
-
         if (insertError || !newProfile) {
           setBookError(
             `Could not create guest profile: ${insertError?.message ?? "unknown error"} (code: ${insertError?.code})`,
@@ -947,24 +1052,17 @@ export default function DashboardPage({
           setBookLoading(false);
           return;
         }
-
         passengerProfile = newProfile;
       }
-
-      const pickup_lat = bookPickupCoords?.lat ?? 45.0773;
-      const pickup_lng = bookPickupCoords?.lng ?? -64.3601;
-      const dropoff_lat = bookDropoffCoords?.lat ?? 45.0773;
-      const dropoff_lng = bookDropoffCoords?.lng ?? -64.3601;
-
       const rideData: any = {
         passenger_id: passengerProfile.id,
         status: "pending",
         pickup_address: bookPickup.trim(),
-        pickup_lat,
-        pickup_lng,
+        pickup_lat: bookPickupCoords?.lat ?? 45.0773,
+        pickup_lng: bookPickupCoords?.lng ?? -64.3601,
         dropoff_address: bookDropoff.trim(),
-        dropoff_lat,
-        dropoff_lng,
+        dropoff_lat: bookDropoffCoords?.lat ?? 45.0773,
+        dropoff_lng: bookDropoffCoords?.lng ?? -64.3601,
         fare_estimate: parseFloat(bookFare) || null,
         payment_method: "cash",
       };
@@ -976,14 +1074,12 @@ export default function DashboardPage({
         rideData.driver_id = bookDriver;
         rideData.status = bookScheduled ? "scheduled" : "assigned";
       }
-
       const { error } = await supabase.from("rides").insert(rideData);
       if (error) {
         setBookError(error.message);
         setBookLoading(false);
         return;
       }
-
       setBookingOpen(false);
       setBookPassenger("");
       setBookPassengerName("");
@@ -1025,17 +1121,34 @@ export default function DashboardPage({
     setShowReports(dest === "reports");
   }
 
-  const activeRides = rides.filter((r) =>
-    ["pending", "assigned", "driver_arriving", "in_progress"].includes(
-      r.status,
-    ),
+  const activeRides = rides.filter(
+    (r) =>
+      ["pending", "assigned", "driver_arriving", "in_progress"].includes(
+        r.status,
+      ) &&
+      !(
+        (r as any).scheduled_at &&
+        new Date((r as any).scheduled_at) > new Date()
+      ),
   );
-  const scheduledRides = rides.filter((r) => r.status === "scheduled");
+  const scheduledRides = rides
+    .filter(
+      (r) =>
+        (r as any).scheduled_at &&
+        new Date((r as any).scheduled_at) > new Date() &&
+        !["completed", "cancelled", "in_progress", "driver_arriving"].includes(
+          r.status,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        new Date((a as any).scheduled_at).getTime() -
+        new Date((b as any).scheduled_at).getTime(),
+    );
   const recentRides = rides
     .filter((r) => ["completed", "cancelled"].includes(r.status))
     .slice(0, 30);
   const onlineDrivers = drivers.filter((d) => d.is_active);
-
   const topbarTitle = showAnalytics
     ? "Analytics"
     : showReports
@@ -1064,8 +1177,6 @@ export default function DashboardPage({
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
         .db-page { display: flex; height: 100vh; background: #111827; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; position: relative; }
-
-        /* NAV RAIL */
         .db-nav { width: 56px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; align-items: center; padding: 0; flex-shrink: 0; z-index: 30; transition: width 0.18s cubic-bezier(0.4,0,0.2,1); overflow: hidden; }
         .db-nav.expanded { width: 196px; }
         .db-nav-logo { width: 100%; height: 54px; display: flex; align-items: center; padding: 0 18px; flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
@@ -1075,11 +1186,9 @@ export default function DashboardPage({
         .db-nav-item:hover { background: rgba(255,255,255,0.05); }
         .db-nav-item.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
         .db-nav-icon { color: #4B5563; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
-        .db-nav-item:hover .db-nav-icon { color: #9CA3AF; }
-        .db-nav-item.active .db-nav-icon { color: #E8500A; }
+        .db-nav-item:hover .db-nav-icon, .db-nav-item.active .db-nav-icon { color: #E8500A; }
         .db-nav-label { font-size: 13px; font-weight: 500; color: #4B5563; transition: color 0.12s; }
-        .db-nav-item:hover .db-nav-label { color: #9CA3AF; }
-        .db-nav-item.active .db-nav-label { color: #E8500A; }
+        .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: #E8500A; }
         .db-nav-bottom { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); width: 100%; display: flex; flex-direction: column; }
         .db-nav-utility { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
         .db-nav-utility:hover { background: rgba(255,255,255,0.05); }
@@ -1099,8 +1208,6 @@ export default function DashboardPage({
         .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
         .db-badge-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: #E24B4A; border: 1.5px solid #0F1723; }
         .db-badge-count { margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 6px; }
-
-        /* MAIN */
         .db-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
         .db-topbar { height: 54px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 20px; gap: 20px; flex-shrink: 0; z-index: 20; }
         .db-topbar-title { font-size: 14px; font-weight: 600; color: #F1F5F9; margin-right: auto; }
@@ -1113,11 +1220,7 @@ export default function DashboardPage({
         .db-new-ride-btn:hover { opacity: 0.88; }
         .db-back-btn { background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; }
         .db-back-btn:hover { color: #9CA3AF; border-color: rgba(255,255,255,0.15); }
-
-        /* BODY */
         .db-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
-
-        /* PANEL */
         .db-panel { width: 336px; background: #111827; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
         .db-panel-header { padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
         .db-panel-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; }
@@ -1125,10 +1228,10 @@ export default function DashboardPage({
         .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
         .db-panel-scroll::-webkit-scrollbar { width: 3px; }
         .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
-        .db-section-label { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 12px 2px 6px; }
+        .db-section-divider { margin: 10px 0 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+        .db-section-divider-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
+        .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; }
         .db-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
-
-        /* RIDE CARD */
         .db-ride-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
         .db-ride-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
@@ -1148,8 +1251,23 @@ export default function DashboardPage({
         .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
         .db-cancel-assign-btn { background: transparent; color: #4B5563; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
         .db-cancel-assign-btn:hover { color: #9CA3AF; }
-
-        /* DRIVER CARD */
+        .db-cancel-ride-btn { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
+        .db-cancel-ride-btn:hover { background: rgba(226,75,74,0.14); }
+        .db-sched-card { background: #1a1f2e; border-radius: 10px; margin-bottom: 6px; border: 1px solid rgba(168,85,247,0.2); border-left: 3px solid #A855F7; cursor: pointer; overflow: hidden; transition: border-color 0.12s, background 0.12s; }
+        .db-sched-card:hover { background: #1e2438; border-color: rgba(168,85,247,0.35); border-left-color: #A855F7; }
+        .db-sched-datetime { display: flex; align-items: center; gap: 6px; background: rgba(168,85,247,0.08); padding: 7px 12px; border-bottom: 1px solid rgba(168,85,247,0.12); color: #A855F7; }
+        .db-sched-date { font-size: 11px; font-weight: 600; color: #C084FC; flex: 1; }
+        .db-sched-time-val { font-size: 12px; font-weight: 700; color: #E9D5FF; }
+        .db-sched-body { padding: 10px 12px 0; }
+        .db-sched-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
+        .db-sched-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-sched-addr.dest { color: rgba(232,80,10,0.8); }
+        .db-sched-fare { font-size: 12px; font-weight: 600; color: #6B7280; margin-top: 4px; }
+        .db-sched-driver-row { display: flex; align-items: center; gap: 6px; margin: 8px 12px 0; padding: 5px 8px; background: rgba(29,158,117,0.06); border: 1px solid rgba(29,158,117,0.15); border-radius: 6px; }
+        .db-sched-driver-dot { width: 6px; height: 6px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
+        .db-sched-driver-name { font-size: 11px; font-weight: 500; color: #1D9E75; }
+        .db-sched-assign-btn { flex: 1; background: rgba(168,85,247,0.07); color: #C084FC; border: 1px solid rgba(168,85,247,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .db-sched-assign-btn:hover { background: rgba(168,85,247,0.13); }
         .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
         .db-driver-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -1161,8 +1279,6 @@ export default function DashboardPage({
         .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
         .db-driver-status-on-ride { font-size: 11px; color: #E8500A; margin-top: 3px; font-weight: 500; }
         .db-driver-status-available { font-size: 11px; color: #1D9E75; margin-top: 3px; font-weight: 500; }
-
-        /* INVITES */
         .db-invite-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
         .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
@@ -1179,17 +1295,9 @@ export default function DashboardPage({
         .db-invite-code { font-size: 15px; font-weight: 700; color: #E8500A; letter-spacing: 0.18em; }
         .db-revoke-btn { background: rgba(226,75,74,0.08); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
         .db-revoke-btn:hover { background: rgba(226,75,74,0.14); }
-        .db-cancel-ride-btn { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .db-cancel-ride-btn:hover { background: rgba(226,75,74,0.14); }
-
-        /* MAP */
         .db-map-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
         .db-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-
-        /* OVERLAYS */
         .db-overlay { flex: 1; overflow: hidden; background: #111827; display: flex; flex-direction: column; }
-
-        /* MODAL */
         .db-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
         .db-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
         .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
@@ -1214,8 +1322,6 @@ export default function DashboardPage({
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; }
         .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
-
-        /* DRIVER DETAIL PANEL */
         .dd-panel { position: absolute; inset: 0; background: #111827; display: flex; flex-direction: column; overflow: hidden; }
         .dd-header { height: 48px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
         .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
@@ -1252,7 +1358,6 @@ export default function DashboardPage({
       `}</style>
 
       <div className="db-page">
-        {/* NAV RAIL */}
         <nav
           className={`db-nav${navExpanded ? " expanded" : ""}`}
           onMouseEnter={() => setNavExpanded(true)}
@@ -1330,9 +1435,7 @@ export default function DashboardPage({
           </div>
         </nav>
 
-        {/* MAIN */}
         <div className="db-main">
-          {/* TOP BAR */}
           <div className="db-topbar">
             <span className="db-topbar-title">
               {selectedDriver
@@ -1396,15 +1499,12 @@ export default function DashboardPage({
             )}
           </div>
 
-          {/* ANALYTICS */}
           <div
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
           >
             <AnalyticsPage />
           </div>
-
-          {/* REPORTS */}
           <div
             className="db-overlay"
             style={{ display: showReports ? "flex" : "none" }}
@@ -1412,13 +1512,11 @@ export default function DashboardPage({
             <ReportsPage onBadgeChange={setOpenReports} />
           </div>
 
-          {/* BODY */}
           <div
             className="db-body"
             style={{ display: showAnalytics || showReports ? "none" : "flex" }}
           >
             <div className="db-panel">
-              {/* RIDES */}
               {tab === "rides" && (
                 <>
                   <div className="db-panel-header">
@@ -1449,10 +1547,7 @@ export default function DashboardPage({
                           <span className="db-ride-time">
                             {new Date(ride.created_at).toLocaleTimeString(
                               "en-CA",
-                              {
-                                hour: "numeric",
-                                minute: "2-digit",
-                              },
+                              { hour: "numeric", minute: "2-digit" },
                             )}
                           </span>
                         </div>
@@ -1541,68 +1636,54 @@ export default function DashboardPage({
                             </button>
                           </div>
                         )}
-                        {ride.status === "assigned" && (
-                          <div className="db-pending-badge">
-                            ⏳ Awaiting driver confirmation
-                          </div>
-                        )}
+                        {ride.status === "assigned" &&
+                          !(ride as any).confirmed_by_driver && (
+                            <div className="db-pending-badge">
+                              ⏳ Awaiting driver confirmation
+                            </div>
+                          )}
                       </div>
                     ))}
 
                     {scheduledRides.length > 0 && (
                       <>
-                        <div className="db-section-label">
-                          Scheduled ({scheduledRides.length})
+                        <div className="db-section-divider">
+                          <span className="db-section-divider-title">
+                            Scheduled rides
+                          </span>
+                          <span
+                            className="db-section-divider-count"
+                            style={{ color: "#A855F7" }}
+                          >
+                            {scheduledRides.length}
+                          </span>
                         </div>
                         {scheduledRides.map((ride) => (
-                          <div
+                          <ScheduledRideCard
                             key={ride.id}
-                            className="db-ride-card"
-                            onClick={() => setRideDetail(ride)}
-                          >
-                            <div className="db-ride-card-top">
-                              <span
-                                className="db-status-badge"
-                                style={{
-                                  background: "#A855F718",
-                                  color: "#A855F7",
-                                  border: "1px solid #A855F730",
-                                }}
-                              >
-                                Scheduled
-                              </span>
-                              <span className="db-ride-time">
-                                {ride.scheduled_at
-                                  ? new Date(ride.scheduled_at).toLocaleString(
-                                      "en-CA",
-                                      {
-                                        month: "short",
-                                        day: "numeric",
-                                        hour: "numeric",
-                                        minute: "2-digit",
-                                      } as any,
-                                    )
-                                  : ""}
-                              </span>
-                            </div>
-                            <div className="db-ride-name">
-                              {(ride as any).passenger?.name ?? "Unknown"}
-                            </div>
-                            <div className="db-ride-addr">
-                              {ride.pickup_address} → {ride.dropoff_address}
-                            </div>
-                            {ride.fare_estimate && (
-                              <div className="db-ride-fare">
-                                ${ride.fare_estimate.toFixed(2)}
-                              </div>
-                            )}
-                          </div>
+                            ride={ride}
+                            assigningRide={assigningRide}
+                            onlineDrivers={onlineDrivers}
+                            onCardClick={() => setRideDetail(ride)}
+                            onAssign={() => setAssigningRide(ride.id)}
+                            onCancelAssign={() => setAssigningRide(null)}
+                            onAssignDriver={(driverId) =>
+                              assignDriver(ride.id, driverId)
+                            }
+                            onCancel={() => cancelRide(ride.id)}
+                          />
                         ))}
                       </>
                     )}
 
-                    <div className="db-section-label">
-                      Recent ({recentRides.length})
+                    <div className="db-section-divider">
+                      <span className="db-section-divider-title">Recent</span>
+                      <span
+                        className="db-section-divider-count"
+                        style={{ color: "#4B5563" }}
+                      >
+                        {recentRides.length}
+                      </span>
                     </div>
                     {recentRides.map((ride) => (
                       <div
@@ -1644,7 +1725,6 @@ export default function DashboardPage({
                 </>
               )}
 
-              {/* DRIVERS */}
               {tab === "drivers" && (
                 <>
                   <div className="db-panel-header">
@@ -1652,8 +1732,19 @@ export default function DashboardPage({
                     <div className="db-panel-count">{drivers.length}</div>
                   </div>
                   <div className="db-panel-scroll">
-                    <div className="db-section-label">Add driver</div>
-                    <form onSubmit={createInvite} className="db-invite-form">
+                    <div
+                      className="db-section-divider"
+                      style={{ marginTop: 0, borderTop: "none", paddingTop: 4 }}
+                    >
+                      <span className="db-section-divider-title">
+                        Add driver
+                      </span>
+                    </div>
+                    <form
+                      onSubmit={createInvite}
+                      className="db-invite-form"
+                      style={{ marginTop: 8 }}
+                    >
                       <input
                         className="db-invite-input"
                         placeholder="Full name"
@@ -1715,8 +1806,16 @@ export default function DashboardPage({
                     )}
                     {pendingInvites.length > 0 && (
                       <>
-                        <div className="db-section-label">
-                          Pending invites ({pendingInvites.length})
+                        <div className="db-section-divider">
+                          <span className="db-section-divider-title">
+                            Pending invites
+                          </span>
+                          <span
+                            className="db-section-divider-count"
+                            style={{ color: "#F59E0B" }}
+                          >
+                            {pendingInvites.length}
+                          </span>
                         </div>
                         {pendingInvites.map((invite) => (
                           <div key={invite.id} className="db-invite-card">
@@ -1753,8 +1852,16 @@ export default function DashboardPage({
                         ))}
                       </>
                     )}
-                    <div className="db-section-label">
-                      All drivers ({drivers.length})
+                    <div className="db-section-divider">
+                      <span className="db-section-divider-title">
+                        All drivers
+                      </span>
+                      <span
+                        className="db-section-divider-count"
+                        style={{ color: "#4B5563" }}
+                      >
+                        {drivers.length}
+                      </span>
                     </div>
                     {drivers.length === 0 && (
                       <div className="db-empty">No drivers registered yet</div>
@@ -1835,7 +1942,6 @@ export default function DashboardPage({
               )}
             </div>
 
-            {/* MAP + DRIVER DETAIL */}
             <div className="db-map-wrap">
               {selectedDriver && (
                 <DriverDetailPanel
@@ -1854,7 +1960,6 @@ export default function DashboardPage({
         </div>
       </div>
 
-      {/* NEW RIDE MODAL */}
       {bookingOpen && (
         <div className="db-modal-overlay">
           <div className="db-modal">
@@ -1875,7 +1980,7 @@ export default function DashboardPage({
               </div>
               <div>
                 <label className="db-modal-label">
-                  Passenger name
+                  Passenger name{" "}
                   <span
                     style={{
                       fontSize: 10,
@@ -2053,7 +2158,6 @@ export default function DashboardPage({
         </div>
       )}
 
-      {/* RIDE DETAIL */}
       {rideDetail && (
         <div className="db-modal-overlay" onClick={() => setRideDetail(null)}>
           <div
