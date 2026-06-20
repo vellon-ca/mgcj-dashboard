@@ -1,5 +1,6 @@
 export interface Profile {
   id: string;
+  company_id: string | null;
   name: string | null;
   phone: string | null;
   role: "passenger" | "driver" | "admin";
