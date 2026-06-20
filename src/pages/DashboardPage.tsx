@@ -1056,6 +1056,7 @@ export default function DashboardPage({
       }
       const rideData: any = {
         passenger_id: passengerProfile.id,
+        company_id: profile.company_id,
         status: "pending",
         pickup_address: bookPickup.trim(),
         pickup_lat: bookPickupCoords?.lat ?? 45.0773,
@@ -1073,6 +1074,7 @@ export default function DashboardPage({
       if (bookDriver) {
         rideData.driver_id = bookDriver;
         rideData.status = bookScheduled ? "scheduled" : "assigned";
+        if (bookScheduled) rideData.confirmed_by_driver = true;
       }
       const { error } = await supabase.from("rides").insert(rideData);
       if (error) {
@@ -1099,9 +1101,21 @@ export default function DashboardPage({
   }
 
   async function assignDriver(rideId: string, driverId: string) {
+    const ride = rides.find((r) => r.id === rideId);
+    const isFutureScheduled =
+      (ride as any)?.scheduled_at &&
+      new Date((ride as any).scheduled_at) > new Date();
     await supabase
       .from("rides")
-      .update({ driver_id: driverId, status: "assigned" })
+      .update(
+        isFutureScheduled
+          ? {
+              driver_id: driverId,
+              status: "scheduled",
+              confirmed_by_driver: true,
+            }
+          : { driver_id: driverId, status: "assigned" },
+      )
       .eq("id", rideId);
     setAssigningRide(null);
     fetchRides();
