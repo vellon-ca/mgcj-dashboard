@@ -24,6 +24,7 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
   scheduled: "Scheduled",
 };
+const NON_EDITABLE_STATUSES = new Set(["in_progress", "completed", "cancelled"]);
 
 type Tab = "rides" | "drivers";
 
@@ -576,6 +577,26 @@ export default function DashboardPage({
   const dropoffAutocompleteRef = useRef<any>(null);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+  const [editingRide, setEditingRide] = useState(false);
+  const [editPickup, setEditPickup] = useState("");
+  const [editPickupCoords, setEditPickupCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [editDropoff, setEditDropoff] = useState("");
+  const [editDropoffCoords, setEditDropoffCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [editFare, setEditFare] = useState("");
+  const [editPayment, setEditPayment] = useState("");
+  const [editScheduled, setEditScheduled] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const editPickupInputRef = useRef<HTMLInputElement>(null);
+  const editDropoffInputRef = useRef<HTMLInputElement>(null);
+  const editPickupAutocompleteRef = useRef<any>(null);
+  const editDropoffAutocompleteRef = useRef<any>(null);
   const [flaggedReviews, setFlaggedReviews] = useState(0);
   const [openReports, setOpenReports] = useState(0);
   const [navExpanded, setNavExpanded] = useState(false);
@@ -959,6 +980,65 @@ export default function DashboardPage({
   }, [bookingOpen]);
 
   useEffect(() => {
+    if (!editingRide) return;
+    const tryInit = () => {
+      if (!(window as any).google?.maps?.places) {
+        setTimeout(tryInit, 150);
+        return;
+      }
+      const valleyBounds = new google.maps.LatLngBounds(
+        new google.maps.LatLng(44.7, -65.2),
+        new google.maps.LatLng(45.4, -63.8),
+      );
+      const opts = {
+        bounds: valleyBounds,
+        componentRestrictions: { country: "ca" },
+        fields: ["formatted_address", "geometry"],
+      };
+      if (editPickupInputRef.current && !editPickupAutocompleteRef.current) {
+        editPickupAutocompleteRef.current = new google.maps.places.Autocomplete(
+          editPickupInputRef.current,
+          opts,
+        );
+        editPickupAutocompleteRef.current.addListener("place_changed", () => {
+          const place = editPickupAutocompleteRef.current.getPlace();
+          if (place?.geometry?.location) {
+            setEditPickup(place.formatted_address ?? "");
+            setEditPickupCoords({
+              lat: place.geometry.location.lat(),
+              lng: place.geometry.location.lng(),
+            });
+          }
+        });
+      }
+      if (editDropoffInputRef.current && !editDropoffAutocompleteRef.current) {
+        editDropoffAutocompleteRef.current = new google.maps.places.Autocomplete(
+          editDropoffInputRef.current,
+          opts,
+        );
+        editDropoffAutocompleteRef.current.addListener(
+          "place_changed",
+          () => {
+            const place = editDropoffAutocompleteRef.current.getPlace();
+            if (place?.geometry?.location) {
+              setEditDropoff(place.formatted_address ?? "");
+              setEditDropoffCoords({
+                lat: place.geometry.location.lat(),
+                lng: place.geometry.location.lng(),
+              });
+            }
+          },
+        );
+      }
+    };
+    setTimeout(tryInit, 100);
+    return () => {
+      editPickupAutocompleteRef.current = null;
+      editDropoffAutocompleteRef.current = null;
+    };
+  }, [editingRide]);
+
+  useEffect(() => {
     if (!bookPickupCoords || !bookDropoffCoords) return;
     if (!(window as any).google?.maps) return;
     setBookFareLoading(true);
@@ -1127,6 +1207,55 @@ export default function DashboardPage({
       .from("rides")
       .update({ status: "cancelled" })
       .eq("id", rideId);
+    fetchRides();
+  }
+
+  function startEditRide(ride: Ride) {
+    setEditPickup(ride.pickup_address);
+    setEditPickupCoords({ lat: ride.pickup_lat, lng: ride.pickup_lng });
+    setEditDropoff(ride.dropoff_address);
+    setEditDropoffCoords({ lat: ride.dropoff_lat, lng: ride.dropoff_lng });
+    setEditFare(ride.fare_estimate != null ? String(ride.fare_estimate) : "");
+    setEditPayment(ride.payment_method);
+    setEditScheduled(
+      ride.scheduled_at
+        ? new Date(
+            new Date(ride.scheduled_at).getTime() -
+              new Date(ride.scheduled_at).getTimezoneOffset() * 60000,
+          )
+            .toISOString()
+            .slice(0, 16)
+        : "",
+    );
+    setEditError(null);
+    setEditingRide(true);
+  }
+
+  async function saveRideEdits(rideId: string) {
+    setEditSaving(true);
+    setEditError(null);
+    const updates: any = {
+      pickup_address: editPickup.trim(),
+      pickup_lat: editPickupCoords?.lat,
+      pickup_lng: editPickupCoords?.lng,
+      dropoff_address: editDropoff.trim(),
+      dropoff_lat: editDropoffCoords?.lat,
+      dropoff_lng: editDropoffCoords?.lng,
+      fare_estimate: editFare ? parseFloat(editFare) : null,
+      payment_method: editPayment,
+      scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
+    };
+    const { error } = await supabase
+      .from("rides")
+      .update(updates)
+      .eq("id", rideId);
+    setEditSaving(false);
+    if (error) {
+      setEditError(error.message);
+      return;
+    }
+    setEditingRide(false);
+    setRideDetail(null);
     fetchRides();
   }
 
@@ -1624,6 +1753,17 @@ export default function DashboardPage({
                                     : "Assign driver"}
                                 </button>
                                 <button
+                                  className="db-assign-btn"
+                                  style={{ flex: 1, marginTop: 0 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRideDetail(ride);
+                                    startEditRide(ride);
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
                                   className="db-cancel-ride-btn"
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -1637,10 +1777,21 @@ export default function DashboardPage({
                           </div>
                         )}
                         {ride.status === "driver_arriving" && (
-                          <div style={{ marginTop: 8 }}>
+                          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                            <button
+                              className="db-assign-btn"
+                              style={{ flex: 1, marginTop: 0 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRideDetail(ride);
+                                startEditRide(ride);
+                              }}
+                            >
+                              Edit
+                            </button>
                             <button
                               className="db-cancel-ride-btn"
-                              style={{ width: "100%" }}
+                              style={{ flex: 1 }}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 cancelRide(ride.id);
@@ -2173,7 +2324,13 @@ export default function DashboardPage({
       )}
 
       {rideDetail && (
-        <div className="db-modal-overlay" onClick={() => setRideDetail(null)}>
+        <div
+          className="db-modal-overlay"
+          onClick={() => {
+            setRideDetail(null);
+            setEditingRide(false);
+          }}
+        >
           <div
             className="db-modal"
             style={{ maxWidth: 480 }}
@@ -2188,7 +2345,7 @@ export default function DashboardPage({
               }}
             >
               <div className="db-modal-title" style={{ marginBottom: 0 }}>
-                Ride details
+                {editingRide ? "Edit ride" : "Ride details"}
               </div>
               <button
                 style={{
@@ -2198,7 +2355,10 @@ export default function DashboardPage({
                   cursor: "pointer",
                   fontSize: 20,
                 }}
-                onClick={() => setRideDetail(null)}
+                onClick={() => {
+                  setRideDetail(null);
+                  setEditingRide(false);
+                }}
               >
                 ×
               </button>
@@ -2228,49 +2388,195 @@ export default function DashboardPage({
                 })}
               </span>
             </div>
-            {(
-              [
-                ["Passenger", (rideDetail as any).passenger?.name ?? "Unknown"],
-                ["Phone", (rideDetail as any).passenger?.phone ?? "—"],
-                [
-                  "Driver",
-                  (rideDetail as any).driver?.profile?.name ?? "Unassigned",
-                ],
-                ["Pickup", rideDetail.pickup_address],
-                ["Drop-off", rideDetail.dropoff_address],
-                [
-                  "Fare estimate",
-                  rideDetail.fare_estimate
-                    ? `$${rideDetail.fare_estimate.toFixed(2)}`
-                    : "—",
-                ],
-                [
-                  "Fare final",
-                  rideDetail.fare_final
-                    ? `$${rideDetail.fare_final.toFixed(2)}`
-                    : "—",
-                ],
-                ["Payment", rideDetail.payment_method],
-                [
-                  "Scheduled",
-                  rideDetail.scheduled_at
-                    ? new Date(rideDetail.scheduled_at).toLocaleString("en-CA")
-                    : "Immediate",
-                ],
-              ] as [string, string][]
-            ).map(([label, value]) => (
-              <div key={label} className="db-detail-row">
-                <span className="db-detail-label">{label}</span>
-                <span className="db-detail-value">{value}</span>
+
+            {editingRide ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ position: "relative" }}>
+                  <label className="db-modal-label">Pickup address</label>
+                  <input
+                    ref={editPickupInputRef}
+                    className="db-modal-input"
+                    placeholder="Start typing an address…"
+                    value={editPickup}
+                    onChange={(e) => {
+                      setEditPickup(e.target.value);
+                      setEditPickupCoords(null);
+                    }}
+                    required
+                  />
+                  {editPickupCoords && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: 10,
+                        top: 34,
+                        fontSize: 11,
+                        color: "#1D9E75",
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <div style={{ position: "relative" }}>
+                  <label className="db-modal-label">Drop-off address</label>
+                  <input
+                    ref={editDropoffInputRef}
+                    className="db-modal-input"
+                    placeholder="Start typing an address…"
+                    value={editDropoff}
+                    onChange={(e) => {
+                      setEditDropoff(e.target.value);
+                      setEditDropoffCoords(null);
+                    }}
+                    required
+                  />
+                  {editDropoffCoords && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        right: 10,
+                        top: 34,
+                        fontSize: 11,
+                        color: "#1D9E75",
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <label className="db-modal-label">Fare estimate</label>
+                  <input
+                    className="db-modal-input"
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={editFare}
+                    onChange={(e) => setEditFare(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="db-modal-label">Payment method</label>
+                  <select
+                    className="db-modal-select"
+                    value={editPayment}
+                    onChange={(e) => setEditPayment(e.target.value)}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card</option>
+                  </select>
+                </div>
+                {rideDetail.status === "scheduled" && (
+                  <div>
+                    <label className="db-modal-label">Scheduled for</label>
+                    <input
+                      className="db-modal-input"
+                      type="datetime-local"
+                      value={editScheduled}
+                      onChange={(e) => setEditScheduled(e.target.value)}
+                    />
+                  </div>
+                )}
+                {editError && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "#F87171",
+                      background: "rgba(248,113,113,0.08)",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      border: "1px solid rgba(248,113,113,0.2)",
+                    }}
+                  >
+                    {editError}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                  <button
+                    className="db-modal-cancel-btn"
+                    type="button"
+                    onClick={() => {
+                      setEditingRide(false);
+                      setEditError(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="db-modal-submit-btn"
+                    type="button"
+                    disabled={editSaving}
+                    onClick={() => saveRideEdits(rideDetail.id)}
+                  >
+                    {editSaving ? "Saving…" : "Save changes"}
+                  </button>
+                </div>
               </div>
-            ))}
-            <button
-              className="db-modal-cancel-btn"
-              style={{ width: "100%", marginTop: 16 }}
-              onClick={() => setRideDetail(null)}
-            >
-              Close
-            </button>
+            ) : (
+              <>
+                {(
+                  [
+                    [
+                      "Passenger",
+                      (rideDetail as any).passenger?.name ?? "Unknown",
+                    ],
+                    ["Phone", (rideDetail as any).passenger?.phone ?? "—"],
+                    [
+                      "Driver",
+                      (rideDetail as any).driver?.profile?.name ??
+                        "Unassigned",
+                    ],
+                    ["Pickup", rideDetail.pickup_address],
+                    ["Drop-off", rideDetail.dropoff_address],
+                    [
+                      "Fare estimate",
+                      rideDetail.fare_estimate
+                        ? `$${rideDetail.fare_estimate.toFixed(2)}`
+                        : "—",
+                    ],
+                    [
+                      "Fare final",
+                      rideDetail.fare_final
+                        ? `$${rideDetail.fare_final.toFixed(2)}`
+                        : "—",
+                    ],
+                    ["Payment", rideDetail.payment_method],
+                    [
+                      "Scheduled",
+                      rideDetail.scheduled_at
+                        ? new Date(rideDetail.scheduled_at).toLocaleString(
+                            "en-CA",
+                          )
+                        : "Immediate",
+                    ],
+                  ] as [string, string][]
+                ).map(([label, value]) => (
+                  <div key={label} className="db-detail-row">
+                    <span className="db-detail-label">{label}</span>
+                    <span className="db-detail-value">{value}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                  <button
+                    className="db-modal-cancel-btn"
+                    style={{ flex: 1 }}
+                    onClick={() => setRideDetail(null)}
+                  >
+                    Close
+                  </button>
+                  {!NON_EDITABLE_STATUSES.has(rideDetail.status) && (
+                    <button
+                      className="db-modal-submit-btn"
+                      style={{ flex: 1 }}
+                      onClick={() => startEditRide(rideDetail)}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
