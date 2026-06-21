@@ -589,6 +589,8 @@ export default function DashboardPage({
     lng: number;
   } | null>(null);
   const [editFare, setEditFare] = useState("");
+  const [editFareLoading, setEditFareLoading] = useState(false);
+  const [editAddressChanged, setEditAddressChanged] = useState(false);
   const [editPayment, setEditPayment] = useState("");
   const [editScheduled, setEditScheduled] = useState("");
   const [editSaving, setEditSaving] = useState(false);
@@ -1008,6 +1010,7 @@ export default function DashboardPage({
               lat: place.geometry.location.lat(),
               lng: place.geometry.location.lng(),
             });
+            setEditAddressChanged(true);
           }
         });
       }
@@ -1026,6 +1029,7 @@ export default function DashboardPage({
                 lat: place.geometry.location.lat(),
                 lng: place.geometry.location.lng(),
               });
+              setEditAddressChanged(true);
             }
           },
         );
@@ -1064,6 +1068,37 @@ export default function DashboardPage({
       },
     );
   }, [bookPickupCoords, bookDropoffCoords]);
+
+  useEffect(() => {
+    if (!editAddressChanged) return;
+    if (!editPickupCoords || !editDropoffCoords) return;
+    if (!(window as any).google?.maps) return;
+    setEditFareLoading(true);
+    const service = new google.maps.DistanceMatrixService();
+    service.getDistanceMatrix(
+      {
+        origins: [
+          new google.maps.LatLng(editPickupCoords.lat, editPickupCoords.lng),
+        ],
+        destinations: [
+          new google.maps.LatLng(
+            editDropoffCoords.lat,
+            editDropoffCoords.lng,
+          ),
+        ],
+        travelMode: google.maps.TravelMode.DRIVING,
+      },
+      (response, status) => {
+        setEditFareLoading(false);
+        if (status === "OK" && response) {
+          const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
+          setEditFare(
+            (Math.round((4 + (metres / 1000) * 1.8) * 100) / 100).toFixed(2),
+          );
+        }
+      },
+    );
+  }, [editAddressChanged, editPickupCoords, editDropoffCoords]);
 
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
@@ -1227,6 +1262,7 @@ export default function DashboardPage({
             .slice(0, 16)
         : "",
     );
+    setEditAddressChanged(false);
     setEditError(null);
     setEditingRide(true);
   }
@@ -2446,7 +2482,33 @@ export default function DashboardPage({
                   )}
                 </div>
                 <div>
-                  <label className="db-modal-label">Fare estimate</label>
+                  <label className="db-modal-label">
+                    Fare estimate
+                    {editFareLoading && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#4B5563",
+                          fontWeight: 400,
+                          marginLeft: 6,
+                        }}
+                      >
+                        Calculating…
+                      </span>
+                    )}
+                    {!editFareLoading && editAddressChanged && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#1D9E75",
+                          fontWeight: 400,
+                          marginLeft: 6,
+                        }}
+                      >
+                        Auto-recalculated
+                      </span>
+                    )}
+                  </label>
                   <input
                     className="db-modal-input"
                     type="number"
