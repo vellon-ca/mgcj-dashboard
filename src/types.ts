@@ -23,6 +23,7 @@ export interface Ride {
   id: string;
   status:
     | "pending"
+    | "offered"
     | "assigned"
     | "driver_arriving"
     | "in_progress"

@@ -233,7 +233,9 @@ function DriverDetailPanel({
   const activeRide = rides.find(
     (r) =>
       r.driver_id === driver.id &&
-      ["assigned", "driver_arriving", "in_progress"].includes(r.status),
+      ["offered", "assigned", "driver_arriving", "in_progress"].includes(
+        r.status,
+      ),
   );
 
   return (
@@ -456,7 +458,7 @@ function ScheduledRideCard({
           </span>
         </div>
       )}
-      {ride.status === "assigned" && !(ride as any).confirmed_by_driver && (
+      {ride.status === "offered" && (
         <div className="db-pending-badge" style={{ margin: "8px 12px 0" }}>
           ⏳ Awaiting driver confirmation
         </div>
@@ -811,9 +813,13 @@ export default function DashboardPage({
     weekStart.setDate(now.getDate() - 7);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const active = rideData.filter((r) =>
-      ["pending", "assigned", "driver_arriving", "in_progress"].includes(
-        r.status,
-      ),
+      [
+        "pending",
+        "offered",
+        "assigned",
+        "driver_arriving",
+        "in_progress",
+      ].includes(r.status),
     );
     const completedToday = rideData.filter(
       (r) => r.status === "completed" && new Date(r.created_at) >= todayStart,
@@ -854,9 +860,13 @@ export default function DashboardPage({
     });
     rideData
       .filter((r) =>
-        ["pending", "assigned", "driver_arriving", "in_progress"].includes(
-          r.status,
-        ),
+        [
+          "pending",
+          "offered",
+          "assigned",
+          "driver_arriving",
+          "in_progress",
+        ].includes(r.status),
       )
       .forEach((ride) => {
         const mk1 = new google.maps.Marker({
@@ -1188,7 +1198,7 @@ export default function DashboardPage({
       }
       if (bookDriver) {
         rideData.driver_id = bookDriver;
-        rideData.status = bookScheduled ? "scheduled" : "assigned";
+        rideData.status = bookScheduled ? "scheduled" : "offered";
         if (bookScheduled) rideData.confirmed_by_driver = true;
       }
       const { error } = await supabase.from("rides").insert(rideData);
@@ -1229,7 +1239,7 @@ export default function DashboardPage({
               status: "scheduled",
               confirmed_by_driver: true,
             }
-          : { driver_id: driverId, status: "assigned" },
+          : { driver_id: driverId, status: "offered" },
       )
       .eq("id", rideId);
     setAssigningRide(null);
@@ -1302,9 +1312,13 @@ export default function DashboardPage({
 
   const activeRides = rides.filter(
     (r) =>
-      ["pending", "assigned", "driver_arriving", "in_progress"].includes(
-        r.status,
-      ) &&
+      [
+        "pending",
+        "offered",
+        "assigned",
+        "driver_arriving",
+        "in_progress",
+      ].includes(r.status) &&
       !(
         (r as any).scheduled_at &&
         new Date((r as any).scheduled_at) > new Date()
@@ -1745,6 +1759,7 @@ export default function DashboardPage({
                           </div>
                         )}
                         {(ride.status === "pending" ||
+                          ride.status === "offered" ||
                           ride.status === "assigned") && (
                           <div style={{ marginTop: 8 }}>
                             {assigningRide === ride.id ? (
@@ -1837,12 +1852,11 @@ export default function DashboardPage({
                             </button>
                           </div>
                         )}
-                        {ride.status === "assigned" &&
-                          !(ride as any).confirmed_by_driver && (
-                            <div className="db-pending-badge">
-                              ⏳ Awaiting driver confirmation
-                            </div>
-                          )}
+                        {ride.status === "offered" && (
+                          <div className="db-pending-badge">
+                            ⏳ Awaiting driver confirmation
+                          </div>
+                        )}
                       </div>
                     ))}
 
@@ -2072,6 +2086,7 @@ export default function DashboardPage({
                         (r) =>
                           r.driver_id === driver.id &&
                           [
+                            "offered",
                             "assigned",
                             "driver_arriving",
                             "in_progress",
