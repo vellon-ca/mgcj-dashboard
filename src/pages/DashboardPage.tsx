@@ -8,6 +8,7 @@ const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
+  offered: "#F59E0B",
   assigned: "#4a9eff",
   driver_arriving: "#4a9eff",
   in_progress: "#E8500A",
@@ -17,6 +18,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pending",
+  offered: "Offered",
   assigned: "Assigned",
   driver_arriving: "Arriving",
   in_progress: "In progress",
