@@ -351,7 +351,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-summary-label { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
         .dc-summary-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; }
 
-        .dc-settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; align-items: start; }
+        .dc-settings-grid { display: flex; flex-direction: column; gap: 16px; }
 
         .dc-card { background: #1E2A3A; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05); }
         .dc-card-label { font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
@@ -387,7 +387,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-empty { color: #374151; font-size: 14px; text-align: center; padding: 48px 0; }
 
         /* CODE LIST */
-        .dc-codes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 12px; align-items: start; }
+        .dc-codes-grid { display: flex; flex-direction: column; gap: 10px; }
         .dc-code-card { background: #1E2A3A; border-radius: 12px; padding: 18px; border: 1px solid rgba(255,255,255,0.05); }
         .dc-code-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
         .dc-code-name-row { display: flex; align-items: center; gap: 8px; }
@@ -397,7 +397,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-copy-btn.copied { background: rgba(29,158,117,0.12); border-color: rgba(29,158,117,0.3); color: #1D9E75; }
         .dc-code-label { font-size: 12px; color: #6B7280; margin-top: 2px; }
         .dc-code-status { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
-        .dc-code-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
+        .dc-code-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 12px; max-width: 560px; }
         .dc-code-meta-item { display: flex; flex-direction: column; gap: 2px; }
         .dc-code-meta-label { font-size: 10px; color: #4B5563; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
         .dc-code-meta-value { font-size: 13px; color: #E2E8F0; font-weight: 500; }

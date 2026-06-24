@@ -590,6 +590,7 @@ export default function DashboardPage({
   } | null>(null);
   const [bookFare, setBookFare] = useState("");
   const [bookFareLoading, setBookFareLoading] = useState(false);
+  const [bookDiscountCode, setBookDiscountCode] = useState("");
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
   const [bookLoading, setBookLoading] = useState(false);
@@ -1201,6 +1202,48 @@ export default function DashboardPage({
         }
         passengerProfile = newProfile;
       }
+      const baseFare = parseFloat(bookFare) || null;
+      let finalFare = baseFare;
+      let preDiscountFare: number | null = null;
+      let discountAmount: number | null = null;
+      let discountType: string | null = null;
+      let discountCodeId: string | null = null;
+
+      if (baseFare != null && baseFare > 0) {
+        const { data: discount, error: discountError } = await supabase
+          .rpc("compute_discount_for_booking", {
+            p_user_id: passengerProfile.id,
+            p_company_id: profile.company_id,
+            p_fare: baseFare,
+            p_code: bookDiscountCode.trim() || null,
+          })
+          .maybeSingle();
+
+        if (bookDiscountCode.trim() && discount?.code_status && discount.code_status !== "ok") {
+          const messages: Record<string, string> = {
+            not_found: "Discount code not found.",
+            inactive: "This discount code is no longer active.",
+            not_started: "This discount code isn't active yet.",
+            expired: "This discount code has expired.",
+            maxed: "This discount code has reached its usage limit.",
+            already_used: "This passenger has already used this code.",
+          };
+          setBookError(
+            messages[discount.code_status] ?? "Couldn't apply that discount code.",
+          );
+          setBookLoading(false);
+          return;
+        }
+
+        if (!discountError && discount) {
+          finalFare = discount.discounted_fare ?? baseFare;
+          discountAmount = discount.discount_amount ?? 0;
+          discountType = discount.discount_type ?? null;
+          discountCodeId = discount.code_id ?? null;
+          preDiscountFare = discountAmount > 0 ? baseFare : null;
+        }
+      }
+
       const rideData: any = {
         passenger_id: passengerProfile.id,
         company_id: profile.company_id,
@@ -1211,7 +1254,11 @@ export default function DashboardPage({
         dropoff_address: bookDropoff.trim(),
         dropoff_lat: bookDropoffCoords?.lat ?? 45.0773,
         dropoff_lng: bookDropoffCoords?.lng ?? -64.3601,
-        fare_estimate: parseFloat(bookFare) || null,
+        fare_estimate: finalFare,
+        pre_discount_fare: preDiscountFare,
+        discount_amount: discountAmount,
+        discount_type: discountType,
+        discount_code_id: discountCodeId,
         payment_method: "cash",
       };
       if (bookScheduled) {
@@ -1237,6 +1284,7 @@ export default function DashboardPage({
       setBookDropoff("");
       setBookDropoffCoords(null);
       setBookFare("");
+      setBookDiscountCode("");
       setBookDriver("");
       setBookScheduled("");
       fetchRides();
@@ -1743,6 +1791,7 @@ export default function DashboardPage({
           </div>
 
           <div
+            className="db-overlay"
             style={{ display: showDiscounts ? "flex" : "none" }}
           >
             {profile.company_id && (
@@ -2357,6 +2406,30 @@ export default function DashboardPage({
                   step="0.01"
                   value={bookFare}
                   onChange={(e) => setBookFare(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="db-modal-label">
+                  Discount code{" "}
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "#374151",
+                      fontWeight: 400,
+                      marginLeft: 6,
+                      textTransform: "none",
+                      letterSpacing: 0,
+                    }}
+                  >
+                    (optional — overridden by a verified student discount)
+                  </span>
+                </label>
+                <input
+                  className="db-modal-input"
+                  placeholder="CHURCH25"
+                  value={bookDiscountCode}
+                  onChange={(e) => setBookDiscountCode(e.target.value)}
+                  style={{ textTransform: "uppercase" }}
                 />
               </div>
               <div>
