@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import type { Ride, Driver, Profile, DriverInvite } from "../types";
 import AnalyticsPage from "./AnalyticsPage";
 import ReportsPage from "./ReportsPage";
+import DiscountsPage from "./DiscountsPage";
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
@@ -104,6 +105,23 @@ function IconReports() {
       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+function IconDiscounts() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2.59 12.58a2 2 0 0 1 0-2.83l7.17-7.17a2 2 0 0 1 1.42-.58H17a2 2 0 0 1 2 2v6.41a2 2 0 0 1-.58 1.41z" />
+      <circle cx="13" cy="7" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -549,6 +567,7 @@ export default function DashboardPage({
   const [tab, setTab] = useState<Tab>("rides");
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showReports, setShowReports] = useState(false);
+  const [showDiscounts, setShowDiscounts] = useState(false);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -645,6 +664,7 @@ export default function DashboardPage({
     if (
       !showAnalytics &&
       !showReports &&
+      !showDiscounts &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -653,7 +673,7 @@ export default function DashboardPage({
           google.maps.event.trigger(googleMapRef.current, "resize");
       }, 50);
     }
-  }, [showAnalytics, showReports, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, selectedDriver]);
 
   useEffect(() => {
     fetchAll();
@@ -1307,9 +1327,10 @@ export default function DashboardPage({
     fetchRides();
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
+    setShowDiscounts(dest === "discounts");
   }
 
   const activeRides = rides.filter(
@@ -1348,7 +1369,9 @@ export default function DashboardPage({
     ? "Analytics"
     : showReports
       ? "Reports"
-      : tab.charAt(0).toUpperCase() + tab.slice(1);
+      : showDiscounts
+        ? "Discounts"
+        : tab.charAt(0).toUpperCase() + tab.slice(1);
 
   if (loading)
     return (
@@ -1569,7 +1592,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: t, label }) => (
               <button
                 key={t}
-                className={`db-nav-item${tab === t && !showAnalytics && !showReports ? " active" : ""}`}
+                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts ? " active" : ""}`}
                 onClick={() => {
                   setTab(t);
                   navigateTo("main");
@@ -1619,6 +1642,18 @@ export default function DashboardPage({
               )}
             </button>
             <button
+              className={`db-nav-utility db-nav-discounts${showDiscounts ? " active-util" : ""}`}
+              onClick={() => {
+                navigateTo("discounts");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconDiscounts />
+              </span>
+              {navExpanded && <span className="db-nav-label">Discounts</span>}
+            </button>
+            <button
               className="db-nav-utility db-nav-signout"
               onClick={onSignOut}
             >
@@ -1637,7 +1672,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? "Driver")
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -1671,7 +1706,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !selectedDriver ? (
               <button
                 className="db-new-ride-btn"
                 onClick={() => setBookingOpen(true)}
@@ -1708,8 +1743,19 @@ export default function DashboardPage({
           </div>
 
           <div
+            style={{ display: showDiscounts ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <DiscountsPage companyId={profile.company_id} adminId={profile.id} />
+            )}
+          </div>
+
+          <div
             className="db-body"
-            style={{ display: showAnalytics || showReports ? "none" : "flex" }}
+            style={{
+              display:
+                showAnalytics || showReports || showDiscounts ? "none" : "flex",
+            }}
           >
             <div className="db-panel">
               {tab === "rides" && (
