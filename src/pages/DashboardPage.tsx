@@ -1210,7 +1210,7 @@ export default function DashboardPage({
       let discountCodeId: string | null = null;
 
       if (baseFare != null && baseFare > 0) {
-        const { data: discount, error: discountError } = await supabase
+        const { data: discountRaw, error: discountError } = await supabase
           .rpc("compute_discount_for_booking", {
             p_user_id: passengerProfile.id,
             p_company_id: profile.company_id,
@@ -1218,6 +1218,13 @@ export default function DashboardPage({
             p_code: bookDiscountCode.trim() || null,
           })
           .maybeSingle();
+        const discount = discountRaw as {
+          discounted_fare: number;
+          discount_amount: number;
+          discount_type: string | null;
+          code_id: string | null;
+          code_status: string;
+        } | null;
 
         if (bookDiscountCode.trim() && discount?.code_status && discount.code_status !== "ok") {
           const messages: Record<string, string> = {
@@ -1240,7 +1247,7 @@ export default function DashboardPage({
           discountAmount = discount.discount_amount ?? 0;
           discountType = discount.discount_type ?? null;
           discountCodeId = discount.code_id ?? null;
-          preDiscountFare = discountAmount > 0 ? baseFare : null;
+          preDiscountFare = (discountAmount ?? 0) > 0 ? baseFare : null;
         }
       }
 
