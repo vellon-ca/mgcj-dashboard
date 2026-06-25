@@ -4,6 +4,7 @@ import type { Ride, Driver, Profile, DriverInvite } from "../types";
 import AnalyticsPage from "./AnalyticsPage";
 import ReportsPage from "./ReportsPage";
 import DiscountsPage from "./DiscountsPage";
+import SettingsPage from "./SettingsPage";
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
@@ -122,6 +123,23 @@ function IconDiscounts() {
     >
       <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2.59 12.58a2 2 0 0 1 0-2.83l7.17-7.17a2 2 0 0 1 1.42-.58H17a2 2 0 0 1 2 2v6.41a2 2 0 0 1-.58 1.41z" />
       <circle cx="13" cy="7" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function IconSettings() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }
@@ -568,6 +586,7 @@ export default function DashboardPage({
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showReports, setShowReports] = useState(false);
   const [showDiscounts, setShowDiscounts] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -666,6 +685,7 @@ export default function DashboardPage({
       !showAnalytics &&
       !showReports &&
       !showDiscounts &&
+      !showSettings &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -674,7 +694,7 @@ export default function DashboardPage({
           google.maps.event.trigger(googleMapRef.current, "resize");
       }, 50);
     }
-  }, [showAnalytics, showReports, showDiscounts, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, showSettings, selectedDriver]);
 
   useEffect(() => {
     fetchAll();
@@ -1396,10 +1416,11 @@ export default function DashboardPage({
     fetchRides();
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "discounts" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
     setShowDiscounts(dest === "discounts");
+    setShowSettings(dest === "settings");
   }
 
   const activeRides = rides.filter(
@@ -1440,7 +1461,9 @@ export default function DashboardPage({
       ? "Reports"
       : showDiscounts
         ? "Discounts"
-        : tab.charAt(0).toUpperCase() + tab.slice(1);
+        : showSettings
+          ? "Settings"
+          : tab.charAt(0).toUpperCase() + tab.slice(1);
 
   if (loading)
     return (
@@ -1493,6 +1516,10 @@ export default function DashboardPage({
         .db-nav-reports:hover .db-nav-label, .db-nav-reports.active-util .db-nav-label { color: #F87171; }
         .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
         .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
+        .db-nav-settings .db-nav-icon { color: #6B7280; }
+        .db-nav-settings:hover .db-nav-icon, .db-nav-settings.active-util .db-nav-icon { color: #60A5FA; }
+        .db-nav-settings .db-nav-label { color: #6B7280; }
+        .db-nav-settings:hover .db-nav-label, .db-nav-settings.active-util .db-nav-label { color: #60A5FA; }
         .db-badge-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: #E24B4A; border: 1.5px solid #0F1723; }
         .db-badge-count { margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 6px; }
         .db-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -1661,7 +1688,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: t, label }) => (
               <button
                 key={t}
-                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts ? " active" : ""}`}
+                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts && !showSettings ? " active" : ""}`}
                 onClick={() => {
                   setTab(t);
                   navigateTo("main");
@@ -1723,6 +1750,18 @@ export default function DashboardPage({
               {navExpanded && <span className="db-nav-label">Discounts</span>}
             </button>
             <button
+              className={`db-nav-utility db-nav-settings${showSettings ? " active-util" : ""}`}
+              onClick={() => {
+                navigateTo("settings");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconSettings />
+              </span>
+              {navExpanded && <span className="db-nav-label">Settings</span>}
+            </button>
+            <button
               className="db-nav-utility db-nav-signout"
               onClick={onSignOut}
             >
@@ -1741,7 +1780,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? "Driver")
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !showDiscounts && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -1775,7 +1814,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !showDiscounts && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !selectedDriver ? (
               <button
                 className="db-new-ride-btn"
                 onClick={() => setBookingOpen(true)}
@@ -1821,10 +1860,19 @@ export default function DashboardPage({
           </div>
 
           <div
+            className="db-overlay"
+            style={{ display: showSettings ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <SettingsPage companyId={profile.company_id} />
+            )}
+          </div>
+
+          <div
             className="db-body"
             style={{
               display:
-                showAnalytics || showReports || showDiscounts ? "none" : "flex",
+                showAnalytics || showReports || showDiscounts || showSettings ? "none" : "flex",
             }}
           >
             <div className="db-panel">
