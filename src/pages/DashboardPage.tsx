@@ -1094,9 +1094,9 @@ export default function DashboardPage({
         setBookFareLoading(false);
         if (status === "OK" && response) {
           const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
-          setBookFare(
-            (Math.round((4 + (metres / 1000) * 1.8) * 100) / 100).toFixed(2),
-          );
+          // Manual bookings are always cash; round up to the nearest dollar
+          // so the displayed estimate matches the fare that gets saved.
+          setBookFare(Math.ceil(4 + (metres / 1000) * 1.8).toFixed(2));
         }
       },
     );
@@ -1125,13 +1125,17 @@ export default function DashboardPage({
         setEditFareLoading(false);
         if (status === "OK" && response) {
           const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
+          const rawFare = 4 + (metres / 1000) * 1.8;
           setEditFare(
-            (Math.round((4 + (metres / 1000) * 1.8) * 100) / 100).toFixed(2),
+            (editPayment === "cash"
+              ? Math.ceil(rawFare)
+              : Math.round(rawFare * 100) / 100
+            ).toFixed(2),
           );
         }
       },
     );
-  }, [editAddressChanged, editPickupCoords, editDropoffCoords]);
+  }, [editAddressChanged, editPickupCoords, editDropoffCoords, editPayment]);
 
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
