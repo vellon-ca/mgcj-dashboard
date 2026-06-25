@@ -1251,6 +1251,12 @@ export default function DashboardPage({
         }
       }
 
+      // Manual bookings are always cash; round up to the nearest dollar so
+      // the fare doesn't require exact change.
+      if (finalFare != null) {
+        finalFare = Math.ceil(finalFare);
+      }
+
       const rideData: any = {
         passenger_id: passengerProfile.id,
         company_id: profile.company_id,
@@ -1364,7 +1370,11 @@ export default function DashboardPage({
       dropoff_address: editDropoff.trim(),
       dropoff_lat: editDropoffCoords?.lat,
       dropoff_lng: editDropoffCoords?.lng,
-      fare_estimate: editFare ? parseFloat(editFare) : null,
+      fare_estimate: editFare
+        ? editPayment === "cash"
+          ? Math.ceil(parseFloat(editFare))
+          : parseFloat(editFare)
+        : null,
       payment_method: editPayment,
       scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
     };
