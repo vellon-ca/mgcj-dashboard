@@ -415,6 +415,7 @@ export default function AnalyticsPage() {
       const { data: rides } = await supabase
         .from("rides")
         .select("*")
+        .in("status", ["completed", "cancelled"])
         .order("created_at", { ascending: false })
         .limit(500);
       if (fetchId !== historyFetchId.current || !rides) return;
@@ -1576,13 +1577,7 @@ export default function AnalyticsPage() {
               ) : (
                 <>
                   <div className="an-filter-row">
-                    {[
-                      "all",
-                      "completed",
-                      "cancelled",
-                      "in_progress",
-                      "pending",
-                    ].map((s) => (
+                    {["all", "completed", "cancelled"].map((s) => (
                       <button
                         key={s}
                         className={`an-filter-btn${rideFilter === s ? " active" : ""}`}
