@@ -10,6 +10,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  function formatPhoneDisplay(value: string): string {
+    const digits = value.replace(/\D/g, "").slice(0, 10);
+    if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
   function toE164(raw: string) {
     const digits = raw.replace(/\D/g, "");
     if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
@@ -306,7 +313,7 @@ export default function LoginPage() {
                     type="tel"
                     placeholder="(902) 555-1234"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(formatPhoneDisplay(e.target.value))}
                     autoFocus
                   />
                 </div>

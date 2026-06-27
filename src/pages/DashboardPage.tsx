@@ -595,7 +595,7 @@ export default function DashboardPage({
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
-  const [bookPassenger, setBookPassenger] = useState("");
+  const [bookPassenger, setBookPassenger] = useState("+1 ");
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPickup, setBookPickup] = useState("");
   const [bookPickupCoords, setBookPickupCoords] = useState<{
@@ -721,6 +721,21 @@ export default function DashboardPage({
     };
   }, []);
 
+  function toE164(raw: string): string {
+    const digits = raw.replace(/\D/g, "");
+    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
+    if (digits.length === 10) return `+1${digits}`;
+    return `+${digits}`;
+  }
+
+  function formatBookingPhone(value: string): string {
+    const digits = value.replace(/\D/g, "").replace(/^1/, "").slice(0, 10);
+    if (digits.length === 0) return "+1 ";
+    if (digits.length <= 3) return `+1 (${digits}`;
+    if (digits.length <= 6) return `+1 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+
   async function fetchAll() {
     await Promise.all([
       fetchRides(),
@@ -761,6 +776,7 @@ export default function DashboardPage({
     const { data } = await supabase
       .from("rides")
       .select("*")
+      .eq("company_id", profile.company_id)
       .order("created_at", { ascending: false })
       .limit(150);
     if (!data) return;
@@ -824,6 +840,7 @@ export default function DashboardPage({
       .from("driver_invites")
       .select("*")
       .eq("used", false)
+      .eq("company_id", profile.company_id)
       .order("created_at", { ascending: false });
     if (pending) setPendingInvites(pending);
   }
@@ -961,6 +978,7 @@ export default function DashboardPage({
       code,
       used: false,
       created_by: profile.id,
+      company_id: profile.company_id,
     });
     setInviteLoading(false);
     if (error) {
@@ -1162,7 +1180,7 @@ export default function DashboardPage({
     setBookLoading(true);
     setBookError(null);
     try {
-      const phone = bookPassenger.trim();
+      const phone = toE164(bookPassenger);
       let { data: passengerProfile } = await supabase
         .from("profiles")
         .select("id, name")
@@ -1314,7 +1332,7 @@ export default function DashboardPage({
         return;
       }
       setBookingOpen(false);
-      setBookPassenger("");
+      setBookPassenger("+1 ");
       setBookPassengerName("");
       setBookPickup("");
       setBookPickupCoords(null);
@@ -2354,9 +2372,9 @@ export default function DashboardPage({
                 <label className="db-modal-label">Passenger phone *</label>
                 <input
                   className="db-modal-input"
-                  placeholder="+19021234567"
+                  placeholder="+1 (902) 555-1234"
                   value={bookPassenger}
-                  onChange={(e) => setBookPassenger(e.target.value)}
+                  onChange={(e) => setBookPassenger(formatBookingPhone(e.target.value))}
                   required
                 />
               </div>
@@ -2547,6 +2565,7 @@ export default function DashboardPage({
                   onClick={() => {
                     setBookingOpen(false);
                     setBookError(null);
+                    setBookPassenger("+1 ");
                   }}
                 >
                   Cancel
