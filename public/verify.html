@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vellon &mdash; Student Verification</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, Helvetica, Arial, sans-serif;
+      background: #111827;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      max-width: 360px;
+      text-align: center;
+      padding: 32px;
+    }
+    .label {
+      font-size: 13px;
+      color: #6B7280;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+    .icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .icon.success { background: #1D9E75; }
+    .icon.error   { background: #374151; }
+    .message {
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .message.success { color: #D1FAE5; }
+    .message.error   { color: #F87171; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <p class="label">Vellon</p>
+    <div class="icon" id="icon"></div>
+    <p class="message" id="message"></p>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get("success") === "1";
+    const msg = params.get("message") || (success
+      ? "Your student discount is now active. You can close this page and return to the app."
+      : "Something went wrong. Please try again.");
+
+    const icon = document.getElementById("icon");
+    const message = document.getElementById("message");
+
+    icon.classList.add(success ? "success" : "error");
+    icon.innerHTML = success
+      ? `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+      : `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#F87171" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+    message.classList.add(success ? "success" : "error");
+    message.textContent = msg;
+  </script>
+</body>
+</html>
