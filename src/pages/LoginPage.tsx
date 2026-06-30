@@ -65,7 +65,7 @@ export default function LoginPage() {
         .single();
       if (profile?.role !== "admin") {
         await supabase.auth.signOut();
-        setError("Access denied. This dashboard is for M&G C&J staff only.");
+        setError("Access denied. Staff accounts only.");
       }
     }
   }
@@ -73,7 +73,7 @@ export default function LoginPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Inter', system-ui, sans-serif; }
 
@@ -93,7 +93,7 @@ export default function LoginPage() {
           width: 600px;
           height: 600px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(232,80,10,0.06) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%);
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
@@ -120,23 +120,17 @@ export default function LoginPage() {
         }
 
         .login-brand {
-          font-size: 28px;
+          font-family: 'Rajdhani', system-ui, sans-serif;
+          font-size: 40px;
           font-weight: 700;
-          color: #E8500A;
-          letter-spacing: -0.5px;
-        }
-
-        .login-divider-dot {
-          width: 4px;
-          height: 4px;
-          border-radius: 50%;
-          background: rgba(232,80,10,0.4);
-          margin-bottom: 3px;
+          color: #E2E8F0;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
         }
 
         .login-subtitle {
           font-size: 13px;
-          color: #4A6080;
+          color: #94A3B8;
           text-align: center;
           margin-bottom: 36px;
           letter-spacing: 0.04em;
@@ -147,7 +141,7 @@ export default function LoginPage() {
         .login-rule {
           width: 40px;
           height: 1px;
-          background: rgba(232,80,10,0.3);
+          background: rgba(99,102,241,0.3);
           margin: 0 auto 36px;
         }
 
@@ -177,7 +171,7 @@ export default function LoginPage() {
         }
 
         .login-field:focus-within {
-          border-color: rgba(232,80,10,0.4);
+          border-color: rgba(99,102,241,0.4);
         }
 
         .login-prefix {
@@ -222,7 +216,7 @@ export default function LoginPage() {
         }
 
         .login-otp-input:focus {
-          border-color: rgba(232,80,10,0.4);
+          border-color: rgba(99,102,241,0.4);
         }
 
         .login-hint {
@@ -283,10 +277,10 @@ export default function LoginPage() {
         .login-footer {
           margin-top: 28px;
           padding-top: 20px;
-          border-top: 1px solid rgba(255,255,255,0.04);
+          border-top: 1px solid rgba(255,255,255,0.06);
           text-align: center;
-          font-size: 11px;
-          color: #1E3352;
+          font-size: 12px;
+          color: #94A3B8;
           letter-spacing: 0.04em;
         }
       `}</style>
@@ -295,9 +289,7 @@ export default function LoginPage() {
         <div className="login-bg-glow" />
         <div className="login-card">
           <div className="login-wordmark">
-            <span className="login-brand">M&amp;G</span>
-            <div className="login-divider-dot" />
-            <span className="login-brand">C&amp;J</span>
+            <span className="login-brand">Vellon</span>
           </div>
           <div className="login-subtitle">Dispatch Dashboard</div>
           <div className="login-rule" />
@@ -360,7 +352,7 @@ export default function LoginPage() {
             </form>
           )}
 
-          <div className="login-footer">M&amp;G Cab Ltd · C&amp;J Taxi Ltd</div>
+          <div className="login-footer">Dispatch powered by Vellon</div>
         </div>
       </div>
     </>

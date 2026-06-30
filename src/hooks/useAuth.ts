@@ -6,6 +6,7 @@ import type { Session } from "@supabase/supabase-js";
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchingForRef = useRef<string | null>(null);
 
@@ -59,6 +60,16 @@ export function useAuth() {
     }
 
     setProfile(data ?? null);
+
+    if (data?.company_id) {
+      const { data: company } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", data.company_id)
+        .maybeSingle();
+      setCompanyName(company?.name ?? null);
+    }
+
     setLoading(false);
   }
 
@@ -66,7 +77,8 @@ export function useAuth() {
     fetchingForRef.current = null;
     await supabase.auth.signOut();
     setProfile(null);
+    setCompanyName(null);
   }
 
-  return { session, profile, loading, signOut };
+  return { session, profile, companyName, loading, signOut };
 }

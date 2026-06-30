@@ -559,9 +559,11 @@ function ScheduledRideCard({
 // Dashboard Page
 export default function DashboardPage({
   profile,
+  companyName,
   onSignOut,
 }: {
   profile: Profile;
+  companyName: string | null;
   onSignOut: () => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -1697,7 +1699,7 @@ export default function DashboardPage({
         >
           <div className="db-nav-logo">
             {navExpanded ? (
-              <span className="db-nav-logo-text">M&amp;G C&amp;J</span>
+              <span className="db-nav-logo-text">{companyName ?? 'M&G C&J'}</span>
             ) : (
               <IconMenu />
             )}
@@ -1859,7 +1861,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
           >
-            <AnalyticsPage />
+            <AnalyticsPage companyName={companyName} />
           </div>
           <div
             className="db-overlay"

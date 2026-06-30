@@ -3,7 +3,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
-  const { session, profile, loading } = useAuth()
+  const { session, profile, companyName, loading } = useAuth()
 
   if (loading) return (
     <div style={{
@@ -27,7 +27,7 @@ export default function App() {
         background: '#1E2A3A', borderRadius: 16, padding: '40px 36px',
         textAlign: 'center', border: '0.5px solid rgba(255,255,255,0.08)',
       }}>
-        <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>M&G C&J</div>
+        <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
         <div style={{ color: '#F87171', marginBottom: 16 }}>Access denied. Staff only.</div>
         <button
           style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
@@ -42,6 +42,7 @@ export default function App() {
   return (
     <DashboardPage
       profile={profile}
+      companyName={companyName}
       onSignOut={() => import('./lib/supabase').then(({ supabase }) => supabase.auth.signOut())}
     />
   )
