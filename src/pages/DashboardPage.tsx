@@ -1416,17 +1416,18 @@ export default function DashboardPage({
           )
           .select("id, name")
           .single();
-        const { data: restoreData, error: restoreError } =
+        const { error: restoreError } =
           await supabase.auth.setSession({
             access_token: savedAccessToken,
             refresh_token: savedRefreshToken,
           });
-        console.log(
-          "Session restore:",
-          restoreData?.user?.id,
-          "error:",
-          restoreError,
-        );
+        if (restoreError) {
+          setBookError(
+            "Session error restoring dispatcher — please refresh and try again.",
+          );
+          setBookLoading(false);
+          return;
+        }
         if (insertError || !newProfile) {
           setBookError(
             `Could not create guest profile: ${insertError?.message ?? "unknown error"} (code: ${insertError?.code})`,
@@ -2720,6 +2721,18 @@ export default function DashboardPage({
                   placeholder="+1 (902) 555-1234"
                   value={bookPassenger}
                   onChange={(e) => setBookPassenger(formatBookingPhone(e.target.value))}
+                  onBlur={async () => {
+                    const phone = toE164(bookPassenger);
+                    if (phone.replace(/\D/g, "").length < 11) return;
+                    const { data } = await supabase
+                      .from("profiles")
+                      .select("name")
+                      .eq("phone", phone)
+                      .maybeSingle();
+                    if (data?.name && !bookPassengerName.trim()) {
+                      setBookPassengerName(data.name);
+                    }
+                  }}
                   required
                 />
               </div>
