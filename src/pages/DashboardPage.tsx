@@ -5,6 +5,8 @@ import AnalyticsPage from "./AnalyticsPage";
 import ReportsPage from "./ReportsPage";
 import DiscountsPage from "./DiscountsPage";
 import SettingsPage from "./SettingsPage";
+import AnnouncementsPage from "./AnnouncementsPage";
+import MessagesPage from "./MessagesPage";
 
 const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
@@ -123,6 +125,39 @@ function IconDiscounts() {
     >
       <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2.59 12.58a2 2 0 0 1 0-2.83l7.17-7.17a2 2 0 0 1 1.42-.58H17a2 2 0 0 1 2 2v6.41a2 2 0 0 1-.58 1.41z" />
       <circle cx="13" cy="7" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function IconAnnouncements() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m3 11 18-5v12L3 14v-3z" />
+      <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+    </svg>
+  );
+}
+function IconMessages() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   );
 }
@@ -693,6 +728,9 @@ export default function DashboardPage({
   const [showReports, setShowReports] = useState(false);
   const [showDiscounts, setShowDiscounts] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showAnnouncements, setShowAnnouncements] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [hasDriverChatUnread, setHasDriverChatUnread] = useState(false);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -792,6 +830,8 @@ export default function DashboardPage({
       !showReports &&
       !showDiscounts &&
       !showSettings &&
+      !showAnnouncements &&
+      !showMessages &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -800,7 +840,7 @@ export default function DashboardPage({
           google.maps.event.trigger(googleMapRef.current, "resize");
       }, 50);
     }
-  }, [showAnalytics, showReports, showDiscounts, showSettings, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, selectedDriver]);
 
   useEffect(() => {
     fetchAll();
@@ -1643,11 +1683,13 @@ export default function DashboardPage({
     fetchDrivers();
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
     setShowDiscounts(dest === "discounts");
     setShowSettings(dest === "settings");
+    setShowAnnouncements(dest === "announcements");
+    setShowMessages(dest === "messages");
   }
 
   const activeRides = rides.filter(
@@ -1690,7 +1732,11 @@ export default function DashboardPage({
         ? "Discounts"
         : showSettings
           ? "Settings"
-          : tab.charAt(0).toUpperCase() + tab.slice(1);
+          : showAnnouncements
+            ? "Announcements"
+            : showMessages
+              ? "Messages"
+              : tab.charAt(0).toUpperCase() + tab.slice(1);
 
   if (loading)
     return (
@@ -1938,7 +1984,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: t, label }) => (
               <button
                 key={t}
-                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts && !showSettings ? " active" : ""}`}
+                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages ? " active" : ""}`}
                 onClick={() => {
                   setTab(t);
                   navigateTo("main");
@@ -1949,6 +1995,31 @@ export default function DashboardPage({
                 {navExpanded && <span className="db-nav-label">{label}</span>}
               </button>
             ))}
+            <button
+              className={`db-nav-item${showAnnouncements ? " active" : ""}`}
+              onClick={() => {
+                navigateTo("announcements");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconAnnouncements />
+              </span>
+              {navExpanded && <span className="db-nav-label">Announcements</span>}
+            </button>
+            <button
+              className={`db-nav-item${showMessages ? " active" : ""}`}
+              onClick={() => {
+                navigateTo("messages");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconMessages />
+                {hasDriverChatUnread && !showMessages && <span className="db-badge-dot" />}
+              </span>
+              {navExpanded && <span className="db-nav-label">Messages</span>}
+            </button>
           </div>
           <div className="db-nav-bottom">
             <button
@@ -2030,7 +2101,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? "Driver")
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -2064,7 +2135,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver ? (
               <button
                 className="db-new-ride-btn"
                 onClick={() => setBookingOpen(true)}
@@ -2119,10 +2190,33 @@ export default function DashboardPage({
           </div>
 
           <div
+            className="db-overlay"
+            style={{ display: showAnnouncements ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <AnnouncementsPage companyId={profile.company_id} adminId={profile.id} />
+            )}
+          </div>
+
+          <div
+            className="db-overlay"
+            style={{ display: showMessages ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <MessagesPage
+                companyId={profile.company_id}
+                adminId={profile.id}
+                isActive={showMessages}
+                onUnreadChange={setHasDriverChatUnread}
+              />
+            )}
+          </div>
+
+          <div
             className="db-body"
             style={{
               display:
-                showAnalytics || showReports || showDiscounts || showSettings ? "none" : "flex",
+                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages ? "none" : "flex",
             }}
           >
             <div className="db-panel">
