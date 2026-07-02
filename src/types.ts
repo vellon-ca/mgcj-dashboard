@@ -4,6 +4,10 @@ export interface Profile {
   name: string | null;
   phone: string | null;
   role: "passenger" | "driver" | "admin";
+  avatar_url: string | null;
+  is_active: boolean;
+  deactivation_pending: boolean;
+  deleted_at: string | null;
   created_at: string;
 }
 

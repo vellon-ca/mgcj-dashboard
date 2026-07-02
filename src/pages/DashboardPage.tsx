@@ -201,16 +201,24 @@ function DriverDetailPanel({
   driver,
   rides,
   onClose,
+  onDeactivate,
+  onActivate,
+  onDelete,
 }: {
   driver: any;
   rides: Ride[];
   onClose: () => void;
+  onDeactivate: (hasActiveRide: boolean) => void;
+  onActivate: () => void;
+  onDelete: () => void;
 }) {
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
   const [totalRides, setTotalRides] = useState(0);
   const [openReports, setOpenReports] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [confirmAction, setConfirmAction] = useState<"deactivate" | "activate" | "delete" | null>(null);
+  const [acting, setActing] = useState(false);
 
   useEffect(() => {
     fetchDriverDetail();
@@ -275,6 +283,17 @@ function DriverDetailPanel({
         r.status,
       ),
   );
+  const isAccountActive: boolean = driver.profile?.is_active ?? true;
+  const isDeactivationPending: boolean = driver.profile?.deactivation_pending ?? false;
+
+  async function handleConfirm() {
+    setActing(true);
+    if (confirmAction === "deactivate") onDeactivate(!!activeRide);
+    else if (confirmAction === "activate") onActivate();
+    else if (confirmAction === "delete") await onDelete();
+    setActing(false);
+    setConfirmAction(null);
+  }
 
   return (
     <div className="dd-panel">
@@ -295,6 +314,60 @@ function DriverDetailPanel({
           Back to map
         </button>
       </div>
+
+      {/* Inline confirmation overlay */}
+      {confirmAction && (
+        <div className="dd-confirm-overlay">
+          <div className="dd-confirm-box">
+            {confirmAction === "delete" ? (
+              <>
+                <div className="dd-confirm-title">Delete driver?</div>
+                <div className="dd-confirm-body">
+                  <strong>{name}</strong>'s account will be permanently deactivated and they will no longer be able to sign in. Their ride history is preserved for reporting.
+                </div>
+                <div className="dd-confirm-warning">
+                  This cannot be undone.
+                </div>
+              </>
+            ) : confirmAction === "deactivate" ? (
+              <>
+                <div className="dd-confirm-title">
+                  {activeRide ? "Schedule deactivation?" : "Deactivate driver?"}
+                </div>
+                <div className="dd-confirm-body">
+                  {activeRide
+                    ? `${name} is currently on a ride. Their account will be deactivated as soon as the ride completes.`
+                    : `${name} will be locked out of the app immediately and won't receive new rides.`}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="dd-confirm-title">Activate driver?</div>
+                <div className="dd-confirm-body">
+                  {name} will regain full access to the app and start receiving rides again.
+                </div>
+              </>
+            )}
+            <div className="dd-confirm-actions">
+              <button
+                className="dd-confirm-cancel"
+                onClick={() => setConfirmAction(null)}
+                disabled={acting}
+              >
+                Cancel
+              </button>
+              <button
+                className={`dd-confirm-ok${confirmAction === "delete" ? " danger" : confirmAction === "activate" ? " green" : ""}`}
+                onClick={handleConfirm}
+                disabled={acting}
+              >
+                {acting ? "…" : confirmAction === "delete" ? "Delete driver" : confirmAction === "activate" ? "Activate" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="dd-scroll">
         <div className="dd-profile">
           {avatarUrl ? (
@@ -310,7 +383,38 @@ function DriverDetailPanel({
             <div className="dd-avatar-initials">{initials}</div>
           )}
           <div className="dd-profile-info">
-            <div className="dd-profile-name">{name}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+              <div className="dd-profile-name" style={{ marginBottom: 0 }}>{name}</div>
+              <div
+                className="dd-status-dot"
+                style={{ background: !isAccountActive ? "#EF4444" : driver.is_active ? "#1D9E75" : "#374151", flexShrink: 0 }}
+              />
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
+                {isAccountActive ? (
+                  <button
+                    className="dd-action-deactivate"
+                    onClick={() => setConfirmAction("deactivate")}
+                  >
+                    Deactivate
+                  </button>
+                ) : (
+                  <button
+                    className="dd-action-activate"
+                    onClick={() => setConfirmAction("activate")}
+                  >
+                    Activate
+                  </button>
+                )}
+                <button
+                  className="dd-action-delete"
+                  disabled={!!activeRide}
+                  title={activeRide ? "Cannot delete a driver on an active ride" : undefined}
+                  onClick={() => setConfirmAction("delete")}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
             <div className="dd-profile-sub">
               {driver.vehicle_make} {driver.vehicle_model} ·{" "}
               {driver.plate_number ?? "—"}
@@ -319,13 +423,13 @@ function DriverDetailPanel({
               {driver.profile?.phone ?? "—"}
             </div>
           </div>
-          <div
-            className="dd-status-dot"
-            style={{ background: driver.is_active ? "#1D9E75" : "#374151" }}
-          />
         </div>
         <div className="dd-status-row">
-          {driver.is_active ? (
+          {!isAccountActive ? (
+            <span className="dd-pill dd-pill-red">Deactivated</span>
+          ) : isDeactivationPending ? (
+            <span className="dd-pill dd-pill-amber">⏳ Deactivation pending</span>
+          ) : driver.is_active ? (
             activeRide ? (
               <span className="dd-pill dd-pill-orange">● On a ride</span>
             ) : (
@@ -717,6 +821,11 @@ export default function DashboardPage({
         { event: "*", schema: "public", table: "drivers" },
         fetchDrivers,
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "driver_invites" },
+        fetchInvites,
+      )
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
@@ -803,19 +912,60 @@ export default function DashboardPage({
       .select("*")
       .order("is_active", { ascending: false });
     if (!data) return;
-    const profileMap = await batchProfiles(data.map((d: any) => d.id));
+    const driverIds = data.map((d: any) => d.id);
+    const profileMap = await batchProfiles(driverIds);
+
+    // Fetch account-status fields separately so a schema-cache miss on new columns
+    // can't break the name/phone/avatar lookups in batchProfiles.
+    const { data: statusRows, error: statusError } = await supabase
+      .from("profiles")
+      .select("id, is_active, deactivation_pending, deleted_at")
+      .in("id", driverIds);
+    if (statusError) console.error("[fetchDrivers] status query failed:", statusError);
+    const statusMap = new Map<string, { is_active: boolean; deactivation_pending: boolean; deleted_at: string | null }>();
+    statusRows?.forEach((p: any) =>
+      statusMap.set(p.id, {
+        is_active: p.is_active ?? true,
+        deactivation_pending: p.deactivation_pending ?? false,
+        deleted_at: p.deleted_at ?? null,
+      }),
+    );
+
     const enriched = data.map((d: any) => ({
       ...d,
-      profile: profileMap.get(d.id) ?? null,
+      profile: profileMap.get(d.id)
+        ? { ...profileMap.get(d.id), ...(statusMap.get(d.id) ?? { is_active: true, deactivation_pending: false, deleted_at: null }) }
+        : null,
     }));
-    setDrivers(enriched);
+
+    // If the status query failed entirely, preserve whatever is_active state
+    // is already in local state rather than overwriting with the true fallback.
+    const statusQueryFailed = !!statusError || statusMap.size === 0;
+
+    setDrivers((prevDrivers: any[]) => {
+      if (!statusQueryFailed) return enriched;
+      const prevMap = new Map(prevDrivers.map((d: any) => [d.id, d]));
+      return enriched.map((d: any) => {
+        const prev = prevMap.get(d.id);
+        if (prev?.profile && d.profile) {
+          return { ...d, profile: { ...d.profile, is_active: prev.profile.is_active ?? true, deactivation_pending: prev.profile.deactivation_pending ?? false, deleted_at: prev.profile.deleted_at ?? null } };
+        }
+        return d;
+      });
+    });
     setStats((s) => ({
       ...s,
       driversOnline: enriched.filter((d: any) => d.is_active).length,
     }));
     setSelectedDriver((prev: any) => {
       if (!prev) return null;
-      return enriched.find((d: any) => d.id === prev.id) ?? prev;
+      const next = enriched.find((d: any) => d.id === prev.id);
+      if (!next) return prev;
+      // If status query failed, preserve the optimistic is_active we already have
+      if (statusQueryFailed && next.profile && prev.profile) {
+        return { ...next, profile: { ...next.profile, is_active: prev.profile.is_active ?? true, deactivation_pending: prev.profile.deactivation_pending ?? false } };
+      }
+      return next;
     });
     if (!googleMapRef.current) return;
     enriched
@@ -1436,6 +1586,63 @@ export default function DashboardPage({
     fetchRides();
   }
 
+  function patchDriverProfile(driverId: string, patch: Record<string, unknown>) {
+    setSelectedDriver((prev: any) =>
+      prev?.id === driverId
+        ? { ...prev, profile: { ...prev.profile, ...patch } }
+        : prev,
+    );
+    setDrivers((prev: any[]) =>
+      prev.map((d: any) =>
+        d.id === driverId ? { ...d, profile: { ...d.profile, ...patch } } : d,
+      ),
+    );
+  }
+
+  async function deactivateDriver(driverId: string, hasActiveRide: boolean) {
+    if (hasActiveRide) {
+      const { data: updated, error } = await supabase.from("profiles").update({ deactivation_pending: true }).eq("id", driverId).select("id, is_active, deactivation_pending");
+      if (error) { console.error("[deactivate] pending update failed:", error); alert(`Deactivation failed: ${error.message}`); return; }
+      if (!updated?.length) { alert("Deactivation failed: no rows updated — check RLS or company_id mismatch."); return; }
+      patchDriverProfile(driverId, { deactivation_pending: true });
+    } else {
+      const { data: updated, error } = await supabase.from("profiles").update({ is_active: false, deactivation_pending: false }).eq("id", driverId).select("id, is_active, deactivation_pending");
+      if (error) { console.error("[deactivate] direct update failed:", error); alert(`Deactivation failed: ${error.message}`); return; }
+      if (!updated?.length) { alert("Deactivation failed: no rows updated — check RLS or company_id mismatch."); return; }
+      patchDriverProfile(driverId, { is_active: false, deactivation_pending: false });
+    }
+    fetchDrivers();
+  }
+
+  async function activateDriver(driverId: string) {
+    const { error } = await supabase.from("profiles").update({ is_active: true, deactivation_pending: false }).eq("id", driverId);
+    if (error) { console.error("[activate] update failed:", error); alert(`Activation failed: ${error.message}`); return; }
+    patchDriverProfile(driverId, { is_active: true, deactivation_pending: false });
+    fetchDrivers();
+  }
+
+  async function deleteDriver(driverId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-driver`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ driver_id: driverId }),
+      },
+    );
+    if (!res.ok) {
+      const { error } = await res.json();
+      alert(`Failed to delete driver: ${error}`);
+      return;
+    }
+    setSelectedDriver(null);
+    fetchDrivers();
+  }
+
   function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
@@ -1667,10 +1874,10 @@ export default function DashboardPage({
         .dd-avatar-photo { width: 52px; height: 52px; border-radius: 26px; object-fit: cover; border: 2px solid rgba(74,158,255,0.2); flex-shrink: 0; }
         .dd-avatar-initials { width: 52px; height: 52px; border-radius: 26px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 2px solid rgba(74,158,255,0.12); }
         .dd-profile-info { flex: 1; min-width: 0; }
-        .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; }
-        .dd-profile-sub { font-size: 12px; color: #6B7280; margin-top: 2px; }
+        .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dd-profile-sub { font-size: 12px; color: #6B7280; }
         .dd-profile-phone { font-size: 12px; color: #4B5563; margin-top: 2px; }
-        .dd-status-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .dd-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         .dd-status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
         .dd-pill { font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 10px; }
         .dd-pill-green { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); }
@@ -1689,6 +1896,29 @@ export default function DashboardPage({
         .dd-ride-addr { font-size: 11px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .dd-ride-time { font-size: 10px; color: #374151; }
         .dd-ride-fare { font-size: 13px; font-weight: 600; color: #6B7280; white-space: nowrap; padding-top: 2px; }
+        .dd-pill-amber { background: rgba(245,158,11,0.1); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); }
+        .dd-action-deactivate { background: rgba(245,158,11,0.08); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-action-deactivate:hover { background: rgba(245,158,11,0.15); }
+        .dd-action-activate { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-action-activate:hover { background: rgba(29,158,117,0.15); }
+        .dd-action-delete { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-action-delete:hover:not(:disabled) { background: rgba(226,75,74,0.14); }
+        .dd-action-delete:disabled { opacity: 0.35; cursor: not-allowed; }
+        .dd-confirm-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
+        .dd-confirm-box { background: #1E2A3A; border-radius: 14px; padding: 24px; max-width: 300px; width: calc(100% - 32px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 16px 48px rgba(0,0,0,0.5); }
+        .dd-confirm-title { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 10px; }
+        .dd-confirm-body { font-size: 13px; color: #9CA3AF; line-height: 1.5; margin-bottom: 10px; }
+        .dd-confirm-warning { font-size: 12px; color: #F87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.18); border-radius: 8px; padding: 8px 12px; margin-bottom: 18px; }
+        .dd-confirm-actions { display: flex; gap: 8px; }
+        .dd-confirm-cancel { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-confirm-cancel:hover:not(:disabled) { background: rgba(255,255,255,0.05); }
+        .dd-confirm-ok { flex: 1; background: rgba(245,158,11,0.12); color: #F59E0B; border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-confirm-ok:hover:not(:disabled) { background: rgba(245,158,11,0.2); }
+        .dd-confirm-ok.danger { background: rgba(226,75,74,0.1); color: #F87171; border-color: rgba(226,75,74,0.25); }
+        .dd-confirm-ok.danger:hover:not(:disabled) { background: rgba(226,75,74,0.18); }
+        .dd-confirm-ok.green { background: rgba(29,158,117,0.1); color: #1D9E75; border-color: rgba(29,158,117,0.25); }
+        .dd-confirm-ok.green:hover:not(:disabled) { background: rgba(29,158,117,0.18); }
+        .dd-confirm-ok:disabled, .dd-confirm-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
       `}</style>
 
       <div className="db-page">
@@ -2264,10 +2494,12 @@ export default function DashboardPage({
                         {drivers.length}
                       </span>
                     </div>
-                    {drivers.length === 0 && (
+                    {drivers.filter((d) => !(d as any).profile?.deleted_at).length === 0 && (
                       <div className="db-empty">No drivers registered yet</div>
                     )}
-                    {drivers.map((driver) => {
+                    {drivers
+                      .filter((d) => !(d as any).profile?.deleted_at)
+                      .map((driver) => {
                       const driverActiveRide = rides.find(
                         (r) =>
                           r.driver_id === driver.id &&
@@ -2279,10 +2511,13 @@ export default function DashboardPage({
                           ].includes(r.status),
                       );
                       const avatarUrl = (driver as any).profile?.avatar_url;
+                      const isAccountActive: boolean = (driver as any).profile?.is_active ?? true;
+                      const isDeactivationPending: boolean = (driver as any).profile?.deactivation_pending ?? false;
                       return (
                         <div
                           key={driver.id}
                           className="db-driver-card"
+                          style={!isAccountActive ? { opacity: 0.65 } : undefined}
                           onClick={() => setSelectedDriver(driver)}
                         >
                           <div className="db-driver-card-top">
@@ -2313,8 +2548,16 @@ export default function DashboardPage({
                                 {driver.vehicle_make} {driver.vehicle_model} ·{" "}
                                 {driver.plate_number}
                               </div>
-                              {driver.is_active &&
-                                (driverActiveRide ? (
+                              {!isAccountActive ? (
+                                <div style={{ fontSize: 11, color: "#F87171", marginTop: 3, fontWeight: 500 }}>
+                                  Deactivated
+                                </div>
+                              ) : isDeactivationPending ? (
+                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
+                                  ⏳ Deactivation pending
+                                </div>
+                              ) : driver.is_active ? (
+                                driverActiveRide ? (
                                   <div className="db-driver-status-on-ride">
                                     ● On a ride
                                   </div>
@@ -2322,12 +2565,15 @@ export default function DashboardPage({
                                   <div className="db-driver-status-available">
                                     ● Available
                                   </div>
-                                ))}
+                                )
+                              ) : null}
                             </div>
                             <div
                               className="db-online-dot"
                               style={{
-                                background: driver.is_active
+                                background: !isAccountActive
+                                  ? "#E24B4A"
+                                  : driver.is_active
                                   ? "#1D9E75"
                                   : "#374151",
                               }}
@@ -2350,6 +2596,9 @@ export default function DashboardPage({
                   driver={selectedDriver}
                   rides={rides}
                   onClose={() => setSelectedDriver(null)}
+                  onDeactivate={(hasActiveRide) => deactivateDriver(selectedDriver.id, hasActiveRide)}
+                  onActivate={() => activateDriver(selectedDriver.id)}
+                  onDelete={() => deleteDriver(selectedDriver.id)}
                 />
               )}
               <div
