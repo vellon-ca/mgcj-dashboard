@@ -736,6 +736,13 @@ export default function DashboardPage({
   const [loading, setLoading] = useState(true);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
+
+  function formatPhoneInput(value: string): string {
+    const digits = value.replace(/\D/g, "").slice(0, 10);
+    if (digits.length <= 3) return digits.length ? `(${digits}` : "";
+    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -1164,9 +1171,10 @@ export default function DashboardPage({
     if (!inviteName.trim() || !invitePhone.trim()) return;
     setInviteLoading(true);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const e164Phone = "+1" + invitePhone.replace(/\D/g, "");
     const { error } = await supabase.from("driver_invites").insert({
       name: inviteName.trim(),
-      phone: invitePhone.trim(),
+      phone: e164Phone,
       code,
       used: false,
       created_by: profile.id,
@@ -1871,6 +1879,11 @@ export default function DashboardPage({
         .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
         .db-invite-input::placeholder { color: #374151; }
+        .db-phone-wrap { display: flex; align-items: center; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0 12px; transition: border-color 0.15s; }
+        .db-phone-wrap:focus-within { border-color: rgba(232,80,10,0.35); }
+        .db-phone-prefix { font-size: 13px; color: #9CA3AF; font-family: system-ui, sans-serif; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.08); margin-right: 8px; white-space: nowrap; }
+        .db-phone-input { flex: 1; background: transparent; border: none; padding: 10px 0; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
+        .db-phone-input::placeholder { color: #374151; }
         .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-invite-btn:hover { opacity: 0.88; }
         .db-invite-btn:disabled { opacity: 0.5; }
@@ -2477,12 +2490,17 @@ export default function DashboardPage({
                         value={inviteName}
                         onChange={(e) => setInviteName(e.target.value)}
                       />
-                      <input
-                        className="db-invite-input"
-                        placeholder="Phone e.g. +19021234567"
-                        value={invitePhone}
-                        onChange={(e) => setInvitePhone(e.target.value)}
-                      />
+                      <div className="db-phone-wrap">
+                        <span className="db-phone-prefix">+1</span>
+                        <input
+                          className="db-phone-input"
+                          placeholder="(902) 123-4567"
+                          value={invitePhone}
+                          onChange={(e) => setInvitePhone(formatPhoneInput(e.target.value))}
+                          maxLength={14}
+                          inputMode="numeric"
+                        />
+                      </div>
                       <button
                         className="db-invite-btn"
                         type="submit"
