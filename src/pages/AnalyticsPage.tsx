@@ -42,6 +42,7 @@ interface RideRow {
   driver_name: string;
   passenger_id: string;
   driver_id: string | null;
+  invoice_number: string | null;
 }
 interface ReviewRow {
   id: string;
@@ -73,6 +74,20 @@ interface EventRow {
   details: Record<string, any>;
   dispatcher_name: string | null;
 }
+interface InvoiceRow {
+  id: string;
+  invoice_number: string;
+  ride_id: string | null;
+  passenger_name: string | null;
+  driver_name: string | null;
+  company_name: string | null;
+  hst_number: string | null;
+  pickup_address: string | null;
+  dropoff_address: string | null;
+  fare: number;
+  payment_method: string | null;
+  sent_at: string;
+}
 
 const EVENT_LABELS: Record<string, string> = {
   "ride.created": "Created ride",
@@ -96,6 +111,7 @@ const EVENT_LABELS: Record<string, string> = {
   "escalation.acknowledged": "Escalation acknowledged",
   "export.csv": "Exported CSV",
   "export.pdf": "Exported PDF",
+  "invoice.printed": "Printed receipt",
 };
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
@@ -119,6 +135,7 @@ const EVENT_COLORS: Record<string, string> = {
   "escalation.acknowledged": "#F59E0B",
   "export.csv": "#6B7280",
   "export.pdf": "#6B7280",
+  "invoice.printed": "#A855F7",
 };
 
 function formatEventDetails(type: string, details: any): string {
@@ -174,6 +191,12 @@ function formatEventDetails(type: string, details: any): string {
     case "announcement.drivers":
     case "announcement.passengers":
       return details.title ?? "—";
+    case "invoice.printed":
+      return [
+        details.invoice_number,
+        details.passenger_name,
+        details.fare != null ? `$${Number(details.fare).toFixed(2)}` : null,
+      ].filter(Boolean).join(" · ");
     case "export.csv":
     case "export.pdf": {
       const sectionLabels: Record<string, string> = {
@@ -194,13 +217,14 @@ function formatEventDetails(type: string, details: any): string {
   }
 }
 
-type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity";
+type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "invoices";
 const SECTION_ITEMS: { id: Section; label: string }[] = [
   { id: "revenue", label: "Revenue" },
   { id: "rides", label: "Ride History" },
   { id: "reviews", label: "Reviews" },
   { id: "drivers", label: "Drivers" },
   { id: "activity", label: "Activity Log" },
+  { id: "invoices", label: "Invoices" },
 ];
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -348,6 +372,14 @@ export default function AnalyticsPage({
   const [activityError, setActivityError] = useState<string | null>(null);
   const activityFetchId = useRef(0);
   const fetchActivityLogRef = useRef<() => void>(() => {});
+  const ridesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Invoices
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
+  const invoicesFetchId = useRef(0);
 
   // Peak
   const [hourStats, setHourStats] = useState<HourStat[]>([]);
@@ -372,6 +404,42 @@ export default function AnalyticsPage({
   useEffect(() => {
     if (section === "activity") fetchActivityLog();
   }, [section, activityDateFrom, activityDateTo]);
+
+  useEffect(() => {
+    if (section === "invoices") fetchInvoices();
+  }, [section]);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    function scheduleRidesRefresh() {
+      if (ridesDebounceRef.current) clearTimeout(ridesDebounceRef.current);
+      ridesDebounceRef.current = setTimeout(() => {
+        fetchRevenue();
+        fetchRideHistory();
+        fetchPeak();
+      }, 1200);
+    }
+
+    const ch = supabase
+      .channel(`analytics_rt_${companyId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "rides", filter: `company_id=eq.${companyId}` },
+        scheduleRidesRefresh,
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "invoices", filter: `company_id=eq.${companyId}` },
+        () => {
+          fetchRideHistory(); // refreshes the invoice # column in ride history
+          if (section === "invoices") fetchInvoices();
+        },
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+  }, [companyId]);
 
   // Keep ref current so the realtime callback always calls the latest version
   useEffect(() => { fetchActivityLogRef.current = fetchActivityLog; });
@@ -601,8 +669,15 @@ export default function AnalyticsPage({
 
       const passengerIds = rides.map((r: any) => r.passenger_id);
       const driverIds = rides.map((r: any) => r.driver_id).filter(Boolean);
-      const profileMap = await batchProfiles([...passengerIds, ...driverIds]);
+      const rideIds = rides.map((r: any) => r.id);
+      const [profileMap, invoiceResult] = await Promise.all([
+        batchProfiles([...passengerIds, ...driverIds]),
+        supabase.from("invoices").select("ride_id, invoice_number").in("ride_id", rideIds),
+      ]);
       if (fetchId !== historyFetchId.current) return;
+
+      const invoiceMap = new Map<string, string>();
+      invoiceResult.data?.forEach((inv: any) => invoiceMap.set(inv.ride_id, inv.invoice_number));
 
       const enriched: RideRow[] = rides.map((r: any) => ({
         id: r.id,
@@ -617,6 +692,7 @@ export default function AnalyticsPage({
         driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
         passenger_id: r.passenger_id,
         driver_id: r.driver_id ?? null,
+        invoice_number: invoiceMap.get(r.id) ?? null,
       }));
 
       if (fetchId === historyFetchId.current) setAllRides(enriched);
@@ -760,6 +836,78 @@ export default function AnalyticsPage({
     } finally {
       if (fetchId === activityFetchId.current) setActivityLoading(false);
     }
+  }
+
+  async function fetchInvoices() {
+    const fetchId = ++invoicesFetchId.current;
+    setInvoicesLoading(true);
+    try {
+      const { data } = await supabase
+        .from("invoices")
+        .select("*")
+        .order("sent_at", { ascending: false })
+        .limit(500);
+      if (fetchId !== invoicesFetchId.current || !data) return;
+      setInvoices(data as InvoiceRow[]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (fetchId === invoicesFetchId.current) setInvoicesLoading(false);
+    }
+  }
+
+  function printInvoiceReceipt(inv: InvoiceRow) {
+    logDispatchEvent({
+      companyId,
+      dispatcherId,
+      eventType: "invoice.printed",
+      details: {
+        invoice_number: inv.invoice_number,
+        passenger_name: inv.passenger_name,
+        fare: inv.fare,
+      },
+    });
+    const subtotal = inv.fare / 1.15;
+    const hst = inv.fare - subtotal;
+    const date = new Date(inv.sent_at).toLocaleString("en-CA", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+      hour: "numeric", minute: "2-digit",
+    });
+    const html = `
+      <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+        <div style="text-align: center; padding: 24px 0;">
+          <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${inv.company_name ?? "Your Taxi"}</h1>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${inv.invoice_number}</p>
+        </div>
+        <div style="background: #f7f7f7; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Total fare</p>
+          <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${inv.fare.toFixed(2)}</p>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280; text-transform: capitalize;">Paid by ${inv.payment_method ?? "—"}</p>
+        </div>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; width: 110px;">Date</td><td style="padding: 8px 0; font-size: 13px;">${date}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Pickup</td><td style="padding: 8px 0; font-size: 13px;">${inv.pickup_address ?? "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Drop-off</td><td style="padding: 8px 0; font-size: 13px;">${inv.dropoff_address ?? "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Passenger</td><td style="padding: 8px 0; font-size: 13px;">${inv.passenger_name ?? "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Driver</td><td style="padding: 8px 0; font-size: 13px;">${inv.driver_name ?? "—"}</td></tr>
+          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST Reg</td><td style="padding: 8px 0; font-size: 13px;">${inv.hst_number}</td></tr>` : ""}
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Subtotal</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST (15%)</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
+        </table>
+        <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
+          ${inv.passenger_name ? `Thanks for riding with us, ${inv.passenger_name}!` : "Thank you for your business."}<br/>
+          ${inv.company_name ?? "Your Taxi"}
+        </p>
+      </div>
+    `;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head>
+      <title>${inv.invoice_number}</title>
+      <style>* { box-sizing: border-box; } body { margin: 0; padding: 40px; background: #fff; } @media print { body { padding: 20px; } }</style>
+    </head><body>${html}</body></html>`);
+    win.document.close();
+    setTimeout(() => win.print(), 300);
   }
 
   async function openRideDetail(ride: RideRow) {
@@ -1113,6 +1261,13 @@ export default function AnalyticsPage({
   const availableYears = Array.from(
     new Set(allRides.map((r) => new Date(r.created_at).getFullYear())),
   ).sort((a, b) => b - a);
+
+  const filteredInvoices = invoiceSearch.trim()
+    ? invoices.filter((inv) =>
+        inv.invoice_number.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
+        (inv.passenger_name ?? "").toLowerCase().includes(invoiceSearch.toLowerCase()),
+      )
+    : invoices;
   const filteredRides =
     rideFilter === "all"
       ? allRides
@@ -1301,6 +1456,12 @@ export default function AnalyticsPage({
         /* Activity log */
         .an-date-input { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
         .an-date-input:focus { border-color: rgba(232,80,10,0.4); }
+        /* Invoices */
+        .inv-search-row { margin-bottom: 16px; }
+        .inv-search { width: 100%; max-width: 380px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
+        .inv-search:focus { border-color: rgba(232,80,10,0.4); }
+        .inv-search::placeholder { color: #374151; }
+        .inv-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: #E8500A; background: rgba(232,80,10,0.08); border: 1px solid rgba(232,80,10,0.2); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
         .an-type-select { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
         .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #111E2E; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
         .al-toolbar-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.07); margin: 0 2px; }
@@ -1987,6 +2148,7 @@ export default function AnalyticsPage({
                                       "Fare",
                                       "Status",
                                       "Payment",
+                                      "Invoice",
                                     ].map((h) => (
                                       <th
                                         key={h}
@@ -2063,6 +2225,13 @@ export default function AnalyticsPage({
                                         style={{ textTransform: "capitalize" }}
                                       >
                                         {r.payment_method}
+                                      </td>
+                                      <td className="an-td">
+                                        {r.invoice_number ? (
+                                          <span className="inv-tag">{r.invoice_number}</span>
+                                        ) : (
+                                          <span style={{ color: "#374151" }}>—</span>
+                                        )}
                                       </td>
                                     </tr>
                                   ))}
@@ -2511,6 +2680,7 @@ export default function AnalyticsPage({
                     <optgroup label="Exports">
                       <option value="export.csv">CSV export</option>
                       <option value="export.pdf">PDF export</option>
+                      <option value="invoice.printed">Printed receipt</option>
                     </optgroup>
                   </select>
                   {activityLoading && (
@@ -2590,6 +2760,123 @@ export default function AnalyticsPage({
               </>
             );
           })()}
+
+          {/* ── INVOICES ── */}
+          {section === "invoices" && (
+            <>
+              <div className="an-section-header">
+                <div className="an-section-title">Invoices</div>
+                <span className="an-filter-count">
+                  {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="inv-search-row">
+                <input
+                  className="inv-search"
+                  placeholder="Search by invoice # or passenger name…"
+                  value={invoiceSearch}
+                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                />
+              </div>
+              {invoicesLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : filteredInvoices.length === 0 ? (
+                <div className="an-no-data" style={{ padding: "48px 0" }}>
+                  {invoiceSearch ? "No invoices match your search" : "No invoices yet — receipts will appear here after rides complete"}
+                </div>
+              ) : (
+                <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
+                  <table className="an-table">
+                    <thead>
+                      <tr>
+                        {["Invoice #", "Date", "Passenger", "Driver", "Route", "Amount", "Payment"].map((h) => (
+                          <th key={h} className="an-th" style={{ padding: "12px 14px" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredInvoices.map((inv, i) => (
+                        <tr
+                          key={inv.id}
+                          className="an-ride-row"
+                          style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}
+                          onClick={() => setSelectedInvoice(inv)}
+                        >
+                          <td className="an-td">
+                            <span className="inv-tag">{inv.invoice_number}</span>
+                          </td>
+                          <td className="an-td" style={{ whiteSpace: "nowrap" }}>
+                            {new Date(inv.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
+                          </td>
+                          <td className="an-td primary">{inv.passenger_name ?? "—"}</td>
+                          <td className="an-td">{inv.driver_name ?? "—"}</td>
+                          <td className="an-td addr">
+                            {inv.pickup_address && inv.dropoff_address
+                              ? `${inv.pickup_address} → ${inv.dropoff_address}`
+                              : inv.pickup_address ?? "—"}
+                          </td>
+                          <td className="an-td green">${inv.fare.toFixed(2)}</td>
+                          <td className="an-td" style={{ textTransform: "capitalize" }}>{inv.payment_method ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {selectedInvoice && (
+                <div className="an-modal-overlay" onClick={() => setSelectedInvoice(null)}>
+                  <div className="an-modal" onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <div className="an-modal-title" style={{ marginBottom: 0 }}>Invoice</div>
+                      <span className="inv-tag" style={{ fontSize: 13, padding: "4px 10px" }}>
+                        {selectedInvoice.invoice_number}
+                      </span>
+                    </div>
+                    {(
+                      [
+                        ["Date", new Date(selectedInvoice.sent_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })],
+                        ["Company", selectedInvoice.company_name ?? "—"],
+                        ...(selectedInvoice.hst_number ? [["HST Reg", selectedInvoice.hst_number]] : []),
+                        ["Passenger", selectedInvoice.passenger_name ?? "—"],
+                        ["Driver", selectedInvoice.driver_name ?? "—"],
+                        ["Pickup", selectedInvoice.pickup_address ?? "—"],
+                        ["Drop-off", selectedInvoice.dropoff_address ?? "—"],
+                        ["Payment", selectedInvoice.payment_method ?? "—"],
+                        ["Subtotal", `$${(selectedInvoice.fare / 1.15).toFixed(2)}`],
+                        ["HST (15%)", `$${(selectedInvoice.fare - selectedInvoice.fare / 1.15).toFixed(2)}`],
+                        ["Total", `$${selectedInvoice.fare.toFixed(2)}`],
+                      ] as [string, string][]
+                    ).map(([lbl, val]) => (
+                      <div
+                        key={lbl}
+                        className="an-detail-row"
+                        style={lbl === "Total" ? { borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 4, paddingTop: 12 } : {}}
+                      >
+                        <span className="an-detail-label">{lbl}</span>
+                        <span
+                          className="an-detail-value"
+                          style={lbl === "Total" ? { color: "#1D9E75", fontWeight: 700, fontSize: 16 } : {}}
+                        >
+                          {val}
+                        </span>
+                      </div>
+                    ))}
+                    <button
+                      className="an-download-btn"
+                      style={{ width: "100%", marginTop: 16, textAlign: "center" }}
+                      onClick={() => printInvoiceReceipt(selectedInvoice)}
+                    >
+                      Print Receipt
+                    </button>
+                    <button className="an-modal-close" onClick={() => setSelectedInvoice(null)}>
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 

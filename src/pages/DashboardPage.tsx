@@ -861,8 +861,33 @@ export default function DashboardPage({
       .channel("dashboard-rt")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "rides" },
-        fetchAll,
+        { event: "UPDATE", schema: "public", table: "rides" },
+        (payload) => {
+          // Instantly patch the changed ride from the payload — no round-trip needed
+          if (payload.new) {
+            setRides((prev) => {
+              const next = prev.map((r) =>
+                r.id === (payload.new as any).id
+                  ? { ...r, ...(payload.new as any) }
+                  : r,
+              );
+              computeStats(next);
+              return next;
+            });
+          }
+          // Background sync to keep profile enrichment and map markers current
+          fetchRides();
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "rides" },
+        () => fetchRides(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "rides" },
+        () => fetchRides(),
       )
       .on(
         "postgres_changes",
