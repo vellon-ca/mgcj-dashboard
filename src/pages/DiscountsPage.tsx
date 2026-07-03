@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { logDispatchEvent } from "../lib/logDispatchEvent";
 
 interface Institution {
   id: string;
@@ -258,6 +259,20 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       } else {
         const { error } = await supabase.from("discount_codes").insert(payload);
         if (error) throw error;
+        logDispatchEvent({
+          companyId,
+          dispatcherId: adminId,
+          eventType: "discount.created",
+          details: {
+            code: codeStr,
+            label: form.label.trim() || null,
+            amount_type: form.amount_type,
+            amount: amountNum,
+            ends_at: form.ends_at || null,
+            max_redemptions: form.max_redemptions ? Number(form.max_redemptions) : null,
+            one_per_passenger: form.one_per_passenger,
+          },
+        });
       }
 
       setFormOpen(false);
@@ -275,12 +290,26 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       .update({ active: !c.active })
       .eq("id", c.id);
     fetchCodes();
+    if (c.active) {
+      logDispatchEvent({
+        companyId,
+        dispatcherId: adminId,
+        eventType: "discount.deactivated",
+        details: { code: c.code, label: c.label ?? null },
+      });
+    }
   }
 
   async function deleteCode(c: DiscountCode) {
     if (!confirm(`Delete code "${c.code}"? This can't be undone.`)) return;
     await supabase.from("discount_codes").delete().eq("id", c.id);
     fetchCodes();
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "discount.deleted",
+      details: { code: c.code, label: c.label ?? null },
+    });
   }
 
   async function viewRedemptions(c: DiscountCode) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { logDispatchEvent } from "../lib/logDispatchEvent";
 import type { Ride, Driver, Profile, DriverInvite } from "../types";
 import AnalyticsPage from "./AnalyticsPage";
 import ReportsPage from "./ReportsPage";
@@ -1189,11 +1190,26 @@ export default function DashboardPage({
     setInviteName("");
     setInvitePhone("");
     fetchInvites();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "invite.created",
+      details: { code, name: inviteName.trim(), phone: e164Phone },
+    });
   }
 
   async function revokeInvite(id: string) {
+    const invite = pendingInvites.find((i) => i.id === id);
     await supabase.from("driver_invites").delete().eq("id", id);
     fetchInvites();
+    if (invite) {
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "invite.revoked",
+        details: { code: invite.code, name: invite.name, phone: invite.phone },
+      });
+    }
   }
 
   useEffect(() => {
@@ -1532,6 +1548,19 @@ export default function DashboardPage({
         setBookLoading(false);
         return;
       }
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "ride.created",
+        details: {
+          passenger_name: passengerProfile.name,
+          pickup_address: bookPickup,
+          dropoff_address: bookDropoff,
+          fare: finalFare,
+          scheduled: !!bookScheduled,
+          driver_id: bookDriver || null,
+        },
+      });
       setBookingOpen(false);
       setBookPassenger("+1 ");
       setBookPassengerName("");
@@ -1556,6 +1585,9 @@ export default function DashboardPage({
     const isFutureScheduled =
       (ride as any)?.scheduled_at &&
       new Date((ride as any).scheduled_at) > new Date();
+    const prevDriverId = ride?.driver_id ?? null;
+    const prevDriver = prevDriverId ? drivers.find((d) => d.id === prevDriverId) : null;
+    const newDriver = drivers.find((d) => d.id === driverId);
     await supabase
       .from("rides")
       .update(
@@ -1570,15 +1602,53 @@ export default function DashboardPage({
       .eq("id", rideId);
     setAssigningRide(null);
     fetchRides();
+    if (prevDriverId) {
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "ride.reassigned",
+        rideId,
+        details: {
+          from_driver_name: prevDriver?.profile?.name ?? null,
+          from_driver_id: prevDriverId,
+          to_driver_name: newDriver?.profile?.name ?? null,
+          to_driver_id: driverId,
+        },
+      });
+    } else {
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "ride.assigned",
+        rideId,
+        details: {
+          driver_name: newDriver?.profile?.name ?? null,
+          driver_id: driverId,
+        },
+      });
+    }
   }
 
   async function cancelRide(rideId: string) {
     if (!confirm("Cancel this ride?")) return;
+    const ride = rides.find((r) => r.id === rideId);
     await supabase
       .from("rides")
       .update({ status: "cancelled" })
       .eq("id", rideId);
     fetchRides();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "ride.cancelled",
+      rideId,
+      details: {
+        passenger_name: (ride as any)?.passenger?.name ?? null,
+        pickup_address: ride?.pickup_address ?? null,
+        dropoff_address: ride?.dropoff_address ?? null,
+        scheduled_at: (ride as any)?.scheduled_at ?? null,
+      },
+    });
   }
 
   function startEditRide(ride: Ride) {
@@ -1606,6 +1676,7 @@ export default function DashboardPage({
   async function saveRideEdits(rideId: string) {
     setEditSaving(true);
     setEditError(null);
+    const originalRide = rideDetail;
     const updates: any = {
       pickup_address: editPickup.trim(),
       pickup_lat: editPickupCoords?.lat,
@@ -1633,6 +1704,25 @@ export default function DashboardPage({
     setEditingRide(false);
     setRideDetail(null);
     fetchRides();
+    const newFare = editFare
+      ? editPayment === "cash"
+        ? Math.ceil(parseFloat(editFare))
+        : parseFloat(editFare)
+      : null;
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "ride.scheduled_modified",
+      rideId,
+      details: {
+        pickup_address: editPickup.trim(),
+        dropoff_address: editDropoff.trim(),
+        fare: newFare,
+        scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
+        payment_method: editPayment,
+        original_fare: originalRide?.fare_estimate ?? null,
+      },
+    });
   }
 
   function patchDriverProfile(driverId: string, patch: Record<string, unknown>) {
@@ -1649,6 +1739,7 @@ export default function DashboardPage({
   }
 
   async function deactivateDriver(driverId: string, hasActiveRide: boolean) {
+    const driverName = selectedDriver?.profile?.name ?? null;
     if (hasActiveRide) {
       const { data: updated, error } = await supabase.from("profiles").update({ deactivation_pending: true }).eq("id", driverId).select("id, is_active, deactivation_pending");
       if (error) { console.error("[deactivate] pending update failed:", error); alert(`Deactivation failed: ${error.message}`); return; }
@@ -1661,16 +1752,30 @@ export default function DashboardPage({
       patchDriverProfile(driverId, { is_active: false, deactivation_pending: false });
     }
     fetchDrivers();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "driver.suspended",
+      details: { driver_id: driverId, driver_name: driverName, pending: hasActiveRide },
+    });
   }
 
   async function activateDriver(driverId: string) {
+    const driverName = selectedDriver?.profile?.name ?? null;
     const { error } = await supabase.from("profiles").update({ is_active: true, deactivation_pending: false }).eq("id", driverId);
     if (error) { console.error("[activate] update failed:", error); alert(`Activation failed: ${error.message}`); return; }
     patchDriverProfile(driverId, { is_active: true, deactivation_pending: false });
     fetchDrivers();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "driver.reactivated",
+      details: { driver_id: driverId, driver_name: driverName },
+    });
   }
 
   async function deleteDriver(driverId: string) {
+    const driverName = selectedDriver?.profile?.name ?? null;
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-driver`,
@@ -1690,6 +1795,12 @@ export default function DashboardPage({
     }
     setSelectedDriver(null);
     fetchDrivers();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "driver.deleted",
+      details: { driver_id: driverId, driver_name: driverName },
+    });
   }
 
   function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "main") {
@@ -2176,7 +2287,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
           >
-            <AnalyticsPage companyName={companyName} />
+            <AnalyticsPage companyName={companyName} companyId={profile.company_id!} dispatcherId={profile.id} />
           </div>
           <div
             className="db-overlay"

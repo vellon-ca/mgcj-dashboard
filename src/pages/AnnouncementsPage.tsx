@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { logDispatchEvent } from "../lib/logDispatchEvent";
 
 interface MessageRow {
   id: string;
@@ -119,6 +120,18 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
         expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
       });
       if (insertError) throw insertError;
+
+      logDispatchEvent({
+        companyId,
+        dispatcherId: adminId,
+        eventType: form.audience === "all_drivers" ? "announcement.drivers" : "announcement.passengers",
+        details: {
+          category: form.category,
+          display_mode: form.display_mode,
+          title: form.title.trim(),
+          has_image: !!imageUrl,
+        },
+      });
 
       setForm((f) => ({ ...EMPTY_FORM, audience: f.audience }));
       clearImage();

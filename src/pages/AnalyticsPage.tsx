@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { logDispatchEvent } from "../lib/logDispatchEvent";
 
 // ── Types ─────────────────────────────────────────────────────────────
 interface DayRevenue {
@@ -64,13 +65,142 @@ interface RideDetailModal {
   ride: RideRow;
   review: ReviewRow | null;
 }
+interface EventRow {
+  id: string;
+  created_at: string;
+  event_type: string;
+  ride_id: string | null;
+  details: Record<string, any>;
+  dispatcher_name: string | null;
+}
 
-type Section = "revenue" | "rides" | "reviews" | "drivers";
+const EVENT_LABELS: Record<string, string> = {
+  "ride.created": "Created ride",
+  "ride.cancelled": "Cancelled ride",
+  "ride.assigned": "Assigned ride",
+  "ride.reassigned": "Reassigned ride",
+  "ride.scheduled_modified": "Edited ride",
+  "ride.notes_added": "Added ride notes",
+  "ride.fare_changed": "Changed fare",
+  "driver.suspended": "Suspended driver",
+  "driver.reactivated": "Reactivated driver",
+  "driver.deleted": "Deleted driver",
+  "invite.created": "Created invite",
+  "invite.revoked": "Revoked invite",
+  "discount.created": "Created discount",
+  "discount.deactivated": "Deactivated discount",
+  "discount.deleted": "Deleted discount",
+  "report.reviewed": "Reviewed report",
+  "announcement.drivers": "Driver announcement",
+  "announcement.passengers": "Passenger announcement",
+  "escalation.acknowledged": "Escalation acknowledged",
+  "export.csv": "Exported CSV",
+  "export.pdf": "Exported PDF",
+};
+const EVENT_COLORS: Record<string, string> = {
+  "ride.created": "#1D9E75",
+  "ride.cancelled": "#E24B4A",
+  "ride.assigned": "#4a9eff",
+  "ride.reassigned": "#60A5FA",
+  "ride.scheduled_modified": "#A855F7",
+  "ride.notes_added": "#6B7280",
+  "ride.fare_changed": "#F59E0B",
+  "driver.suspended": "#F59E0B",
+  "driver.reactivated": "#1D9E75",
+  "driver.deleted": "#E24B4A",
+  "invite.created": "#1D9E75",
+  "invite.revoked": "#E24B4A",
+  "discount.created": "#E8500A",
+  "discount.deactivated": "#6B7280",
+  "discount.deleted": "#E24B4A",
+  "report.reviewed": "#60A5FA",
+  "announcement.drivers": "#60A5FA",
+  "announcement.passengers": "#60A5FA",
+  "escalation.acknowledged": "#F59E0B",
+  "export.csv": "#6B7280",
+  "export.pdf": "#6B7280",
+};
+
+function formatEventDetails(type: string, details: any): string {
+  if (!details) return "—";
+  switch (type) {
+    case "ride.created":
+      return [
+        details.passenger_name,
+        details.pickup_address && details.dropoff_address
+          ? `${details.pickup_address} → ${details.dropoff_address}`
+          : null,
+        details.fare != null ? `$${Number(details.fare).toFixed(2)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "ride.cancelled":
+      return [
+        details.passenger_name,
+        details.pickup_address && details.dropoff_address
+          ? `${details.pickup_address} → ${details.dropoff_address}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "ride.assigned":
+      return details.driver_name ?? "—";
+    case "ride.reassigned":
+      return `${details.from_driver_name ?? "?"} → ${details.to_driver_name ?? "?"}`;
+    case "ride.fare_changed":
+      return `$${Number(details.original_fare ?? 0).toFixed(2)} → $${Number(details.new_fare ?? 0).toFixed(2)}`;
+    case "ride.scheduled_modified":
+      return [
+        details.pickup_address && details.dropoff_address
+          ? `${details.pickup_address} → ${details.dropoff_address}`
+          : null,
+        details.fare != null ? `$${Number(details.fare).toFixed(2)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "driver.suspended":
+    case "driver.reactivated":
+    case "driver.deleted":
+      return details.driver_name ?? "—";
+    case "invite.created":
+      return `Code: ${details.code}${details.name ? ` · ${details.name}` : ""}`;
+    case "invite.revoked":
+      return `Code: ${details.code}${details.name ? ` (${details.name})` : ""}`;
+    case "discount.created":
+      return `${details.code}${details.label ? ` — ${details.label}` : ""} · ${details.amount_type === "percent" ? `${details.amount}%` : `$${details.amount}`} off`;
+    case "discount.deactivated":
+    case "discount.deleted":
+      return `${details.code}${details.label ? ` — ${details.label}` : ""}`;
+    case "announcement.drivers":
+    case "announcement.passengers":
+      return details.title ?? "—";
+    case "export.csv":
+    case "export.pdf": {
+      const sectionLabels: Record<string, string> = {
+        revenue: "Revenue",
+        ride_history: "Ride History",
+        drivers: "Drivers",
+        reviews: "Reviews",
+        activity_log: "Activity Log",
+      };
+      const sectionLabel = sectionLabels[details.section as string] ?? details.section ?? "";
+      const parts = [sectionLabel];
+      if (details.period) parts.push(String(details.period));
+      if (details.row_count != null) parts.push(`${details.row_count} rows`);
+      return parts.filter(Boolean).join(" · ");
+    }
+    default:
+      return "—";
+  }
+}
+
+type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity";
 const SECTION_ITEMS: { id: Section; label: string }[] = [
   { id: "revenue", label: "Revenue" },
   { id: "rides", label: "Ride History" },
   { id: "reviews", label: "Reviews" },
   { id: "drivers", label: "Drivers" },
+  { id: "activity", label: "Activity Log" },
 ];
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -151,7 +281,15 @@ function getCurrentMonthKey() {
 }
 
 // ── Main component ────────────────────────────────────────────────────
-export default function AnalyticsPage({ companyName }: { companyName?: string | null }) {
+export default function AnalyticsPage({
+  companyName,
+  companyId,
+  dispatcherId,
+}: {
+  companyName?: string | null;
+  companyId: string;
+  dispatcherId: string;
+}) {
   const label = companyName ?? "M&G C&J";
   const [section, setSection] = useState<Section>("revenue");
   const [period, setPeriod] = useState<"today" | "week" | "month" | "year">(
@@ -196,6 +334,21 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
   const [reviewStarFilter, setReviewStarFilter] = useState<number | null>(null);
   const [markingReviewed, setMarkingReviewed] = useState<string | null>(null);
 
+  // Activity log
+  const [activityEvents, setActivityEvents] = useState<EventRow[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityDateFrom, setActivityDateFrom] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [activityDateTo, setActivityDateTo] = useState<string>(() => {
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [activityTypeFilter, setActivityTypeFilter] = useState<string>("all");
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const activityFetchId = useRef(0);
+  const fetchActivityLogRef = useRef<() => void>(() => {});
+
   // Peak
   const [hourStats, setHourStats] = useState<HourStat[]>([]);
   const [dayStats, setDayStats] = useState<DayStat[]>([]);
@@ -215,6 +368,31 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
     fetchReviews();
     fetchPeak();
   }, []);
+
+  useEffect(() => {
+    if (section === "activity") fetchActivityLog();
+  }, [section, activityDateFrom, activityDateTo]);
+
+  // Keep ref current so the realtime callback always calls the latest version
+  useEffect(() => { fetchActivityLogRef.current = fetchActivityLog; });
+
+  useEffect(() => {
+    if (section !== "activity" || !companyId) return;
+    const channel = supabase
+      .channel(`dispatch_events_live_${companyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "dispatch_events",
+          filter: `company_id=eq.${companyId}`,
+        },
+        () => fetchActivityLogRef.current(),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [section, companyId]);
 
   // ── Helpers ───────────────────────────────────────────────────────
   async function batchProfiles(ids: string[]): Promise<Map<string, string>> {
@@ -548,6 +726,42 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
     }
   }
 
+  async function fetchActivityLog() {
+    const fetchId = ++activityFetchId.current;
+    setActivityLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("dispatch_events")
+        .select("id, created_at, event_type, ride_id, details, dispatcher_id")
+        .gte("created_at", activityDateFrom + "T00:00:00")
+        .lte("created_at", activityDateTo + "T23:59:59")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (fetchId !== activityFetchId.current) return;
+      if (error) {
+        console.error("[fetchActivityLog]", error.code, error.message);
+        setActivityError(`Fetch error: ${error.message} (${error.code})`);
+        return;
+      }
+      setActivityError(null);
+      const dispatcherIds = [...new Set((data ?? []).map((r: any) => r.dispatcher_id).filter(Boolean))];
+      const profileMap = dispatcherIds.length ? await batchProfiles(dispatcherIds) : new Map<string, string>();
+      const rows: EventRow[] = (data ?? []).map((r: any) => ({
+        id: r.id,
+        created_at: r.created_at,
+        event_type: r.event_type,
+        ride_id: r.ride_id ?? null,
+        details: r.details ?? {},
+        dispatcher_name: profileMap.get(r.dispatcher_id) ?? null,
+      }));
+      setActivityEvents(rows);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (fetchId === activityFetchId.current) setActivityLoading(false);
+    }
+  }
+
   async function openRideDetail(ride: RideRow) {
     // Fetch review for this ride if any
     const { data: rv } = await supabase
@@ -613,6 +827,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
 
   // ── PDF generators ────────────────────────────────────────────────
   function downloadRevenueReport() {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "revenue", period } });
     const rows = driverStats
       .map(
         (d) =>
@@ -649,6 +864,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
   }
 
   function downloadMonthReport(group: MonthGroup) {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "ride_history", period: group.label, row_count: group.rides.length } });
     const rows = group.rides
       .map(
         (r) => `
@@ -682,6 +898,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
   }
 
   function downloadYearReport(year: number, groups: MonthGroup[]) {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "ride_history", period: String(year), row_count: groups.flatMap((g) => g.rides).length } });
     const allYearRides = groups.flatMap((g) => g.rides);
     const completed = allYearRides.filter((r) => r.status === "completed");
     const totalRevenue = completed.reduce(
@@ -729,6 +946,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
 
   // ── CSV exporters ─────────────────────────────────────────────────
   function exportRidesCSV(rides: RideRow[], filename: string) {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "ride_history", row_count: rides.length } });
     downloadCSV(
       filename,
       [
@@ -759,6 +977,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
   }
 
   function exportDriverStatsCSV() {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "drivers", period, row_count: driverStats.length } });
     const periodLabel =
       period === "today"
         ? "today"
@@ -795,6 +1014,7 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
   }
 
   function exportReviewsCSV() {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "reviews", row_count: filteredReviews.length } });
     downloadCSV(
       "reviews.csv",
       [
@@ -813,6 +1033,79 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
         rv.comment ?? "",
         rv.reviewed_by_dispatch ? "Yes" : "No",
       ]),
+    );
+  }
+
+  function exportActivityCSV(rows: EventRow[]) {
+    logDispatchEvent({
+      companyId,
+      dispatcherId,
+      eventType: "export.csv",
+      details: {
+        section: "activity_log",
+        date_from: activityDateFrom,
+        date_to: activityDateTo,
+        event_type_filter: activityTypeFilter,
+        row_count: rows.length,
+      },
+    });
+    downloadCSV(
+      `activity-log-${activityDateFrom}-${activityDateTo}.csv`,
+      ["Date/Time", "Dispatcher", "Event", "Details", "Ride ID"],
+      rows.map((e) => [
+        new Date(e.created_at).toLocaleString("en-CA", { dateStyle: "short", timeStyle: "short" } as any),
+        e.dispatcher_name ?? "—",
+        EVENT_LABELS[e.event_type] ?? e.event_type,
+        formatEventDetails(e.event_type, e.details),
+        e.ride_id ?? "",
+      ]),
+    );
+  }
+
+  function exportActivityPDF(rows: EventRow[]) {
+    logDispatchEvent({
+      companyId,
+      dispatcherId,
+      eventType: "export.pdf",
+      details: {
+        section: "activity_log",
+        date_from: activityDateFrom,
+        date_to: activityDateTo,
+        event_type_filter: activityTypeFilter,
+        row_count: rows.length,
+      },
+    });
+    const tableRows = rows
+      .map(
+        (e) =>
+          `<tr>
+            <td style="white-space:nowrap">${new Date(e.created_at).toLocaleString("en-CA", { dateStyle: "short", timeStyle: "short" } as any)}</td>
+            <td>${e.dispatcher_name ?? "—"}</td>
+            <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${EVENT_COLORS[e.event_type] ?? "#6B7280"}22;color:${EVENT_COLORS[e.event_type] ?? "#6B7280"}">${EVENT_LABELS[e.event_type] ?? e.event_type}</span></td>
+            <td>${formatEventDetails(e.event_type, e.details)}</td>
+          </tr>`,
+      )
+      .join("");
+    const cancels = rows.filter((e) => e.event_type === "ride.cancelled").length;
+    const driverActions = rows.filter((e) => e.event_type.startsWith("driver.")).length;
+    const announcements = rows.filter((e) => e.event_type.startsWith("announcement.")).length;
+    printReport(
+      `Activity Log — ${label}`,
+      `
+      <h1>${label} — Dispatcher Activity Log</h1>
+      <p class="sub">${activityDateFrom} to ${activityDateTo} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+      <div class="kpi-row">
+        <div class="kpi"><div class="kpi-label">Total events</div><div class="kpi-value">${rows.length}</div></div>
+        <div class="kpi"><div class="kpi-label">Cancellations</div><div class="kpi-value">${cancels}</div></div>
+        <div class="kpi"><div class="kpi-label">Driver actions</div><div class="kpi-value">${driverActions}</div></div>
+        <div class="kpi"><div class="kpi-label">Announcements</div><div class="kpi-value">${announcements}</div></div>
+      </div>
+      <table>
+        <thead><tr><th>Date/Time</th><th>Dispatcher</th><th>Event</th><th>Details</th></tr></thead>
+        <tbody>${tableRows || "<tr><td colspan='4' style='color:#9ca3af'>No events in this period</td></tr>"}</tbody>
+      </table>
+    `,
+      label,
     );
   }
 
@@ -1005,6 +1298,27 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
         .an-modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; width: 100%; margin-top: 16px; transition: background 0.12s; }
         .an-modal-close:hover { background: rgba(255,255,255,0.04); }
         .an-modal-section { font-size: 10px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
+        /* Activity log */
+        .an-date-input { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
+        .an-date-input:focus { border-color: rgba(232,80,10,0.4); }
+        .an-type-select { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+        .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #111E2E; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
+        .al-toolbar-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.07); margin: 0 2px; }
+        .al-toolbar-label { font-size: 11px; color: #4B5563; white-space: nowrap; }
+        .al-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+        .al-stat { background: #111E2E; border-radius: 10px; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.04); }
+        .al-stat-val { font-size: 28px; font-weight: 700; color: #F1F5F9; line-height: 1; display: block; }
+        .al-stat-lbl { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 5px; display: block; }
+        .al-table { width: 100%; border-collapse: collapse; }
+        .al-th { font-size: 10px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .al-tr { border-bottom: 1px solid rgba(255,255,255,0.035); }
+        .al-tr:last-child { border-bottom: none; }
+        .al-tr:hover td { background: rgba(255,255,255,0.015); }
+        .al-td { padding: 11px 16px; vertical-align: middle; }
+        .al-td-time { font-size: 12px; color: #6B7280; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .al-td-dispatcher { font-size: 12px; color: #9CA3AF; white-space: nowrap; font-weight: 500; }
+        .al-td-event { font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .al-td-detail { font-size: 12px; color: #4B5563; }
       `}</style>
 
       <div className="an-wrap">
@@ -2110,6 +2424,172 @@ export default function AnalyticsPage({ companyName }: { companyName?: string | 
               )}
             </>
           )}
+          {/* ── ACTIVITY LOG ── */}
+          {section === "activity" && (() => {
+            const filtered = activityTypeFilter === "all"
+              ? activityEvents
+              : activityEvents.filter((e) => e.event_type === activityTypeFilter);
+            const cancels = filtered.filter((e) => e.event_type === "ride.cancelled").length;
+            const driverActions = filtered.filter((e) => e.event_type.startsWith("driver.") || e.event_type.startsWith("invite.")).length;
+            const announcements = filtered.filter((e) => e.event_type.startsWith("announcement.")).length;
+
+            return (
+              <>
+                {/* Header row */}
+                <div className="an-section-header" style={{ marginBottom: 12 }}>
+                  <div>
+                    <div className="an-section-title">Activity Log</div>
+                    <div style={{ fontSize: 11, color: "#374151", marginTop: 2 }}>
+                      {activityDateFrom} → {activityDateTo}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="an-download-btn"
+                      onClick={() => exportActivityPDF(filtered)}
+                      disabled={filtered.length === 0}
+                    >
+                      ↓ PDF
+                    </button>
+                    <button
+                      className="an-csv-btn"
+                      onClick={() => exportActivityCSV(filtered)}
+                      disabled={filtered.length === 0}
+                    >
+                      ↓ CSV
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter toolbar */}
+                <div className="al-toolbar">
+                  <span className="al-toolbar-label">From</span>
+                  <input
+                    type="date"
+                    className="an-date-input"
+                    value={activityDateFrom}
+                    onChange={(e) => setActivityDateFrom(e.target.value)}
+                  />
+                  <span className="al-toolbar-label">to</span>
+                  <input
+                    type="date"
+                    className="an-date-input"
+                    value={activityDateTo}
+                    onChange={(e) => setActivityDateTo(e.target.value)}
+                  />
+                  <div className="al-toolbar-sep" />
+                  <select
+                    className="an-type-select"
+                    value={activityTypeFilter}
+                    onChange={(e) => setActivityTypeFilter(e.target.value)}
+                  >
+                    <option value="all">All event types</option>
+                    <optgroup label="Rides">
+                      <option value="ride.created">Created ride</option>
+                      <option value="ride.cancelled">Cancelled ride</option>
+                      <option value="ride.assigned">Assigned ride</option>
+                      <option value="ride.reassigned">Reassigned ride</option>
+                      <option value="ride.fare_changed">Changed fare</option>
+                      <option value="ride.scheduled_modified">Edited ride</option>
+                    </optgroup>
+                    <optgroup label="Drivers">
+                      <option value="driver.suspended">Suspended driver</option>
+                      <option value="driver.reactivated">Reactivated driver</option>
+                      <option value="driver.deleted">Deleted driver</option>
+                      <option value="invite.created">Created invite</option>
+                      <option value="invite.revoked">Revoked invite</option>
+                    </optgroup>
+                    <optgroup label="Discounts">
+                      <option value="discount.created">Created discount</option>
+                      <option value="discount.deactivated">Deactivated discount</option>
+                      <option value="discount.deleted">Deleted discount</option>
+                    </optgroup>
+                    <optgroup label="Announcements">
+                      <option value="announcement.drivers">Driver announcement</option>
+                      <option value="announcement.passengers">Passenger announcement</option>
+                    </optgroup>
+                    <optgroup label="Exports">
+                      <option value="export.csv">CSV export</option>
+                      <option value="export.pdf">PDF export</option>
+                    </optgroup>
+                  </select>
+                  {activityLoading && (
+                    <span style={{ fontSize: 11, color: "#374151", marginLeft: 4 }}>Loading…</span>
+                  )}
+                </div>
+
+                {/* Stats strip */}
+                <div className="al-stats">
+                  <div className="al-stat">
+                    <span className="al-stat-val">{filtered.length}</span>
+                    <span className="al-stat-lbl">Total events</span>
+                  </div>
+                  <div className="al-stat">
+                    <span className="al-stat-val" style={{ color: cancels > 0 ? "#E24B4A" : "#F1F5F9" }}>{cancels}</span>
+                    <span className="al-stat-lbl">Cancellations</span>
+                  </div>
+                  <div className="al-stat">
+                    <span className="al-stat-val">{driverActions}</span>
+                    <span className="al-stat-lbl">Driver actions</span>
+                  </div>
+                  <div className="al-stat">
+                    <span className="al-stat-val">{announcements}</span>
+                    <span className="al-stat-lbl">Announcements</span>
+                  </div>
+                </div>
+
+                {/* Debug error */}
+                {activityError && (
+                  <div style={{ background: "#2D1515", border: "1px solid #E24B4A44", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#E24B4A", fontFamily: "monospace" }}>
+                    {activityError}
+                  </div>
+                )}
+
+                {/* Table */}
+                {!activityLoading && filtered.length === 0 ? (
+                  <div className="an-no-data" style={{ padding: "48px 0" }}>
+                    {activityError ? "Could not load events — see error above" : "No events in this period"}
+                  </div>
+                ) : (
+                  <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
+                    <table className="al-table">
+                      <thead>
+                        <tr>
+                          <th className="al-th">Date / Time</th>
+                          <th className="al-th">Dispatcher</th>
+                          <th className="al-th">Event</th>
+                          <th className="al-th">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.map((e) => {
+                          const color = EVENT_COLORS[e.event_type] ?? "#6B7280";
+                          const detail = formatEventDetails(e.event_type, e.details);
+                          return (
+                            <tr key={e.id} className="al-tr">
+                              <td className="al-td al-td-time">
+                                {new Date(e.created_at).toLocaleString("en-CA", {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                } as any)}
+                              </td>
+                              <td className="al-td al-td-dispatcher">{e.dispatcher_name ?? "—"}</td>
+                              <td className="al-td al-td-event" style={{ color }}>
+                                {EVENT_LABELS[e.event_type] ?? e.event_type}
+                              </td>
+                              <td className="al-td al-td-detail">{detail || "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 
