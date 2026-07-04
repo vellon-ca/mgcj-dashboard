@@ -2403,7 +2403,7 @@ export default function DashboardPage({
             style={{ display: showSettings ? "flex" : "none" }}
           >
             {profile.company_id && (
-              <SettingsPage companyId={profile.company_id} />
+              <SettingsPage companyId={profile.company_id} adminId={profile.id} />
             )}
           </div>
 

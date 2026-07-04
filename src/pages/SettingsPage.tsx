@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { logDispatchEvent } from "../lib/logDispatchEvent";
 
 interface Props {
   companyId: string;
+  adminId: string;
 }
 
 type Section = "pricing";
@@ -11,12 +13,14 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: "pricing", label: "Pricing" },
 ];
 
-export default function SettingsPage({ companyId }: Props) {
+export default function SettingsPage({ companyId, adminId }: Props) {
   const [section, setSection] = useState<Section>("pricing");
 
   // Pricing state
   const [baseFare, setBaseFare] = useState("");
   const [ratePerKm, setRatePerKm] = useState("");
+  const [savedBaseFare, setSavedBaseFare] = useState("");
+  const [savedRatePerKm, setSavedRatePerKm] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -32,6 +36,8 @@ export default function SettingsPage({ companyId }: Props) {
         if (data) {
           setBaseFare(String(data.base_fare ?? 4));
           setRatePerKm(String(data.rate_per_km ?? 1.8));
+          setSavedBaseFare(String(data.base_fare ?? 4));
+          setSavedRatePerKm(String(data.rate_per_km ?? 1.8));
         }
         setLoading(false);
       });
@@ -52,6 +58,19 @@ export default function SettingsPage({ companyId }: Props) {
     setSaving(false);
     if (err) { setError(err.message); return; }
     setSaved(true);
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "settings.pricing_updated",
+      details: {
+        base_fare_from: parseFloat(savedBaseFare),
+        base_fare_to: base,
+        rate_per_km_from: parseFloat(savedRatePerKm),
+        rate_per_km_to: rate,
+      },
+    });
+    setSavedBaseFare(String(base));
+    setSavedRatePerKm(String(rate));
   }
 
   return (

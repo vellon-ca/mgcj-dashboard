@@ -121,6 +121,7 @@ const EVENT_LABELS: Record<string, string> = {
   "export.csv": "Exported CSV",
   "export.pdf": "Exported PDF",
   "invoice.printed": "Printed receipt",
+  "settings.pricing_updated": "Updated pricing",
 };
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
@@ -145,6 +146,7 @@ const EVENT_COLORS: Record<string, string> = {
   "export.csv": "#6B7280",
   "export.pdf": "#6B7280",
   "invoice.printed": "#A855F7",
+  "settings.pricing_updated": "#F59E0B",
 };
 
 function formatEventDetails(type: string, details: any): string {
@@ -205,6 +207,15 @@ function formatEventDetails(type: string, details: any): string {
         details.invoice_number,
         details.passenger_name,
         details.fare != null ? `$${Number(details.fare).toFixed(2)}` : null,
+      ].filter(Boolean).join(" · ");
+    case "settings.pricing_updated":
+      return [
+        details.base_fare_from != null && details.base_fare_to != null
+          ? `Base $${Number(details.base_fare_from).toFixed(2)} → $${Number(details.base_fare_to).toFixed(2)}`
+          : null,
+        details.rate_per_km_from != null && details.rate_per_km_to != null
+          ? `Rate $${Number(details.rate_per_km_from).toFixed(2)} → $${Number(details.rate_per_km_to).toFixed(2)}/km`
+          : null,
       ].filter(Boolean).join(" · ");
     case "export.csv":
     case "export.pdf": {

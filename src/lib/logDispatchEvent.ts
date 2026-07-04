@@ -22,7 +22,8 @@ export type DispatchEventType =
   | "escalation.acknowledged"
   | "export.csv"
   | "export.pdf"
-  | "invoice.printed";
+  | "invoice.printed"
+  | "settings.pricing_updated";
 
 export async function logDispatchEvent(params: {
   companyId: string;
