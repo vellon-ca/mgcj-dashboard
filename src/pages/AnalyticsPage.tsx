@@ -1643,8 +1643,8 @@ export default function AnalyticsPage({
       <style>{`
         .an-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
         .an-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .an-panel-title { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .an-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #4B5563; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .an-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .an-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
         .an-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
         .an-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
         .an-content { flex: 1; overflow-y: auto; padding: 24px; background: #111827; }
@@ -1654,7 +1654,7 @@ export default function AnalyticsPage({
         .an-section-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
         .an-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .an-period-btns { display: flex; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 3px; gap: 2px; }
-        .an-period-btn { background: transparent; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: #4B5563; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
+        .an-period-btn { background: transparent; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: #6B7280; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
         .an-period-btn.active { background: #111827; color: #F1F5F9; }
         .an-download-btn { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.25); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
         .an-download-btn:hover { background: rgba(29,158,117,0.18); }
@@ -1664,20 +1664,20 @@ export default function AnalyticsPage({
         .an-csv-btn:hover { background: rgba(74,158,255,0.15); }
         .an-kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
         .an-kpi-card { background: #1E2A3A; border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .an-kpi-label { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+        .an-kpi-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
         .an-kpi-value { font-size: 24px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .an-kpi-sub { font-size: 11px; color: #374151; margin-top: 4px; }
+        .an-kpi-sub { font-size: 11px; color: #6B7280; margin-top: 4px; }
         .an-revenue-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
         .an-revenue-mini { background: #1E2A3A; border-radius: 10px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.05); }
-        .an-revenue-mini-label { font-size: 10px; color: #4B5563; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 5px; }
+        .an-revenue-mini-label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 5px; }
         .an-revenue-mini-value { font-size: 18px; font-weight: 700; color: #F1F5F9; }
         .an-chart-card { background: #1E2A3A; border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px; }
-        .an-chart-title { font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-        .an-no-data { color: #374151; font-size: 13px; text-align: center; padding: 24px 0; }
+        .an-chart-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+        .an-no-data { color: #6B7280; font-size: 13px; text-align: center; padding: 24px 0; }
         .an-x-labels { display: flex; justify-content: space-between; margin-top: 8px; }
-        .an-x-label { font-size: 10px; color: #374151; }
+        .an-x-label { font-size: 10px; color: #6B7280; }
         .an-table { width: 100%; border-collapse: collapse; }
-        .an-th { font-size: 10px; font-weight: 600; color: #4B5563; text-align: left; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); text-transform: uppercase; letter-spacing: 0.06em; }
+        .an-th { font-size: 10px; font-weight: 600; color: #6B7280; text-align: left; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); text-transform: uppercase; letter-spacing: 0.06em; }
         .an-td { font-size: 13px; color: #9CA3AF; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
         .an-td.primary { color: #E2E8F0; font-weight: 500; }
         .an-td.addr { font-size: 11px; color: #6B7280; max-width: 160px; }
@@ -1688,15 +1688,15 @@ export default function AnalyticsPage({
         .an-filter-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
         .an-filter-btn { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 12px; font-size: 12px; color: #6B7280; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
         .an-filter-btn.active { background: #E8500A; color: #fff; border-color: #E8500A; }
-        .an-filter-count { font-size: 11px; color: #4B5563; margin-left: auto; }
+        .an-filter-count { font-size: 11px; color: #6B7280; margin-left: auto; }
         .an-month-group { margin-bottom: 8px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
         .an-month-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #1E2A3A; cursor: pointer; user-select: none; transition: background 0.12s; gap: 12px; }
         .an-month-header:hover { background: #213040; }
         .an-month-header-left { display: flex; align-items: center; gap: 10px; }
-        .an-month-chevron { font-size: 11px; color: #4B5563; transition: transform 0.2s; display: inline-block; }
+        .an-month-chevron { font-size: 11px; color: #6B7280; transition: transform 0.2s; display: inline-block; }
         .an-month-chevron.open { transform: rotate(90deg); }
         .an-month-name { font-size: 14px; font-weight: 600; color: #E2E8F0; }
-        .an-month-meta { font-size: 12px; color: #4B5563; }
+        .an-month-meta { font-size: 12px; color: #6B7280; }
         .an-month-revenue { font-size: 14px; font-weight: 700; color: #1D9E75; }
         .an-month-body { background: #18222F; }
         .an-ride-row { cursor: pointer; transition: background 0.1s; }
@@ -1706,7 +1706,7 @@ export default function AnalyticsPage({
         .an-bars { display: flex; align-items: flex-end; gap: 3px; height: 100px; padding-bottom: 20px; }
         .an-bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
         .an-bar-fill { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; }
-        .an-bar-lbl { font-size: 8px; color: #374151; margin-top: 3px; }
+        .an-bar-lbl { font-size: 8px; color: #6B7280; margin-top: 3px; }
         .an-peak-note { font-size: 11px; color: #6B7280; margin-top: 8px; }
         .an-review-card { background: #1E2A3A; border-radius: 10px; padding: 14px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); transition: border-color 0.12s; }
         .an-review-card.flagged { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
@@ -1716,18 +1716,18 @@ export default function AnalyticsPage({
         .an-mark-reviewed-btn { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; margin-top: 10px; }
         .an-mark-reviewed-btn:hover { background: rgba(29,158,117,0.15); }
         .an-mark-reviewed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .an-loading { color: #4B5563; text-align: center; padding: 48px; font-size: 14px; }
+        .an-loading { color: #6B7280; text-align: center; padding: 48px; font-size: 14px; }
         .an-select { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 12px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
         /* Ride detail modal */
         .an-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
         .an-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 480px; border: 1px solid rgba(255,255,255,0.08); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
         .an-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 16px; }
         .an-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .an-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; }
+        .an-detail-label { font-size: 12px; color: #9CA3AF; font-weight: 500; }
         .an-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
         .an-modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; width: 100%; margin-top: 16px; transition: background 0.12s; }
         .an-modal-close:hover { background: rgba(255,255,255,0.04); }
-        .an-modal-section { font-size: 10px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
+        .an-modal-section { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
         /* Activity log */
         .an-date-input { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
         .an-date-input:focus { border-color: rgba(232,80,10,0.4); }
@@ -1735,26 +1735,26 @@ export default function AnalyticsPage({
         .inv-search-row { margin-bottom: 16px; }
         .inv-search { width: 100%; max-width: 380px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
         .inv-search:focus { border-color: rgba(232,80,10,0.4); }
-        .inv-search::placeholder { color: #374151; }
+        .inv-search::placeholder { color: #6B7280; }
         .inv-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: #E8500A; background: rgba(232,80,10,0.08); border: 1px solid rgba(232,80,10,0.2); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
         .an-type-select { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
         .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #111E2E; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
         .al-toolbar-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.07); margin: 0 2px; }
-        .al-toolbar-label { font-size: 11px; color: #4B5563; white-space: nowrap; }
+        .al-toolbar-label { font-size: 11px; color: #6B7280; white-space: nowrap; }
         .al-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
         .al-stat { background: #111E2E; border-radius: 10px; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.04); }
         .al-stat-val { font-size: 28px; font-weight: 700; color: #F1F5F9; line-height: 1; display: block; }
-        .al-stat-lbl { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 5px; display: block; }
+        .al-stat-lbl { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 5px; display: block; }
         .al-table { width: 100%; border-collapse: collapse; }
-        .al-th { font-size: 10px; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .al-th { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .al-tr { border-bottom: 1px solid rgba(255,255,255,0.035); }
         .al-tr:last-child { border-bottom: none; }
         .al-tr:hover td { background: rgba(255,255,255,0.015); }
         .al-td { padding: 11px 16px; vertical-align: middle; }
-        .al-td-time { font-size: 12px; color: #6B7280; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .al-td-time { font-size: 12px; color: #9CA3AF; white-space: nowrap; font-variant-numeric: tabular-nums; }
         .al-td-dispatcher { font-size: 12px; color: #9CA3AF; white-space: nowrap; font-weight: 500; }
         .al-td-event { font-size: 12px; font-weight: 600; white-space: nowrap; }
-        .al-td-detail { font-size: 12px; color: #4B5563; }
+        .al-td-detail { font-size: 12px; color: #9CA3AF; }
       `}</style>
 
       <div className="an-wrap">
@@ -1940,7 +1940,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 10,
-                            color: "#4B5563",
+                            color: "#6B7280",
                             fontWeight: 600,
                             textTransform: "uppercase",
                             letterSpacing: "0.06em",
@@ -1992,7 +1992,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 10,
-                            color: "#4B5563",
+                            color: "#6B7280",
                             fontWeight: 600,
                             textTransform: "uppercase",
                             letterSpacing: "0.06em",
@@ -2048,13 +2048,13 @@ export default function AnalyticsPage({
                           <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
                           <XAxis
                             dataKey="label"
-                            tick={{ fill: "#4B5563", fontSize: 10 }}
+                            tick={{ fill: "#6B7280", fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             interval={2}
                           />
                           <YAxis
-                            tick={{ fill: "#4B5563", fontSize: 10 }}
+                            tick={{ fill: "#6B7280", fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             tickFormatter={(v) => `$${v}`}
@@ -2076,13 +2076,13 @@ export default function AnalyticsPage({
                           <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
                           <XAxis
                             dataKey="day"
-                            tick={{ fill: "#4B5563", fontSize: 10 }}
+                            tick={{ fill: "#6B7280", fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             interval="preserveStartEnd"
                           />
                           <YAxis
-                            tick={{ fill: "#4B5563", fontSize: 10 }}
+                            tick={{ fill: "#6B7280", fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             tickFormatter={(v) => `$${v}`}
@@ -2476,7 +2476,7 @@ export default function AnalyticsPage({
                                         {r.invoice_number ? (
                                           <span className="inv-tag">{r.invoice_number}</span>
                                         ) : (
-                                          <span style={{ color: "#374151" }}>—</span>
+                                          <span style={{ color: "#6B7280" }}>—</span>
                                         )}
                                       </td>
                                     </tr>
@@ -2646,14 +2646,14 @@ export default function AnalyticsPage({
                             <span
                               style={{
                                 fontSize: 11,
-                                color: "#4B5563",
+                                color: "#9CA3AF",
                                 marginLeft: 6,
                               }}
                             >
                               {rv.rating}/5
                             </span>
                           </div>
-                          <span style={{ fontSize: 11, color: "#374151" }}>
+                          <span style={{ fontSize: 11, color: "#6B7280" }}>
                             {new Date(rv.created_at).toLocaleDateString(
                               "en-CA",
                               {
@@ -2667,12 +2667,12 @@ export default function AnalyticsPage({
                         <div
                           style={{ display: "flex", gap: 20, marginBottom: 6 }}
                         >
-                          <div style={{ fontSize: 12, color: "#6B7280" }}>
-                            <span style={{ color: "#4B5563" }}>Driver: </span>
+                          <div style={{ fontSize: 12, color: "#9CA3AF" }}>
+                            <span style={{ color: "#6B7280" }}>Driver: </span>
                             {rv.driver_name ?? "—"}
                           </div>
-                          <div style={{ fontSize: 12, color: "#6B7280" }}>
-                            <span style={{ color: "#4B5563" }}>
+                          <div style={{ fontSize: 12, color: "#9CA3AF" }}>
+                            <span style={{ color: "#6B7280" }}>
                               Passenger:{" "}
                             </span>
                             {rv.passenger_name ?? "—"}
@@ -2681,7 +2681,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#4B5563",
+                            color: "#9CA3AF",
                             marginBottom: rv.comment ? 8 : 0,
                           }}
                         >
@@ -2695,7 +2695,7 @@ export default function AnalyticsPage({
                               padding: "8px 12px",
                               borderLeft: "2px solid #2D3F52",
                               fontSize: 13,
-                              color: "#6B7280",
+                              color: "#9CA3AF",
                               fontStyle: "italic",
                             }}
                           >
@@ -2819,7 +2819,7 @@ export default function AnalyticsPage({
                                 <span
                                   style={{
                                     fontSize: 10,
-                                    color: "#4B5563",
+                                    color: "#6B7280",
                                     fontWeight: 400,
                                     marginLeft: 4,
                                   }}
@@ -2828,7 +2828,7 @@ export default function AnalyticsPage({
                                 </span>
                               </span>
                             ) : (
-                              <span style={{ color: "#374151" }}>—</span>
+                              <span style={{ color: "#6B7280" }}>—</span>
                             )}
                           </td>
                         </tr>
@@ -2854,7 +2854,7 @@ export default function AnalyticsPage({
                 <div className="an-section-header" style={{ marginBottom: 12 }}>
                   <div>
                     <div className="an-section-title">Activity Log</div>
-                    <div style={{ fontSize: 11, color: "#374151", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>
                       {activityDateFrom} → {activityDateTo}
                     </div>
                   </div>
@@ -2930,7 +2930,7 @@ export default function AnalyticsPage({
                     </optgroup>
                   </select>
                   {activityLoading && (
-                    <span style={{ fontSize: 11, color: "#374151", marginLeft: 4 }}>Loading…</span>
+                    <span style={{ fontSize: 11, color: "#6B7280", marginLeft: 4 }}>Loading…</span>
                   )}
                 </div>
 
@@ -3240,7 +3240,7 @@ export default function AnalyticsPage({
                       {"★".repeat(rideDetail.review.rating)}
                       {"☆".repeat(5 - rideDetail.review.rating)}
                     </span>
-                    <span style={{ fontSize: 12, color: "#4B5563" }}>
+                    <span style={{ fontSize: 12, color: "#6B7280" }}>
                       {rideDetail.review.rating}/5
                     </span>
                   </div>
@@ -3278,7 +3278,7 @@ export default function AnalyticsPage({
               <div
                 style={{
                   fontSize: 12,
-                  color: "#374151",
+                  color: "#6B7280",
                   textAlign: "center",
                   padding: "12px 0",
                 }}

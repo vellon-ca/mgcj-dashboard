@@ -59,8 +59,8 @@ export default function SettingsPage({ companyId }: Props) {
       <style>{`
         .st-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
         .st-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .st-panel-title { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .st-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #4B5563; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .st-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .st-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
         .st-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
         .st-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
         .st-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: #111827; }
@@ -72,7 +72,7 @@ export default function SettingsPage({ companyId }: Props) {
         .st-subtitle { font-size: 13px; color: #6B7280; line-height: 1.5; max-width: 480px; }
 
         .st-card { background: #1E2A3A; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05); max-width: 520px; }
-        .st-card-label { font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
+        .st-card-label { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
 
         .st-field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
         .st-field-row:last-of-type { margin-bottom: 0; }
@@ -80,8 +80,8 @@ export default function SettingsPage({ companyId }: Props) {
         .st-field-label { font-size: 14px; font-weight: 600; color: #E2E8F0; }
         .st-field-hint { font-size: 12px; color: #6B7280; }
         .st-input-wrap { display: flex; align-items: center; background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
-        .st-prefix { padding: 0 10px; font-size: 13px; font-weight: 600; color: #4B5563; border-right: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
-        .st-suffix { padding: 0 10px; font-size: 12px; color: #4B5563; border-left: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
+        .st-prefix { padding: 0 10px; font-size: 13px; font-weight: 600; color: #6B7280; border-right: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
+        .st-suffix { padding: 0 10px; font-size: 12px; color: #6B7280; border-left: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
         .st-input { width: 80px; background: none; border: none; outline: none; color: #F1F5F9; font-size: 14px; font-weight: 600; padding: 0 10px; height: 36px; font-family: system-ui, sans-serif; text-align: right; }
 
         .st-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 14px 0; }
@@ -127,7 +127,7 @@ export default function SettingsPage({ companyId }: Props) {
               </div>
 
               {loading ? (
-                <div style={{ color: "#4B5563", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
               ) : (
                 <div className="st-card">
                   <p className="st-card-label">Fare formula</p>

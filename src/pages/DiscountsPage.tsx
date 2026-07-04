@@ -345,7 +345,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
   function codeStatusLabel(c: DiscountCode) {
     const now = new Date();
-    if (!c.active) return { label: "Inactive", color: "#4B5563" };
+    if (!c.active) return { label: "Inactive", color: "#6B7280" };
     if (c.starts_at && now < new Date(c.starts_at))
       return { label: "Scheduled", color: "#F59E0B" };
     if (c.ends_at && now > new Date(c.ends_at))
@@ -358,8 +358,8 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       <style>{`
         .dc-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
         .dc-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .dc-panel-title { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .dc-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #4B5563; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .dc-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .dc-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
         .dc-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
         .dc-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
         .dc-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: #111827; }
@@ -377,13 +377,13 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
         .dc-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
         .dc-summary-card { background: #1E2A3A; border-radius: 10px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .dc-summary-label { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .dc-summary-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
         .dc-summary-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; }
 
         .dc-settings-grid { display: flex; flex-direction: column; gap: 16px; }
 
         .dc-card { background: #1E2A3A; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .dc-card-label { font-size: 11px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
+        .dc-card-label { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
 
         .dc-toggle-row { display: flex; align-items: center; justify-content: space-between; }
         .dc-toggle-text { display: flex; flex-direction: column; gap: 2px; }
@@ -405,15 +405,15 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-pct-input:focus { outline: none; border-color: #E8500A; }
         .dc-pct-suffix { font-size: 14px; color: #6B7280; font-weight: 600; }
 
-        .dc-schools-empty { font-size: 13px; color: #4B5563; padding: 8px 0; }
+        .dc-schools-empty { font-size: 13px; color: #6B7280; padding: 8px 0; }
         .dc-schools { display: flex; flex-wrap: wrap; gap: 8px; }
         .dc-school-chip { padding: 9px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #9CA3AF; font-size: 13px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, border-color 0.12s, color 0.12s; }
         .dc-school-chip:hover { border-color: rgba(255,255,255,0.2); color: #E2E8F0; }
         .dc-school-chip.selected { background: rgba(232,80,10,0.12); border-color: #E8500A; color: #E8500A; }
 
-        .dc-note { font-size: 12px; color: #4B5563; line-height: 1.5; margin-top: 14px; }
-        .dc-loading { color: #4B5563; text-align: center; padding: 60px; font-size: 14px; }
-        .dc-empty { color: #374151; font-size: 14px; text-align: center; padding: 48px 0; }
+        .dc-note { font-size: 12px; color: #6B7280; line-height: 1.5; margin-top: 14px; }
+        .dc-loading { color: #6B7280; text-align: center; padding: 60px; font-size: 14px; }
+        .dc-empty { color: #6B7280; font-size: 14px; text-align: center; padding: 48px 0; }
 
         /* CODE LIST */
         .dc-codes-grid { display: flex; flex-direction: column; gap: 10px; }
@@ -428,7 +428,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-code-status { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
         .dc-code-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 12px; max-width: 560px; }
         .dc-code-meta-item { display: flex; flex-direction: column; gap: 2px; }
-        .dc-code-meta-label { font-size: 10px; color: #4B5563; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+        .dc-code-meta-label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
         .dc-code-meta-value { font-size: 13px; color: #E2E8F0; font-weight: 500; }
         .dc-code-actions { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); }
         .dc-code-action { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; border: none; transition: opacity 0.12s, background 0.12s; }
@@ -445,7 +445,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-redemptions { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); }
         .dc-redemption-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 12px; color: #9CA3AF; border-bottom: 1px solid rgba(255,255,255,0.03); }
         .dc-redemption-name { color: #E2E8F0; font-weight: 500; }
-        .dc-redemption-empty { font-size: 12px; color: #4B5563; padding: 8px 0; }
+        .dc-redemption-empty { font-size: 12px; color: #6B7280; padding: 8px 0; }
 
         /* CREATE/EDIT FORM */
         .dc-form-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
@@ -464,7 +464,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         .dc-form-select { padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #111827; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; }
         .dc-form-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
         .dc-form-toggle-label { font-size: 13px; color: #E2E8F0; }
-        .dc-form-hint { font-size: 11px; color: #4B5563; margin-top: -2px; }
+        .dc-form-hint { font-size: 11px; color: #6B7280; margin-top: -2px; }
         .dc-form-actions { display: flex; gap: 8px; margin-top: 20px; }
         .dc-form-cancel { flex: 1; background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 10px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
         .dc-form-cancel:hover { background: rgba(255,255,255,0.04); }

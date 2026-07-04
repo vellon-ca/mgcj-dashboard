@@ -185,7 +185,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
         .mp-image-remove { font-size: 11px; color: #F87171; cursor: pointer; background: none; border: none; padding: 0; margin-top: 6px; }
 
         .mp-error { font-size: 12px; color: #F87171; margin-bottom: 10px; }
-        .mp-char-count { font-size: 11px; color: #4B5563; margin-top: 6px; }
+        .mp-char-count { font-size: 11px; color: #6B7280; margin-top: 6px; }
         .mp-char-count.over { color: #F59E0B; }
 
         .mp-send-btn { width: 100%; padding: 10px; border-radius: 8px; background: #E8500A; color: #fff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 6px; }
@@ -194,13 +194,13 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
         .mp-content { flex: 1; overflow-y: auto; padding: 24px; background: #111827; }
         .mp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
         .mp-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
-        .mp-subtitle-text { font-size: 12px; color: #4B5563; }
+        .mp-subtitle-text { font-size: 12px; color: #6B7280; }
 
         .mp-filter-row { display: flex; gap: 6px; margin-bottom: 20px; }
         .mp-filter-btn { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; transition: all 0.12s; }
         .mp-filter-btn.active { background: rgba(232,80,10,0.12); border-color: #E8500A; color: #E8500A; }
 
-        .mp-date-heading { font-size: 11px; font-weight: 700; color: #4B5563; text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 0 10px; }
+        .mp-date-heading { font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; margin: 20px 0 10px; }
         .mp-date-heading:first-child { margin-top: 0; }
 
         .mp-card { background: #1E2A3A; border-radius: 12px; padding: 16px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); }
@@ -210,14 +210,14 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
         .mp-badge-audience { background: rgba(168,85,247,0.1); color: #A855F7; }
         .mp-badge-mode { background: rgba(255,255,255,0.06); color: #9CA3AF; }
         .mp-badge-expired { background: rgba(248,113,113,0.1); color: #F87171; }
-        .mp-card-date { font-size: 11px; color: #374151; }
+        .mp-card-date { font-size: 11px; color: #6B7280; }
         .mp-card-title { font-size: 14px; font-weight: 600; color: #E2E8F0; margin-bottom: 6px; }
         .mp-card-body { font-size: 13px; color: #6B7280; white-space: pre-wrap; }
         .mp-card-image { width: 100%; max-width: 280px; border-radius: 8px; margin-top: 10px; }
-        .mp-card-expiry { font-size: 11px; color: #374151; margin-top: 8px; }
+        .mp-card-expiry { font-size: 11px; color: #6B7280; margin-top: 8px; }
 
-        .mp-empty { color: #374151; font-size: 14px; text-align: center; padding: 60px 0; }
-        .mp-loading { color: #4B5563; text-align: center; padding: 60px; font-size: 14px; }
+        .mp-empty { color: #6B7280; font-size: 14px; text-align: center; padding: 60px 0; }
+        .mp-loading { color: #6B7280; text-align: center; padding: 60px; font-size: 14px; }
       `}</style>
 
       <div className="mp-wrap">

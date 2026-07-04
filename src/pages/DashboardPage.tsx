@@ -496,7 +496,7 @@ function DriverDetailPanel({
                       : avgRating >= 3
                         ? "#F59E0B"
                         : "#E24B4A"
-                    : "#4B5563",
+                    : "#6B7280",
               }}
             >
               {avgRating !== null ? `★ ${avgRating.toFixed(1)}` : "—"}
@@ -1981,16 +1981,16 @@ export default function DashboardPage({
         .db-nav-item { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; border-left: 2px solid transparent; transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
         .db-nav-item:hover { background: rgba(255,255,255,0.05); }
         .db-nav-item.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
-        .db-nav-icon { color: #4B5563; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
+        .db-nav-icon { color: #6B7280; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
         .db-nav-item:hover .db-nav-icon, .db-nav-item.active .db-nav-icon { color: #E8500A; }
-        .db-nav-label { font-size: 13px; font-weight: 500; color: #4B5563; transition: color 0.12s; }
+        .db-nav-label { font-size: 13px; font-weight: 500; color: #6B7280; transition: color 0.12s; }
         .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: #E8500A; }
         .db-nav-bottom { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); width: 100%; display: flex; flex-direction: column; }
         .db-nav-utility { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
         .db-nav-utility:hover { background: rgba(255,255,255,0.05); }
-        .db-nav-utility .db-nav-icon { color: #374151; }
+        .db-nav-utility .db-nav-icon { color: #6B7280; }
         .db-nav-utility:hover .db-nav-icon { color: #9CA3AF; }
-        .db-nav-utility .db-nav-label { color: #374151; }
+        .db-nav-utility .db-nav-label { color: #6B7280; }
         .db-nav-utility:hover .db-nav-label { color: #9CA3AF; }
         .db-nav-analytics .db-nav-icon { color: #6B7280; }
         .db-nav-analytics:hover .db-nav-icon, .db-nav-analytics.active-util .db-nav-icon { color: #A855F7; }
@@ -2014,7 +2014,7 @@ export default function DashboardPage({
         .db-stat-row { display: flex; align-items: center; gap: 28px; margin-right: 20px; }
         .db-stat { display: flex; flex-direction: column; align-items: flex-end; }
         .db-stat-value { font-size: 15px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .db-stat-label { font-size: 10px; color: #4B5563; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
+        .db-stat-label { font-size: 10px; color: #6B7280; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
         .db-stat-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; position: relative; top: -1px; }
         .db-new-ride-btn { background: #E8500A; color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; white-space: nowrap; }
         .db-new-ride-btn:hover { opacity: 0.88; }
@@ -2023,22 +2023,22 @@ export default function DashboardPage({
         .db-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
         .db-panel { width: 336px; background: #111827; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
         .db-panel-header { padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
-        .db-panel-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; }
+        .db-panel-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; }
         .db-panel-count { font-size: 22px; font-weight: 700; color: #F1F5F9; margin-top: 2px; line-height: 1; }
         .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
         .db-panel-scroll::-webkit-scrollbar { width: 3px; }
         .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
         .db-section-divider { margin: 10px 0 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
-        .db-section-divider-title { font-size: 11px; font-weight: 600; color: #4B5563; letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
+        .db-section-divider-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
         .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; }
-        .db-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
+        .db-empty { font-size: 13px; color: #6B7280; text-align: center; padding: 24px 0; }
         .db-ride-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
         .db-ride-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
         .db-ride-card.dimmed { opacity: 0.7; }
         .db-ride-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
         .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; }
-        .db-ride-time { font-size: 11px; color: #4B5563; }
+        .db-ride-time { font-size: 11px; color: #6B7280; }
         .db-ride-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
         .db-ride-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .db-ride-addr.dest { color: rgba(232,80,10,0.8); }
@@ -2046,10 +2046,10 @@ export default function DashboardPage({
         .db-pending-badge { font-size: 11px; color: #F59E0B; background: rgba(245,158,11,0.08); border-radius: 6px; padding: 4px 8px; margin-top: 6px; border: 1px solid rgba(245,158,11,0.15); }
         .db-assign-btn { width: 100%; background: rgba(74,158,255,0.07); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-top: 8px; transition: background 0.12s; }
         .db-assign-btn:hover { background: rgba(74,158,255,0.13); }
-        .db-assign-label { font-size: 11px; color: #4B5563; margin: 8px 0 4px; }
+        .db-assign-label { font-size: 11px; color: #6B7280; margin: 8px 0 4px; }
         .db-assign-driver-btn { width: 100%; background: rgba(29,158,117,0.07); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s; }
         .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
-        .db-cancel-assign-btn { background: transparent; color: #4B5563; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
+        .db-cancel-assign-btn { background: transparent; color: #6B7280; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
         .db-cancel-assign-btn:hover { color: #9CA3AF; }
         .db-cancel-ride-btn { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
         .db-cancel-ride-btn:hover { background: rgba(226,75,74,0.14); }
@@ -2075,19 +2075,19 @@ export default function DashboardPage({
         .db-driver-avatar-photo { width: 34px; height: 34px; border-radius: 17px; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.18); }
         .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
         .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
-        .db-driver-phone { font-size: 11px; color: #4B5563; margin-top: 3px; }
+        .db-driver-phone { font-size: 11px; color: #6B7280; margin-top: 3px; }
         .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
         .db-driver-status-on-ride { font-size: 11px; color: #E8500A; margin-top: 3px; font-weight: 500; }
         .db-driver-status-available { font-size: 11px; color: #1D9E75; margin-top: 3px; font-weight: 500; }
         .db-invite-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
         .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
-        .db-invite-input::placeholder { color: #374151; }
+        .db-invite-input::placeholder { color: #6B7280; }
         .db-phone-wrap { display: flex; align-items: center; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0 12px; transition: border-color 0.15s; }
         .db-phone-wrap:focus-within { border-color: rgba(232,80,10,0.35); }
         .db-phone-prefix { font-size: 13px; color: #9CA3AF; font-family: system-ui, sans-serif; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.08); margin-right: 8px; white-space: nowrap; }
         .db-phone-input { flex: 1; background: transparent; border: none; padding: 10px 0; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
-        .db-phone-input::placeholder { color: #374151; }
+        .db-phone-input::placeholder { color: #6B7280; }
         .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-invite-btn:hover { opacity: 0.88; }
         .db-invite-btn:disabled { opacity: 0.5; }
@@ -2109,7 +2109,7 @@ export default function DashboardPage({
         .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
         .db-modal-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
         .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
-        .db-modal-input::placeholder { color: #374151; }
+        .db-modal-input::placeholder { color: #6B7280; }
         .db-modal-select { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
         .pac-container { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         .pac-item { padding: 8px 12px; color: #9CA3AF; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
@@ -2140,7 +2140,7 @@ export default function DashboardPage({
         .dd-profile-info { flex: 1; min-width: 0; }
         .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .dd-profile-sub { font-size: 12px; color: #6B7280; }
-        .dd-profile-phone { font-size: 12px; color: #4B5563; margin-top: 2px; }
+        .dd-profile-phone { font-size: 12px; color: #6B7280; margin-top: 2px; }
         .dd-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         .dd-status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
         .dd-pill { font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 10px; }
@@ -2151,14 +2151,14 @@ export default function DashboardPage({
         .dd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
         .dd-stat-box { background: #1E2A3A; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
         .dd-stat-val { font-size: 18px; font-weight: 700; color: #F1F5F9; }
-        .dd-stat-lbl { font-size: 10px; color: #4B5563; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
-        .dd-section-label { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
-        .dd-empty { font-size: 13px; color: #374151; text-align: center; padding: 24px 0; }
+        .dd-stat-lbl { font-size: 10px; color: #6B7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+        .dd-section-label { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
+        .dd-empty { font-size: 13px; color: #6B7280; text-align: center; padding: 24px 0; }
         .dd-ride-row { background: #1E2A3A; border-radius: 10px; padding: 11px 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .dd-ride-row-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
         .dd-ride-passenger { font-size: 12px; font-weight: 600; color: #E2E8F0; margin-top: 4px; }
         .dd-ride-addr { font-size: 11px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dd-ride-time { font-size: 10px; color: #374151; }
+        .dd-ride-time { font-size: 10px; color: #6B7280; }
         .dd-ride-fare { font-size: 13px; font-weight: 600; color: #6B7280; white-space: nowrap; padding-top: 2px; }
         .dd-pill-amber { background: rgba(245,158,11,0.1); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); }
         .dd-action-deactivate { background: rgba(245,158,11,0.08); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
@@ -2623,7 +2623,7 @@ export default function DashboardPage({
                       <span className="db-section-divider-title">Recent</span>
                       <span
                         className="db-section-divider-count"
-                        style={{ color: "#4B5563" }}
+                        style={{ color: "#6B7280" }}
                       >
                         {recentRides.length}
                       </span>
@@ -2737,7 +2737,7 @@ export default function DashboardPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#4B5563",
+                            color: "#6B7280",
                             marginTop: 4,
                           }}
                         >
@@ -2806,7 +2806,7 @@ export default function DashboardPage({
                       </span>
                       <span
                         className="db-section-divider-count"
-                        style={{ color: "#4B5563" }}
+                        style={{ color: "#6B7280" }}
                       >
                         {drivers.length}
                       </span>
@@ -2985,7 +2985,7 @@ export default function DashboardPage({
                     <span
                       style={{
                         fontSize: 10,
-                        color: "#374151",
+                        color: "#6B7280",
                         fontWeight: 400,
                         marginLeft: 6,
                         textTransform: "none",
@@ -3072,7 +3072,7 @@ export default function DashboardPage({
                     <span
                       style={{
                         fontSize: 10,
-                        color: "#4B5563",
+                        color: "#6B7280",
                         fontWeight: 400,
                         marginLeft: 6,
                       }}
@@ -3116,7 +3116,7 @@ export default function DashboardPage({
                   <span
                     style={{
                       fontSize: 10,
-                      color: "#374151",
+                      color: "#6B7280",
                       fontWeight: 400,
                       marginLeft: 6,
                       textTransform: "none",
@@ -3228,7 +3228,7 @@ export default function DashboardPage({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#4B5563",
+                  color: "#6B7280",
                   cursor: "pointer",
                   fontSize: 20,
                 }}
@@ -3258,7 +3258,7 @@ export default function DashboardPage({
               >
                 {STATUS_LABELS[rideDetail.status]}
               </span>
-              <span style={{ fontSize: 12, color: "#4B5563" }}>
+              <span style={{ fontSize: 12, color: "#6B7280" }}>
                 {new Date(rideDetail.created_at).toLocaleString("en-CA", {
                   dateStyle: "medium",
                   timeStyle: "short",
@@ -3329,7 +3329,7 @@ export default function DashboardPage({
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#4B5563",
+                          color: "#6B7280",
                           fontWeight: 400,
                           marginLeft: 6,
                         }}

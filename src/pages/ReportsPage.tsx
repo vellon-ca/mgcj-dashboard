@@ -36,7 +36,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   open: "#F59E0B",
   reviewed: "#1D9E75",
-  dismissed: "#4B5563",
+  dismissed: "#6B7280",
 };
 
 interface Props {
@@ -145,8 +145,8 @@ export default function ReportsPage({ onBadgeChange }: Props) {
 
         /* LEFT PANEL */
         .rp-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .rp-panel-title { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .rp-filter-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #4B5563; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .rp-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .rp-filter-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
         .rp-filter-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
         .rp-filter-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
         .rp-filter-count { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: rgba(255,255,255,0.06); color: #6B7280; }
@@ -154,8 +154,8 @@ export default function ReportsPage({ onBadgeChange }: Props) {
         .rp-filter-count.urgent { background: rgba(248,113,113,0.12); color: #F87171; }
 
         .rp-panel-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 10px 16px; }
-        .rp-panel-subtitle { font-size: 10px; font-weight: 600; color: #374151; letter-spacing: 0.07em; text-transform: uppercase; padding: 8px 16px 6px; }
-        .rp-driver-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 12px; font-weight: 500; color: #4B5563; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rp-panel-subtitle { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; padding: 8px 16px 6px; }
+        .rp-driver-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 12px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: system-ui, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .rp-driver-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
         .rp-driver-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
 
@@ -166,12 +166,12 @@ export default function ReportsPage({ onBadgeChange }: Props) {
 
         .rp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .rp-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
-        .rp-subtitle-text { font-size: 12px; color: #4B5563; }
+        .rp-subtitle-text { font-size: 12px; color: #6B7280; }
 
         /* SUMMARY STRIP */
         .rp-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
         .rp-summary-card { background: #1E2A3A; border-radius: 10px; padding: 14px; border: 1px solid rgba(255,255,255,0.05); }
-        .rp-summary-label { font-size: 10px; font-weight: 600; color: #4B5563; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .rp-summary-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
         .rp-summary-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; }
 
         /* REPORT CARD */
@@ -181,14 +181,14 @@ export default function ReportsPage({ onBadgeChange }: Props) {
 
         .rp-card-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
         .rp-card-meta { display: flex; flex-direction: column; gap: 3px; }
-        .rp-card-date { font-size: 11px; color: #374151; }
+        .rp-card-date { font-size: 11px; color: #6B7280; }
 
         .rp-severity-flag { font-size: 11px; color: #F87171; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); border-radius: 6px; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px; margin-bottom: 10px; }
 
         .rp-reason { font-size: 14px; font-weight: 600; color: #E2E8F0; margin-bottom: 8px; }
         .rp-people { display: flex; gap: 20px; margin-bottom: 8px; }
         .rp-person { font-size: 12px; color: #6B7280; }
-        .rp-person span { color: #4B5563; }
+        .rp-person span { color: #6B7280; }
         .rp-comment { background: rgba(255,255,255,0.03); border-left: 2px solid #2D3F52; border-radius: 0 6px 6px 0; padding: 8px 12px; font-size: 13px; color: #6B7280; font-style: italic; margin-top: 10px; }
 
         .rp-status-badge { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
@@ -198,11 +198,11 @@ export default function ReportsPage({ onBadgeChange }: Props) {
         .rp-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .rp-action-reviewed { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.25) !important; }
         .rp-action-reviewed:hover:not(:disabled) { background: rgba(29,158,117,0.18); }
-        .rp-action-dismissed { background: rgba(255,255,255,0.04); color: #4B5563; border: 1px solid rgba(255,255,255,0.07) !important; }
+        .rp-action-dismissed { background: rgba(255,255,255,0.04); color: #6B7280; border: 1px solid rgba(255,255,255,0.07) !important; }
         .rp-action-dismissed:hover:not(:disabled) { background: rgba(255,255,255,0.08); color: #6B7280; }
 
-        .rp-empty { color: #374151; font-size: 14px; text-align: center; padding: 60px 0; }
-        .rp-loading { color: #4B5563; text-align: center; padding: 60px; font-size: 14px; }
+        .rp-empty { color: #6B7280; font-size: 14px; text-align: center; padding: 60px 0; }
+        .rp-loading { color: #6B7280; text-align: center; padding: 60px; font-size: 14px; }
       `}</style>
 
       <div className="rp-wrap">
