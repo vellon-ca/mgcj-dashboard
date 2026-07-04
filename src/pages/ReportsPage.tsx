@@ -130,12 +130,11 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
       logDispatchEvent({
         companyId,
         dispatcherId: adminId,
-        eventType: "report.reviewed",
+        eventType: status === "reviewed" ? "report.reviewed" : "report.dismissed",
         details: {
           driver_id: selected?.driver_id,
           driver_name: selected?.driver_name,
           reason: selected?.reason,
-          action: status,
           resolution_notes: notes.trim() || null,
         },
       });
@@ -157,6 +156,18 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
         })
       : null;
     const driverCount = reports.filter((x) => x.driver_id === r.driver_id).length;
+
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "report.printed",
+      details: {
+        driver_id: r.driver_id,
+        driver_name: r.driver_name,
+        reason: r.reason,
+        report_status: r.status,
+      },
+    });
 
     const html = `<!DOCTYPE html>
 <html>
@@ -192,8 +203,9 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
   .sig-field { flex: 1; }
   .sig-line { border-bottom: 1px solid #374151; height: 32px; margin-bottom: 5px; }
   .sig-line-label { font-size: 10px; color: #9ca3af; }
+  @page { margin: 0; }
   @media print {
-    body { padding: 32px; }
+    body { padding: 60px 56px; }
     .no-print { display: none; }
   }
 </style>
@@ -201,7 +213,7 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
 <body>
   <div class="header">
     <div class="header-left">
-      <h1>${companyName ?? "Taxi Dispatch"}</h1>
+      <h1>${companyName ?? ""}</h1>
       <p>Driver Incident Report</p>
     </div>
     <div class="header-right">

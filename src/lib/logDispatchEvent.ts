@@ -17,6 +17,8 @@ export type DispatchEventType =
   | "discount.deactivated"
   | "discount.deleted"
   | "report.reviewed"
+  | "report.dismissed"
+  | "report.printed"
   | "announcement.drivers"
   | "announcement.passengers"
   | "escalation.acknowledged"
