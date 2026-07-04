@@ -2386,7 +2386,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showReports ? "flex" : "none" }}
           >
-            <ReportsPage onBadgeChange={setOpenReports} />
+            <ReportsPage onBadgeChange={setOpenReports} companyId={profile.company_id!} adminId={profile.id} companyName={companyName} />
           </div>
 
           <div
