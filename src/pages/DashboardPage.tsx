@@ -749,6 +749,7 @@ export default function DashboardPage({
   const [bookingOpen, setBookingOpen] = useState(false);
   const [bookPassenger, setBookPassenger] = useState("+1 ");
   const [bookPassengerName, setBookPassengerName] = useState("");
+  const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
   const [bookPickup, setBookPickup] = useState("");
   const [bookPickupCoords, setBookPickupCoords] = useState<{
     lat: number;
@@ -761,11 +762,13 @@ export default function DashboardPage({
   } | null>(null);
   const [bookFare, setBookFare] = useState("");
   const [bookFareLoading, setBookFareLoading] = useState(false);
+  const [bookFareError, setBookFareError] = useState(false);
   const [bookDiscountCode, setBookDiscountCode] = useState("");
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
   const [bookLoading, setBookLoading] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
+  const activeRideIdsRef = useRef<string[]>([]);
   const pickupInputRef = useRef<HTMLInputElement>(null);
   const dropoffInputRef = useRef<HTMLInputElement>(null);
   const pickupAutocompleteRef = useRef<any>(null);
@@ -863,20 +866,24 @@ export default function DashboardPage({
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "rides" },
         (payload) => {
-          // Instantly patch the changed ride from the payload — no round-trip needed
           if (payload.new) {
             setRides((prev) => {
+              const existing = prev.find((r) => r.id === (payload.new as any).id);
               const next = prev.map((r) =>
                 r.id === (payload.new as any).id
                   ? { ...r, ...(payload.new as any) }
                   : r,
               );
               computeStats(next);
+              updateMapMarkers(next);
+              // Only re-fetch when driver_id changes — that's the only case where
+              // enriched profile data (name, avatar) needs to be loaded fresh.
+              const driverChanged =
+                existing && existing.driver_id !== (payload.new as any).driver_id;
+              if (!existing || driverChanged) fetchRides();
               return next;
             });
           }
-          // Background sync to keep profile enrichment and map markers current
-          fetchRides();
         },
       )
       .on(
@@ -903,6 +910,53 @@ export default function DashboardPage({
     return () => {
       supabase.removeChannel(ch);
     };
+  }, []);
+
+  // Keep ref in sync so the polling interval always sees current active ride IDs
+  // without needing to be in the dependency array (avoids restarting the interval).
+  useEffect(() => {
+    activeRideIdsRef.current = rides
+      .filter((r) =>
+        ["pending", "offered", "assigned", "driver_arriving", "in_progress"].includes(r.status),
+      )
+      .map((r) => r.id);
+  }, [rides]);
+
+  // Poll active ride statuses every 2 s — cheap query, guarantees sub-2s updates
+  // regardless of Supabase Realtime CDC latency.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const ids = activeRideIdsRef.current;
+      if (ids.length === 0) return;
+      const { data } = await supabase
+        .from("rides")
+        .select("id, status, driver_id, confirmed_by_driver, fare_final")
+        .in("id", ids);
+      if (!data) return;
+      setRides((prev) => {
+        let changed = false;
+        const next = prev.map((r) => {
+          const fresh = data.find((d: any) => d.id === r.id);
+          if (!fresh) return r;
+          const driverChanged = fresh.driver_id !== r.driver_id;
+          if (driverChanged) fetchRides();
+          if (
+            fresh.status === r.status &&
+            fresh.confirmed_by_driver === (r as any).confirmed_by_driver &&
+            fresh.fare_final === r.fare_final &&
+            !driverChanged
+          )
+            return r;
+          changed = true;
+          return { ...r, ...fresh };
+        });
+        if (!changed) return prev;
+        computeStats(next);
+        updateMapMarkers(next);
+        return next;
+      });
+    }, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   function toE164(raw: string): string {
@@ -1358,6 +1412,7 @@ export default function DashboardPage({
     if (!bookPickupCoords || !bookDropoffCoords) return;
     if (!(window as any).google?.maps) return;
     setBookFareLoading(true);
+    setBookFareError(false);
     const service = new google.maps.DistanceMatrixService();
     service.getDistanceMatrix(
       {
@@ -1371,11 +1426,14 @@ export default function DashboardPage({
       },
       (response, status) => {
         setBookFareLoading(false);
-        if (status === "OK" && response) {
-          const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
+        const element = response?.rows[0]?.elements[0];
+        if (status === "OK" && element?.status === "OK" && element.distance?.value) {
+          const metres = element.distance.value;
           // Manual bookings are always cash; round up to the nearest dollar
           // so the displayed estimate matches the fare that gets saved.
           setBookFare(Math.ceil(4 + (metres / 1000) * 1.8).toFixed(2));
+        } else {
+          setBookFareError(true);
         }
       },
     );
@@ -1418,6 +1476,14 @@ export default function DashboardPage({
 
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
+    if (!bookPickupCoords) {
+      setBookError("Please select a pickup address from the dropdown.");
+      return;
+    }
+    if (!bookDropoffCoords) {
+      setBookError("Please select a drop-off address from the dropdown.");
+      return;
+    }
     setBookLoading(true);
     setBookError(null);
     try {
@@ -1546,11 +1612,11 @@ export default function DashboardPage({
         company_id: profile.company_id,
         status: "pending",
         pickup_address: bookPickup.trim(),
-        pickup_lat: bookPickupCoords?.lat ?? 45.0773,
-        pickup_lng: bookPickupCoords?.lng ?? -64.3601,
+        pickup_lat: bookPickupCoords.lat,
+        pickup_lng: bookPickupCoords.lng,
         dropoff_address: bookDropoff.trim(),
-        dropoff_lat: bookDropoffCoords?.lat ?? 45.0773,
-        dropoff_lng: bookDropoffCoords?.lng ?? -64.3601,
+        dropoff_lat: bookDropoffCoords.lat,
+        dropoff_lng: bookDropoffCoords.lng,
         fare_estimate: finalFare,
         pre_discount_fare: preDiscountFare,
         discount_amount: discountAmount,
@@ -1594,6 +1660,8 @@ export default function DashboardPage({
       setBookDropoff("");
       setBookDropoffCoords(null);
       setBookFare("");
+      setBookFareError(false);
+      setBookPassengerRegistered(false);
       setBookDiscountCode("");
       setBookDriver("");
       setBookScheduled("");
@@ -2871,10 +2939,14 @@ export default function DashboardPage({
               <div>
                 <label className="db-modal-label">Passenger phone *</label>
                 <input
+                  autoFocus
                   className="db-modal-input"
                   placeholder="+1 (902) 555-1234"
                   value={bookPassenger}
-                  onChange={(e) => setBookPassenger(formatBookingPhone(e.target.value))}
+                  onChange={(e) => {
+                    setBookPassenger(formatBookingPhone(e.target.value));
+                    setBookPassengerRegistered(false);
+                  }}
                   onBlur={async () => {
                     const phone = toE164(bookPassenger);
                     if (phone.replace(/\D/g, "").length < 11) return;
@@ -2883,8 +2955,11 @@ export default function DashboardPage({
                       .select("name")
                       .eq("phone", phone)
                       .maybeSingle();
-                    if (data?.name && !bookPassengerName.trim()) {
+                    if (data?.name) {
                       setBookPassengerName(data.name);
+                      setBookPassengerRegistered(true);
+                    } else {
+                      setBookPassengerRegistered(false);
                     }
                   }}
                   required
@@ -2893,24 +2968,41 @@ export default function DashboardPage({
               <div>
                 <label className="db-modal-label">
                   Passenger name{" "}
-                  <span
-                    style={{
-                      fontSize: 10,
-                      color: "#374151",
-                      fontWeight: 400,
-                      marginLeft: 6,
-                      textTransform: "none",
-                      letterSpacing: 0,
-                    }}
-                  >
-                    (if not registered)
-                  </span>
+                  {bookPassengerRegistered ? (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#1D9E75",
+                        fontWeight: 400,
+                        marginLeft: 6,
+                        textTransform: "none",
+                        letterSpacing: 0,
+                      }}
+                    >
+                      Registered
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#374151",
+                        fontWeight: 400,
+                        marginLeft: 6,
+                        textTransform: "none",
+                        letterSpacing: 0,
+                      }}
+                    >
+                      (if not registered)
+                    </span>
+                  )}
                 </label>
                 <input
                   className="db-modal-input"
                   placeholder="Guest name"
                   value={bookPassengerName}
                   onChange={(e) => setBookPassengerName(e.target.value)}
+                  readOnly={bookPassengerRegistered}
+                  style={bookPassengerRegistered ? { opacity: 0.5, cursor: "default" } : undefined}
                 />
               </div>
               <div style={{ position: "relative" }}>
@@ -2923,6 +3015,9 @@ export default function DashboardPage({
                   onChange={(e) => {
                     setBookPickup(e.target.value);
                     setBookPickupCoords(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.preventDefault();
                   }}
                   required
                 />
@@ -2950,6 +3045,9 @@ export default function DashboardPage({
                   onChange={(e) => {
                     setBookDropoff(e.target.value);
                     setBookDropoffCoords(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.preventDefault();
                   }}
                   required
                 />
@@ -3006,6 +3104,11 @@ export default function DashboardPage({
                   value={bookFare}
                   onChange={(e) => setBookFare(e.target.value)}
                 />
+                {bookFareError && (
+                  <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 4 }}>
+                    Could not auto-calculate — enter a fare manually.
+                  </div>
+                )}
               </div>
               <div>
                 <label className="db-modal-label">
@@ -3077,7 +3180,9 @@ export default function DashboardPage({
                   onClick={() => {
                     setBookingOpen(false);
                     setBookError(null);
+                    setBookFareError(false);
                     setBookPassenger("+1 ");
+                    setBookPassengerRegistered(false);
                   }}
                 >
                   Cancel
