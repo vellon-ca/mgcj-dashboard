@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { supabase } from "../lib/supabase";
@@ -32,6 +32,7 @@ interface DriverStat {
 }
 interface HourStat {
   hour: number;
+  label: string;
   rides: number;
 }
 interface DayStat {
@@ -509,6 +510,16 @@ export default function AnalyticsPage({
           if (section === "invoices") fetchInvoices();
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "ride_reviews" },
+        () => fetchReviews(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "ride_reviews" },
+        () => { if (section === "reviews") fetchReviews(); },
+      )
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
@@ -882,6 +893,7 @@ export default function AnalyticsPage({
         setHourStats(
           Array.from({ length: 24 }, (_, i) => ({
             hour: i,
+            label: fmtHour(i),
             rides: hourMap.get(i) ?? 0,
           })),
         );
@@ -1691,6 +1703,28 @@ export default function AnalyticsPage({
     );
   }
 
+  function PeakTooltip({ active, payload }: any) {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    const lbl = d.label ?? d.day;
+    const count = d.rides;
+    return (
+      <div style={{
+        background: "#1E2A3A",
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 8,
+        padding: "10px 14px",
+        fontSize: 12,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+      }}>
+        <div style={{ color: "#9CA3AF", marginBottom: 4 }}>{lbl}</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "#E8500A" }}>
+          {count} ride{count !== 1 ? "s" : ""}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{`
@@ -1756,11 +1790,6 @@ export default function AnalyticsPage({
         .an-ride-row:hover td { background: rgba(232,80,10,0.04); }
         .an-peak-row { display: flex; gap: 16px; }
         .an-bar-chart-wrap { flex: 1; background: #18222F; border-radius: 10px; padding: 16px; border: 1px solid rgba(255,255,255,0.04); }
-        .an-bars { display: flex; align-items: flex-end; gap: 3px; height: 100px; padding-bottom: 20px; }
-        .an-bar-col { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
-        .an-bar-fill { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; }
-        .an-bar-lbl { font-size: 8px; color: #6B7280; margin-top: 3px; }
-        .an-peak-note { font-size: 11px; color: #6B7280; margin-top: 8px; }
         .an-review-card { background: #1E2A3A; border-radius: 10px; padding: 14px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); transition: border-color 0.12s; }
         .an-review-card.flagged { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
         .an-review-card.dispatch-reviewed { border-color: rgba(29,158,117,0.2); }
@@ -2229,76 +2258,70 @@ export default function AnalyticsPage({
                       <div className="an-no-data">Loading…</div>
                     ) : (
                       <div className="an-peak-row">
+                        {/* By hour */}
                         <div className="an-bar-chart-wrap" style={{ flex: 2 }}>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#6B7280",
-                              marginBottom: 10,
-                              fontWeight: 500,
-                            }}
-                          >
+                          <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
                             By hour of day
+                            {peakHour && peakHour.rides > 0 && (
+                              <span style={{ color: "#E8500A", marginLeft: 8 }}>
+                                Peak: {fmtHour(peakHour.hour)} · {peakHour.rides} ride{peakHour.rides !== 1 ? "s" : ""}
+                              </span>
+                            )}
                           </div>
-                          <div className="an-bars">
-                            {hourStats.map((h) => (
-                              <div key={h.hour} className="an-bar-col">
-                                <div
-                                  className="an-bar-fill"
-                                  style={{
-                                    height: `${Math.max(2, (h.rides / maxHour) * 100)}%`,
-                                    background:
-                                      peakHour && h.hour === peakHour.hour
-                                        ? "#E8500A"
-                                        : "#1E3A5F",
-                                  }}
-                                />
-                                <div className="an-bar-lbl">
-                                  {h.hour % 3 === 0 ? fmtHour(h.hour) : ""}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          {peakHour && peakHour.rides > 0 && (
-                            <div className="an-peak-note">
-                              Peak: {fmtHour(peakHour.hour)} · {peakHour.rides}{" "}
-                              rides
-                            </div>
-                          )}
+                          <ResponsiveContainer width="100%" height={130}>
+                            <BarChart data={hourStats} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} barCategoryGap="20%">
+                              <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <XAxis
+                                dataKey="label"
+                                tick={{ fill: "#6B7280", fontSize: 9 }}
+                                axisLine={false}
+                                tickLine={false}
+                                interval={2}
+                              />
+                              <YAxis hide />
+                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "rgba(232,80,10,0.06)" }} />
+                              <Bar dataKey="rides" radius={[3, 3, 0, 0]} maxBarSize={18}>
+                                {hourStats.map((h) => (
+                                  <Cell
+                                    key={h.hour}
+                                    fill={peakHour && h.hour === peakHour.hour ? "#E8500A" : "#1E3A5F"}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
                         </div>
+                        {/* By day */}
                         <div className="an-bar-chart-wrap" style={{ flex: 1 }}>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#6B7280",
-                              marginBottom: 10,
-                              fontWeight: 500,
-                            }}
-                          >
+                          <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
                             By day of week
+                            {peakDay && peakDay.rides > 0 && (
+                              <span style={{ color: "#E8500A", marginLeft: 8 }}>
+                                Busiest: {peakDay.day} · {peakDay.rides} ride{peakDay.rides !== 1 ? "s" : ""}
+                              </span>
+                            )}
                           </div>
-                          <div className="an-bars">
-                            {dayStats.map((d) => (
-                              <div key={d.day} className="an-bar-col">
-                                <div
-                                  className="an-bar-fill"
-                                  style={{
-                                    height: `${Math.max(2, (d.rides / maxDay) * 100)}%`,
-                                    background:
-                                      peakDay && d.day === peakDay.day
-                                        ? "#E8500A"
-                                        : "#1E3A5F",
-                                  }}
-                                />
-                                <div className="an-bar-lbl">{d.day}</div>
-                              </div>
-                            ))}
-                          </div>
-                          {peakDay && peakDay.rides > 0 && (
-                            <div className="an-peak-note">
-                              Busiest: {peakDay.day} · {peakDay.rides} rides
-                            </div>
-                          )}
+                          <ResponsiveContainer width="100%" height={130}>
+                            <BarChart data={dayStats} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} barCategoryGap="25%">
+                              <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <XAxis
+                                dataKey="day"
+                                tick={{ fill: "#6B7280", fontSize: 10 }}
+                                axisLine={false}
+                                tickLine={false}
+                              />
+                              <YAxis hide />
+                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "rgba(232,80,10,0.06)" }} />
+                              <Bar dataKey="rides" radius={[3, 3, 0, 0]} maxBarSize={28}>
+                                {dayStats.map((d) => (
+                                  <Cell
+                                    key={d.day}
+                                    fill={peakDay && d.day === peakDay.day ? "#E8500A" : "#1E3A5F"}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
                         </div>
                       </div>
                     )}

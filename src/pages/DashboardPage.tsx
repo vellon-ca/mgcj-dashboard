@@ -731,7 +731,8 @@ export default function DashboardPage({
   const [showSettings, setShowSettings] = useState(false);
   const [showAnnouncements, setShowAnnouncements] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
-  const [hasDriverChatUnread, setHasDriverChatUnread] = useState(false);
+  const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
+  const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -876,6 +877,7 @@ export default function DashboardPage({
               );
               computeStats(next);
               updateMapMarkers(next);
+              if (["completed", "cancelled"].includes((payload.new as any).status)) fetchStats();
               // Only re-fetch when driver_id changes — that's the only case where
               // enriched profile data (name, avatar) needs to be loaded fresh.
               const driverChanged =
@@ -905,6 +907,16 @@ export default function DashboardPage({
         "postgres_changes",
         { event: "*", schema: "public", table: "driver_invites" },
         fetchInvites,
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "ride_reviews" },
+        fetchReviewsBadge,
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "ride_reviews" },
+        fetchReviewsBadge,
       )
       .subscribe();
     return () => {
@@ -977,12 +989,43 @@ export default function DashboardPage({
   async function fetchAll() {
     await Promise.all([
       fetchRides(),
+      fetchStats(),
       fetchDrivers(),
       fetchInvites(),
       fetchReviewsBadge(),
       fetchReportsBadge(),
     ]);
     setLoading(false);
+  }
+
+  async function fetchStats() {
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const { data } = await supabase
+      .from("rides")
+      .select("status, fare_final, fare_estimate, created_at")
+      .eq("company_id", profile.company_id)
+      .gte("created_at", monthStart);
+    if (!data) return;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+    const fare = (r: any) => r.fare_final ?? r.fare_estimate ?? 0;
+    const sum = (arr: any[]) => arr.reduce((s, r) => s + fare(r), 0);
+    const completedToday = data.filter((r) => r.status === "completed" && new Date(r.created_at) >= todayStart);
+    const completedWeek = data.filter((r) => r.status === "completed" && new Date(r.created_at) >= weekStart);
+    const completedMonth = data.filter((r) => r.status === "completed");
+    const total = data.filter((r) => ["completed", "cancelled"].includes(r.status));
+    const cancelled = data.filter((r) => r.status === "cancelled");
+    setStats((prev) => ({
+      ...prev,
+      completedToday: completedToday.length,
+      revenueToday: sum(completedToday),
+      revenueWeek: sum(completedWeek),
+      revenueMonth: sum(completedMonth),
+      avgFare: completedMonth.length ? sum(completedMonth) / completedMonth.length : 0,
+      cancelRate: total.length ? (cancelled.length / total.length) * 100 : 0,
+    }));
   }
 
   async function batchProfiles(
@@ -1142,51 +1185,10 @@ export default function DashboardPage({
   }
 
   function computeStats(rideData: Ride[]) {
-    const now = new Date();
-    const todayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const active = rideData.filter((r) =>
-      [
-        "pending",
-        "offered",
-        "assigned",
-        "driver_arriving",
-        "in_progress",
-      ].includes(r.status),
+      ["pending", "offered", "assigned", "driver_arriving", "in_progress"].includes(r.status),
     );
-    const completedToday = rideData.filter(
-      (r) => r.status === "completed" && new Date(r.created_at) >= todayStart,
-    );
-    const completedWeek = rideData.filter(
-      (r) => r.status === "completed" && new Date(r.created_at) >= weekStart,
-    );
-    const completedMonth = rideData.filter(
-      (r) => r.status === "completed" && new Date(r.created_at) >= monthStart,
-    );
-    const sum = (arr: Ride[]) =>
-      arr.reduce((s, r) => s + (r.fare_final ?? r.fare_estimate ?? 0), 0);
-    const total = rideData.filter((r) =>
-      ["completed", "cancelled"].includes(r.status),
-    );
-    const cancelled = rideData.filter((r) => r.status === "cancelled");
-    setStats((prev) => ({
-      ...prev,
-      activeRides: active.length,
-      completedToday: completedToday.length,
-      revenueToday: sum(completedToday),
-      revenueWeek: sum(completedWeek),
-      revenueMonth: sum(completedMonth),
-      avgFare: completedMonth.length
-        ? sum(completedMonth) / completedMonth.length
-        : 0,
-      cancelRate: total.length ? (cancelled.length / total.length) * 100 : 0,
-    }));
+    setStats((prev) => ({ ...prev, activeRides: active.length }));
   }
 
   function updateMapMarkers(rideData: Ride[]) {
@@ -1723,7 +1725,6 @@ export default function DashboardPage({
   }
 
   async function cancelRide(rideId: string) {
-    if (!confirm("Cancel this ride?")) return;
     const ride = rides.find((r) => r.id === rideId);
     await supabase
       .from("rides")
@@ -1936,7 +1937,12 @@ export default function DashboardPage({
   const recentRides = rides
     .filter((r) => ["completed", "cancelled"].includes(r.status))
     .slice(0, 30);
-  const onlineDrivers = drivers.filter((d) => d.is_active);
+  const activeRideDriverIds = new Set(
+    rides
+      .filter((r) => ["assigned", "driver_arriving", "in_progress"].includes(r.status) && r.driver_id)
+      .map((r) => r.driver_id),
+  );
+  const onlineDrivers = drivers.filter((d) => d.is_active && !activeRideDriverIds.has(d.id));
   const topbarTitle = showAnalytics
     ? "Analytics"
     : showReports
@@ -2234,9 +2240,12 @@ export default function DashboardPage({
             >
               <span className="db-nav-icon">
                 <IconMessages />
-                {hasDriverChatUnread && !showMessages && <span className="db-badge-dot" />}
+                {driverChatUnreadCount > 0 && !showMessages && <span className="db-badge-dot" />}
               </span>
               {navExpanded && <span className="db-nav-label">Messages</span>}
+              {navExpanded && driverChatUnreadCount > 0 && (
+                <span className="db-badge-count">{driverChatUnreadCount}</span>
+              )}
             </button>
           </div>
           <div className="db-nav-bottom">
@@ -2425,10 +2434,33 @@ export default function DashboardPage({
                 companyId={profile.company_id}
                 adminId={profile.id}
                 isActive={showMessages}
-                onUnreadChange={setHasDriverChatUnread}
+                onUnreadChange={(count) => setDriverChatUnreadCount(count)}
               />
             )}
           </div>
+
+          {cancelPendingId && (
+            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setCancelPendingId(null)}>
+              <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
+                <div className="dd-confirm-title">Cancel this ride?</div>
+                <div className="dd-confirm-body">
+                  {(() => {
+                    const r = rides.find((x) => x.id === cancelPendingId);
+                    return r ? `${(r as any).passenger?.name ?? "Passenger"} · ${r.pickup_address}` : "This action cannot be undone.";
+                  })()}
+                </div>
+                <div className="dd-confirm-actions">
+                  <button className="dd-confirm-cancel" onClick={() => setCancelPendingId(null)}>Keep ride</button>
+                  <button
+                    className="dd-confirm-ok danger"
+                    onClick={() => { cancelRide(cancelPendingId); setCancelPendingId(null); }}
+                  >
+                    Cancel ride
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div
             className="db-body"
@@ -2546,7 +2578,7 @@ export default function DashboardPage({
                                   className="db-cancel-ride-btn"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelRide(ride.id);
+                                    setCancelPendingId(ride.id);
                                   }}
                                 >
                                   Cancel
@@ -2573,7 +2605,7 @@ export default function DashboardPage({
                               style={{ flex: 1 }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                cancelRide(ride.id);
+                                setCancelPendingId(ride.id);
                               }}
                             >
                               Cancel ride
@@ -2613,7 +2645,7 @@ export default function DashboardPage({
                             onAssignDriver={(driverId) =>
                               assignDriver(ride.id, driverId)
                             }
-                            onCancel={() => cancelRide(ride.id)}
+                            onCancel={() => setCancelPendingId(ride.id)}
                           />
                         ))}
                       </>
@@ -2656,8 +2688,11 @@ export default function DashboardPage({
                                 : ""}
                           </span>
                         </div>
-                        <div className="db-ride-name">
-                          {(ride as any).passenger?.name ?? "Unknown"}
+                        <div className="db-ride-name" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                          <span>{(ride as any).passenger?.name ?? "Unknown"}</span>
+                          <span style={{ fontSize: 10, color: "#6B7280", fontWeight: 400 }}>
+                            {new Date(ride.created_at).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          </span>
                         </div>
                         <div className="db-ride-addr">
                           {ride.pickup_address} → {ride.dropoff_address}
@@ -2789,12 +2824,22 @@ export default function DashboardPage({
                               <span className="db-invite-code">
                                 {invite.code}
                               </span>
-                              <button
-                                className="db-revoke-btn"
-                                onClick={() => revokeInvite(invite.id)}
-                              >
-                                Revoke
-                              </button>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  className="db-revoke-btn"
+                                  style={{ fontSize: 11 }}
+                                  onClick={() => navigator.clipboard.writeText(invite.code)}
+                                  title="Copy code"
+                                >
+                                  Copy
+                                </button>
+                                <button
+                                  className="db-revoke-btn"
+                                  onClick={() => revokeInvite(invite.id)}
+                                >
+                                  Revoke
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

@@ -26,7 +26,7 @@ interface Props {
   companyId: string;
   adminId: string;
   isActive: boolean;
-  onUnreadChange?: (hasUnread: boolean) => void;
+  onUnreadChange?: (unreadCount: number) => void;
 }
 
 export default function MessagesPage({ companyId, adminId, isActive, onUnreadChange }: Props) {
@@ -49,8 +49,8 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
   }, [companyId]);
 
   useEffect(() => {
-    const hasUnread = [...threads.values()].some((t) => t.unread);
-    onUnreadChange?.(hasUnread);
+    const unreadCount = [...threads.values()].filter((t) => t.unread).length;
+    onUnreadChange?.(unreadCount);
   }, [threads, onUnreadChange]);
 
   useEffect(() => {
