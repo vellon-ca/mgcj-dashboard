@@ -233,20 +233,27 @@ interface Stats {
 }
 
 // Driver Detail Panel
+const VAN_KEYWORDS = ['caravan', 'sienna', 'odyssey', 'transit', 'sprinter', 'express', 'savana', 'villager', 'entourage', 'sedona', 'routan', 'quest', 'windstar', 'promaster', 'econoline'];
+const SUV_KEYWORDS = ['explorer', 'tahoe', 'suburban', 'yukon', 'expedition', 'navigator', 'pathfinder', 'armada', 'sequoia', '4runner', 'highlander', 'pilot', 'traverse', 'enclave', 'acadia', 'terrain', 'equinox', 'escape', 'edge', 'flex', 'cx-9', 'qx', 'mdx', 'rdx', 'xt5', 'xt6', 'rav4', 'forester', 'outback', 'ascent', 'santa fe', 'tucson', 'telluride', 'sorento', 'palisade'];
+
 function DriverDetailPanel({
   driver,
   rides,
+  companyId,
   onClose,
   onDeactivate,
   onActivate,
   onDelete,
+  onVehicleUpdated,
 }: {
   driver: any;
   rides: Ride[];
+  companyId: string;
   onClose: () => void;
   onDeactivate: (hasActiveRide: boolean) => void;
   onActivate: () => void;
   onDelete: () => void;
+  onVehicleUpdated: (updates: Partial<Driver>) => void;
 }) {
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
@@ -256,9 +263,30 @@ function DriverDetailPanel({
   const [confirmAction, setConfirmAction] = useState<"deactivate" | "activate" | "delete" | null>(null);
   const [acting, setActing] = useState(false);
 
+  const [vehicleClasses, setVehicleClasses] = useState<any[]>([]);
+  const [editingVehicle, setEditingVehicle] = useState(false);
+  const [vMake, setVMake] = useState('');
+  const [vModel, setVModel] = useState('');
+  const [vYear, setVYear] = useState('');
+  const [vPlate, setVPlate] = useState('');
+  const [vClassId, setVClassId] = useState('');
+  const [classTouched, setClassTouched] = useState(false);
+  const [vehicleSaving, setVehicleSaving] = useState(false);
+  const [vehicleError, setVehicleError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchDriverDetail();
   }, [driver.id]);
+
+  useEffect(() => {
+    supabase
+      .from('vehicle_classes')
+      .select('id, name, capacity, surcharge_percent, display_order')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .order('display_order')
+      .then(({ data }) => setVehicleClasses(data ?? []));
+  }, [companyId]);
 
   async function fetchDriverDetail() {
     setLoading(true);
@@ -303,6 +331,59 @@ function DriverDetailPanel({
     setAvgRating(avg);
     setOpenReports(reportsRes.data?.length ?? 0);
     setLoading(false);
+  }
+
+  function suggestClassId(model: string): string {
+    const m = model.toLowerCase();
+    let target = 'Sedan';
+    if (VAN_KEYWORDS.some(w => m.includes(w))) target = 'Van';
+    else if (SUV_KEYWORDS.some(w => m.includes(w))) target = 'SUV';
+    const found = vehicleClasses.find((c: any) => c.name.toLowerCase() === target.toLowerCase());
+    return found?.id ?? vehicleClasses[0]?.id ?? '';
+  }
+
+  function openVehicleEdit() {
+    setVMake(driver.vehicle_make ?? '');
+    setVModel(driver.vehicle_model ?? '');
+    setVYear(driver.vehicle_year ? String(driver.vehicle_year) : '');
+    setVPlate(driver.plate_number ?? '');
+    setVClassId(driver.vehicle_class_id ?? vehicleClasses[0]?.id ?? '');
+    setClassTouched(false);
+    setVehicleError(null);
+    setEditingVehicle(true);
+  }
+
+  function handleModelChange(val: string) {
+    setVModel(val);
+    if (!classTouched && vehicleClasses.length > 1) {
+      const suggested = suggestClassId(val);
+      if (suggested) setVClassId(suggested);
+    }
+  }
+
+  async function saveVehicle() {
+    setVehicleError(null);
+    setVehicleSaving(true);
+    const { error } = await supabase
+      .from('drivers')
+      .update({
+        vehicle_make: vMake.trim() || null,
+        vehicle_model: vModel.trim() || null,
+        vehicle_year: vYear ? parseInt(vYear) : null,
+        plate_number: vPlate.trim() || null,
+        vehicle_class_id: vClassId || null,
+      })
+      .eq('id', driver.id);
+    setVehicleSaving(false);
+    if (error) { setVehicleError(error.message); return; }
+    setEditingVehicle(false);
+    onVehicleUpdated({
+      vehicle_make: vMake.trim() || null,
+      vehicle_model: vModel.trim() || null,
+      vehicle_year: vYear ? parseInt(vYear) : null,
+      plate_number: vPlate.trim() || null,
+      vehicle_class_id: vClassId || null,
+    });
   }
 
   const name = driver.profile?.name ?? "Unknown";
@@ -513,6 +594,71 @@ function DriverDetailPanel({
             <div className="dd-stat-lbl">Open reports</div>
           </div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div className="dd-section-label" style={{ marginBottom: 0 }}>Vehicle</div>
+          {!editingVehicle && (
+            <button className="dd-edit-vehicle-btn" onClick={openVehicleEdit}>Edit</button>
+          )}
+        </div>
+        {editingVehicle ? (
+          <div className="dd-vehicle-card">
+            <div className="dd-vehicle-grid">
+              <div className="dd-vehicle-field">
+                <div className="dd-vehicle-field-label">Make</div>
+                <input className="dd-vehicle-input" value={vMake} onChange={e => setVMake(e.target.value)} placeholder="e.g. Dodge" />
+              </div>
+              <div className="dd-vehicle-field">
+                <div className="dd-vehicle-field-label">Model</div>
+                <input className="dd-vehicle-input" value={vModel} onChange={e => handleModelChange(e.target.value)} placeholder="e.g. Grand Caravan" />
+              </div>
+              <div className="dd-vehicle-field">
+                <div className="dd-vehicle-field-label">Year</div>
+                <input className="dd-vehicle-input" value={vYear} onChange={e => setVYear(e.target.value)} placeholder="2021" type="number" min="1990" max="2030" />
+              </div>
+              <div className="dd-vehicle-field">
+                <div className="dd-vehicle-field-label">Plate</div>
+                <input className="dd-vehicle-input" value={vPlate} onChange={e => setVPlate(e.target.value.toUpperCase())} placeholder="ABC 123" />
+              </div>
+            </div>
+            {vehicleClasses.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>Vehicle class</div>
+                <div className="dd-class-picker">
+                  {vehicleClasses.map((vc: any) => (
+                    <button
+                      key={vc.id}
+                      className={`dd-class-option${vClassId === vc.id ? ' selected' : ''}`}
+                      onClick={() => { setVClassId(vc.id); setClassTouched(true); }}
+                      type="button"
+                    >
+                      <div className="dd-class-name">{vc.name}</div>
+                      <div className="dd-class-cap">{vc.capacity} seats</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {vehicleError && <div className="dd-vehicle-error">{vehicleError}</div>}
+            <div className="dd-vehicle-actions">
+              <button className="dd-vehicle-cancel" onClick={() => setEditingVehicle(false)}>Cancel</button>
+              <button className="dd-vehicle-save" onClick={saveVehicle} disabled={vehicleSaving}>
+                {vehicleSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="dd-vehicle-display">
+            <div className="dd-vehicle-display-main">
+              {[driver.vehicle_make, driver.vehicle_model, driver.vehicle_year].filter(Boolean).join(' ')}
+            </div>
+            <div className="dd-vehicle-display-sub">
+              {driver.plate_number ?? '—'}
+              {vehicleClasses.length > 0 && (' · ' + (vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? 'No class set'))}
+            </div>
+          </div>
+        )}
+        <div style={{ marginBottom: 16 }} />
+
         <div className="dd-section-label">Ride history</div>
         {loading ? (
           <div className="dd-empty">Loading…</div>
@@ -2187,6 +2333,29 @@ export default function DashboardPage({
         .dd-confirm-ok.danger { background: rgba(226,75,74,0.1); color: #F87171; border-color: rgba(226,75,74,0.25); }
         .dd-confirm-ok.danger:hover:not(:disabled) { background: rgba(226,75,74,0.18); }
         .dd-confirm-ok.green { background: rgba(29,158,117,0.1); color: #1D9E75; border-color: rgba(29,158,117,0.25); }
+        .dd-edit-vehicle-btn { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #6B7280; font-size: 11px; font-weight: 600; padding: 3px 10px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; }
+        .dd-edit-vehicle-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
+        .dd-vehicle-display { background: #1E2A3A; border-radius: 10px; padding: 11px 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
+        .dd-vehicle-display-main { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
+        .dd-vehicle-display-sub { font-size: 12px; color: #6B7280; }
+        .dd-vehicle-card { background: #1E2A3A; border-radius: 10px; padding: 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
+        .dd-vehicle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .dd-vehicle-field { display: flex; flex-direction: column; gap: 4px; }
+        .dd-vehicle-field-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; }
+        .dd-vehicle-input { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 6px 10px; outline: none; width: 100%; box-sizing: border-box; }
+        .dd-vehicle-input:focus { border-color: rgba(74,158,255,0.4); }
+        .dd-class-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+        .dd-class-option { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 12px; cursor: pointer; text-align: left; font-family: system-ui, sans-serif; transition: border-color 0.12s, background 0.12s; }
+        .dd-class-option.selected { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
+        .dd-class-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .dd-class-cap { font-size: 11px; color: #6B7280; margin-top: 1px; }
+        .dd-vehicle-error { font-size: 12px; color: #F87171; margin-top: 8px; }
+        .dd-vehicle-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .dd-vehicle-cancel { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
+        .dd-vehicle-cancel:hover { background: rgba(255,255,255,0.04); }
+        .dd-vehicle-save { flex: 1; background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-vehicle-save:hover:not(:disabled) { background: #D6470B; }
+        .dd-vehicle-save:disabled { opacity: 0.5; cursor: not-allowed; }
         .dd-confirm-ok.green:hover:not(:disabled) { background: rgba(29,158,117,0.18); }
         .dd-confirm-ok:disabled, .dd-confirm-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
       `}</style>
@@ -2957,10 +3126,12 @@ export default function DashboardPage({
                 <DriverDetailPanel
                   driver={selectedDriver}
                   rides={rides}
+                  companyId={profile.company_id!}
                   onClose={() => setSelectedDriver(null)}
                   onDeactivate={(hasActiveRide) => deactivateDriver(selectedDriver.id, hasActiveRide)}
                   onActivate={() => activateDriver(selectedDriver.id)}
                   onDelete={() => deleteDriver(selectedDriver.id)}
+                  onVehicleUpdated={(updates) => { setSelectedDriver((prev: any) => ({ ...prev, ...updates })); fetchDrivers(); }}
                 />
               )}
               <div

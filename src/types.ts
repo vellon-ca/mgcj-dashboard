@@ -15,7 +15,9 @@ export interface Driver {
   id: string;
   vehicle_make: string | null;
   vehicle_model: string | null;
+  vehicle_year: number | null;
   plate_number: string | null;
+  vehicle_class_id: string | null;
   is_active: boolean;
   current_lat: number | null;
   current_lng: number | null;
