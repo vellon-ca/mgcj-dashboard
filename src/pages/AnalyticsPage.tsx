@@ -6,6 +6,9 @@ import {
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 
+const esc = (s: string | null | undefined) =>
+  (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 // ── Types ─────────────────────────────────────────────────────────────
 interface DayRevenue {
   day: string;
@@ -349,7 +352,11 @@ function printReport(title: string, html: string, companyLabel = "M&G C&J") {
 }
 
 function downloadCSV(filename: string, headers: string[], rows: string[][]) {
-  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const escape = (v: string | null | undefined) => {
+    const s = v ?? '';
+    const safe = /^[=+\-@\t]/.test(s) ? `\t${s}` : s;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -982,8 +989,8 @@ export default function AnalyticsPage({
     const html = `
       <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
         <div style="text-align: center; padding: 24px 0;">
-          <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${inv.company_name ?? "Your Taxi"}</h1>
-          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${inv.invoice_number}</p>
+          <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${esc(inv.company_name) || "Your Taxi"}</h1>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${esc(inv.invoice_number)}</p>
         </div>
         <div style="background: #f7f7f7; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
           <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Total fare</p>
@@ -992,17 +999,17 @@ export default function AnalyticsPage({
         </div>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; width: 110px;">Date</td><td style="padding: 8px 0; font-size: 13px;">${date}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Pickup</td><td style="padding: 8px 0; font-size: 13px;">${inv.pickup_address ?? "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Drop-off</td><td style="padding: 8px 0; font-size: 13px;">${inv.dropoff_address ?? "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Passenger</td><td style="padding: 8px 0; font-size: 13px;">${inv.passenger_name ?? "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Driver</td><td style="padding: 8px 0; font-size: 13px;">${inv.driver_name ?? "—"}</td></tr>
-          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST Reg</td><td style="padding: 8px 0; font-size: 13px;">${inv.hst_number}</td></tr>` : ""}
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Pickup</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.pickup_address) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Drop-off</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.dropoff_address) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Passenger</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.passenger_name) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Driver</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.driver_name) || "—"}</td></tr>
+          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST Reg</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.hst_number)}</td></tr>` : ""}
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Subtotal</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST (15%)</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
         </table>
         <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
-          ${inv.passenger_name ? `Thanks for riding with us, ${inv.passenger_name}!` : "Thank you for your business."}<br/>
-          ${inv.company_name ?? "Your Taxi"}
+          ${inv.passenger_name ? `Thanks for riding with us, ${esc(inv.passenger_name)}!` : "Thank you for your business."}<br/>
+          ${esc(inv.company_name) || "Your Taxi"}
         </p>
       </div>
     `;
@@ -1159,7 +1166,7 @@ export default function AnalyticsPage({
     const rows = driverStats
       .map(
         (d) =>
-          `<tr><td>${d.name}</td><td>${d.rides}</td><td>$${d.earnings.toFixed(2)}</td><td>$${d.cashEarnings.toFixed(2)}</td><td>$${d.cardEarnings.toFixed(2)}</td><td>$${d.avgFare.toFixed(2)}</td><td>${d.cancelRate.toFixed(1)}%</td><td>${d.avgRating?.toFixed(1) ?? "—"}</td></tr>`,
+          `<tr><td>${esc(d.name)}</td><td>${d.rides}</td><td>$${d.earnings.toFixed(2)}</td><td>$${d.cashEarnings.toFixed(2)}</td><td>$${d.cardEarnings.toFixed(2)}</td><td>$${d.avgFare.toFixed(2)}</td><td>${d.cancelRate.toFixed(1)}%</td><td>${d.avgRating?.toFixed(1) ?? "—"}</td></tr>`,
       )
       .join("");
     const periodLabel =
@@ -1202,13 +1209,13 @@ export default function AnalyticsPage({
         (r) => `
       <tr>
         <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
-        <td>${r.passenger_name}</td><td>${r.driver_name}</td>
-        <td style="font-size:11px">${r.pickup_address}</td>
-        <td style="font-size:11px">${r.dropoff_address}</td>
+        <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
+        <td style="font-size:11px">${esc(r.pickup_address)}</td>
+        <td style="font-size:11px">${esc(r.dropoff_address)}</td>
         <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
         <td>${STATUS_LABELS[r.status] ?? r.status}</td>
-        <td>${r.payment_method}</td>
-        <td style="font-family:monospace;font-size:11px">${r.invoice_number ?? "—"}</td>
+        <td>${esc(r.payment_method)}</td>
+        <td style="font-family:monospace;font-size:11px">${esc(r.invoice_number) || "—"}</td>
       </tr>`,
       )
       .join("");
@@ -1248,13 +1255,13 @@ export default function AnalyticsPage({
             (r) => `
         <tr>
           <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
-          <td>${r.passenger_name}</td><td>${r.driver_name}</td>
-          <td style="font-size:11px">${r.pickup_address}</td>
-          <td style="font-size:11px">${r.dropoff_address}</td>
+          <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
+          <td style="font-size:11px">${esc(r.pickup_address)}</td>
+          <td style="font-size:11px">${esc(r.dropoff_address)}</td>
           <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
           <td>${STATUS_LABELS[r.status] ?? r.status}</td>
-          <td>${r.payment_method}</td>
-          <td style="font-family:monospace;font-size:11px">${r.invoice_number ?? "—"}</td>
+          <td>${esc(r.payment_method)}</td>
+          <td style="font-family:monospace;font-size:11px">${esc(r.invoice_number) || "—"}</td>
         </tr>`,
           )
           .join("");

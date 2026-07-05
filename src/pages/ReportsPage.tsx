@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 
+const esc = (s: string | null | undefined) =>
+  (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 interface ReportRow {
   id: string;
   ride_id: string | null;
@@ -173,7 +176,7 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
 <html>
 <head>
 <meta charset="utf-8">
-<title>Driver Report — ${r.driver_name ?? "Unknown"}</title>
+<title>Driver Report — ${esc(r.driver_name) || "Unknown"}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1a1a1a; padding: 48px; font-size: 13px; line-height: 1.5; max-width: 720px; margin: 0 auto; }
@@ -213,13 +216,13 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
 <body>
   <div class="header">
     <div class="header-left">
-      <h1>${companyName ?? ""}</h1>
+      <h1>${esc(companyName)}</h1>
       <p>Driver Incident Report</p>
     </div>
     <div class="header-right">
-      <div>${date}</div>
-      <div>${time}</div>
-      <div style="margin-top:6px;font-size:11px">Report ID: ${r.id.slice(0, 8).toUpperCase()}</div>
+      <div>${esc(date)}</div>
+      <div>${esc(time)}</div>
+      <div style="margin-top:6px;font-size:11px">Report ID: ${esc(r.id.slice(0, 8).toUpperCase())}</div>
     </div>
   </div>
 
@@ -229,7 +232,7 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
     <div class="section-title">Incident</div>
     <div class="row">
       <div class="row-label">Reason</div>
-      <div class="row-value reason">${REASON_LABELS[r.reason] ?? r.reason}</div>
+      <div class="row-value reason">${esc(REASON_LABELS[r.reason] ?? r.reason)}</div>
     </div>
     <div class="row">
       <div class="row-label">Reported on</div>
@@ -241,7 +244,7 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
         <span class="status-chip status-${r.status}">${STATUS_LABELS[r.status]}</span>
       </div>
     </div>
-    ${r.comment ? `<div class="comment-box">"${r.comment}"</div>` : ""}
+    ${r.comment ? `<div class="comment-box">&ldquo;${esc(r.comment)}&rdquo;</div>` : ""}
   </div>
 
   <div class="section">
@@ -249,13 +252,13 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
     <div class="row">
       <div class="row-label">Driver</div>
       <div class="row-value bold">
-        ${r.driver_name ?? "—"}
+        ${esc(r.driver_name) || "—"}
         ${driverCount > 1 ? `<div class="driver-count-note">${driverCount} total reports on file for this driver</div>` : ""}
       </div>
     </div>
     <div class="row">
       <div class="row-label">Reported by</div>
-      <div class="row-value">${r.passenger_name ?? "—"}</div>
+      <div class="row-value">${esc(r.passenger_name) || "—"}</div>
     </div>
   </div>
 
@@ -263,15 +266,15 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
   <div class="section">
     <div class="section-title">Associated Ride</div>
     ${rideDate ? `<div class="row"><div class="row-label">Ride date</div><div class="row-value">${rideDate}</div></div>` : ""}
-    ${r.ride_pickup ? `<div class="row"><div class="row-label">Pickup</div><div class="row-value">${r.ride_pickup}</div></div>` : ""}
-    ${r.ride_dropoff ? `<div class="row"><div class="row-label">Drop-off</div><div class="row-value">${r.ride_dropoff}</div></div>` : ""}
+    ${r.ride_pickup ? `<div class="row"><div class="row-label">Pickup</div><div class="row-value">${esc(r.ride_pickup)}</div></div>` : ""}
+    ${r.ride_dropoff ? `<div class="row"><div class="row-label">Drop-off</div><div class="row-value">${esc(r.ride_dropoff)}</div></div>` : ""}
     ${r.ride_fare != null ? `<div class="row"><div class="row-label">Fare</div><div class="row-value bold">$${Number(r.ride_fare).toFixed(2)}</div></div>` : ""}
   </div>` : ""}
 
   <div class="section">
     <div class="section-title">Resolution</div>
     ${r.resolution_notes
-      ? `<div class="resolution-box">${r.resolution_notes}</div>`
+      ? `<div class="resolution-box">${esc(r.resolution_notes)}</div>`
       : `<div class="row"><div class="row-label">Notes</div><div class="row-value" style="color:#9ca3af">No resolution notes recorded.</div></div>`}
   </div>
 
