@@ -1621,8 +1621,6 @@ export default function AnalyticsPage({
     });
   }
 
-  const maxHour = Math.max(...hourStats.map((h) => h.rides), 1);
-  const maxDay = Math.max(...dayStats.map((d) => d.rides), 1);
   const peakHour = hourStats.length
     ? hourStats.reduce((a, b) => (b.rides > a.rides ? b : a))
     : null;
