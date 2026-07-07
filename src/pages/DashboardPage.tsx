@@ -1068,11 +1068,13 @@ export default function DashboardPage({
                 existing && existing.driver_id !== (payload.new as any).driver_id;
               if (!existing || driverChanged) fetchRides();
 
-              // Coverage degradation toast
+              // Coverage degradation toast — only for rides within 24 h
               const COV_SEV: Record<string, number> = { covered: 0, at_risk: 1, uncovered: 2 };
-              const prevCov  = (existing as any)?.coverage_status ?? "covered";
-              const newCov   = (payload.new as any).coverage_status;
-              if (newCov && COV_SEV[newCov] > (COV_SEV[prevCov] ?? 0)) {
+              const prevCov    = (existing as any)?.coverage_status ?? "covered";
+              const newCov     = (payload.new as any).coverage_status;
+              const schedAt    = (payload.new as any).scheduled_at;
+              const minsUntil  = schedAt ? (new Date(schedAt).getTime() - Date.now()) / 60_000 : Infinity;
+              if (newCov && minsUntil < 24 * 60 && COV_SEV[newCov] > (COV_SEV[prevCov] ?? 0)) {
                 const when = (payload.new as any).scheduled_at
                   ? new Date((payload.new as any).scheduled_at).toLocaleTimeString("en-CA", {
                       hour: "numeric", minute: "2-digit", timeZone: "America/Halifax",
