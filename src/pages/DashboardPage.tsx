@@ -240,20 +240,24 @@ function DriverDetailPanel({
   driver,
   rides,
   companyId,
+  dispatcherId,
   onClose,
   onDeactivate,
   onActivate,
   onDelete,
   onVehicleUpdated,
+  onOverlayChange,
 }: {
   driver: any;
   rides: Ride[];
   companyId: string;
+  dispatcherId: string;
   onClose: () => void;
   onDeactivate: (hasActiveRide: boolean) => void;
   onActivate: () => void;
   onDelete: () => void;
   onVehicleUpdated: (updates: Partial<Driver>) => void;
+  onOverlayChange?: (active: boolean) => void;
 }) {
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
@@ -275,6 +279,10 @@ function DriverDetailPanel({
   const [vehicleError, setVehicleError] = useState<string | null>(null);
 
   useEffect(() => {
+    onOverlayChange?.(!!confirmAction || editingVehicle);
+  }, [confirmAction, editingVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     fetchDriverDetail();
   }, [driver.id]);
 
@@ -290,7 +298,7 @@ function DriverDetailPanel({
 
   async function fetchDriverDetail() {
     setLoading(true);
-    const [ridesRes, reviewsRes, reportsRes] = await Promise.all([
+    const [ridesRes, completedCountRes, reviewsRes, reportsRes] = await Promise.all([
       supabase
         .from("rides")
         .select(
@@ -299,6 +307,11 @@ function DriverDetailPanel({
         .eq("driver_id", driver.id)
         .order("created_at", { ascending: false })
         .limit(30),
+      supabase
+        .from("rides")
+        .select("*", { count: "exact", head: true })
+        .eq("driver_id", driver.id)
+        .eq("status", "completed"),
       supabase.from("ride_reviews").select("rating").eq("driver_id", driver.id),
       supabase
         .from("driver_reports")
@@ -327,7 +340,7 @@ function DriverDetailPanel({
       ? reviews.reduce((s: number, r: any) => s + r.rating, 0) / reviews.length
       : null;
     setHistory(enriched);
-    setTotalRides(rideRows.filter((r: any) => r.status === "completed").length);
+    setTotalRides(completedCountRes.count ?? 0);
     setAvgRating(avg);
     setOpenReports(reportsRes.data?.length ?? 0);
     setLoading(false);
@@ -377,12 +390,27 @@ function DriverDetailPanel({
     setVehicleSaving(false);
     if (error) { setVehicleError(error.message); return; }
     setEditingVehicle(false);
+    const updatedClass = vehicleClasses.find((c: any) => c.id === vClassId);
     onVehicleUpdated({
       vehicle_make: vMake.trim() || null,
       vehicle_model: vModel.trim() || null,
       vehicle_year: vYear ? parseInt(vYear) : null,
       plate_number: vPlate.trim() || null,
       vehicle_class_id: vClassId || null,
+    });
+    logDispatchEvent({
+      companyId,
+      dispatcherId,
+      eventType: "driver.vehicle_updated",
+      details: {
+        driver_id: driver.id,
+        driver_name: driver.profile?.name ?? null,
+        make: vMake.trim() || null,
+        model: vModel.trim() || null,
+        year: vYear ? parseInt(vYear) : null,
+        plate: vPlate.trim() || null,
+        vehicle_class: updatedClass?.name ?? null,
+      },
     });
   }
 
@@ -507,6 +535,7 @@ function DriverDetailPanel({
                 style={{ background: !isAccountActive ? "#EF4444" : driver.is_active ? "#1D9E75" : "#374151", flexShrink: 0 }}
               />
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
+                <button className="dd-action-edit" onClick={openVehicleEdit}>Edit vehicle</button>
                 {isAccountActive ? (
                   <button
                     className="dd-action-deactivate"
@@ -535,6 +564,7 @@ function DriverDetailPanel({
             <div className="dd-profile-sub">
               {driver.vehicle_make} {driver.vehicle_model} ·{" "}
               {driver.plate_number ?? "—"}
+              {vehicleClasses.length > 0 && ` · ${vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? "No class"}`}
             </div>
             <div className="dd-profile-phone">
               {driver.profile?.phone ?? "—"}
@@ -594,70 +624,58 @@ function DriverDetailPanel({
             <div className="dd-stat-lbl">Open reports</div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div className="dd-section-label" style={{ marginBottom: 0 }}>Vehicle</div>
-          {!editingVehicle && (
-            <button className="dd-edit-vehicle-btn" onClick={openVehicleEdit}>Edit</button>
-          )}
-        </div>
-        {editingVehicle ? (
-          <div className="dd-vehicle-card">
-            <div className="dd-vehicle-grid">
-              <div className="dd-vehicle-field">
-                <div className="dd-vehicle-field-label">Make</div>
-                <input className="dd-vehicle-input" value={vMake} onChange={e => setVMake(e.target.value)} placeholder="e.g. Dodge" />
-              </div>
-              <div className="dd-vehicle-field">
-                <div className="dd-vehicle-field-label">Model</div>
-                <input className="dd-vehicle-input" value={vModel} onChange={e => handleModelChange(e.target.value)} placeholder="e.g. Grand Caravan" />
-              </div>
-              <div className="dd-vehicle-field">
-                <div className="dd-vehicle-field-label">Year</div>
-                <input className="dd-vehicle-input" value={vYear} onChange={e => setVYear(e.target.value)} placeholder="2021" type="number" min="1990" max="2030" />
-              </div>
-              <div className="dd-vehicle-field">
-                <div className="dd-vehicle-field-label">Plate</div>
-                <input className="dd-vehicle-input" value={vPlate} onChange={e => setVPlate(e.target.value.toUpperCase())} placeholder="ABC 123" />
-              </div>
-            </div>
-            {vehicleClasses.length > 0 && (
-              <div style={{ marginTop: 10 }}>
-                <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>Vehicle class</div>
-                <div className="dd-class-picker">
-                  {vehicleClasses.map((vc: any) => (
-                    <button
-                      key={vc.id}
-                      className={`dd-class-option${vClassId === vc.id ? ' selected' : ''}`}
-                      onClick={() => { setVClassId(vc.id); setClassTouched(true); }}
-                      type="button"
-                    >
-                      <div className="dd-class-name">{vc.name}</div>
-                      <div className="dd-class-cap">{vc.capacity} seats</div>
-                    </button>
-                  ))}
+
+        {/* Vehicle edit overlay */}
+        {editingVehicle && (
+          <div className="dd-confirm-overlay">
+            <div className="dd-confirm-box" style={{ maxWidth: 340 }}>
+              <div className="dd-confirm-title">Edit vehicle</div>
+              <div className="dd-vehicle-grid" style={{ marginBottom: 10 }}>
+                <div className="dd-vehicle-field">
+                  <div className="dd-vehicle-field-label">Make</div>
+                  <input className="dd-vehicle-input" value={vMake} onChange={e => setVMake(e.target.value)} placeholder="e.g. Dodge" />
+                </div>
+                <div className="dd-vehicle-field">
+                  <div className="dd-vehicle-field-label">Model</div>
+                  <input className="dd-vehicle-input" value={vModel} onChange={e => handleModelChange(e.target.value)} placeholder="e.g. Grand Caravan" />
+                </div>
+                <div className="dd-vehicle-field">
+                  <div className="dd-vehicle-field-label">Year</div>
+                  <input className="dd-vehicle-input" value={vYear} onChange={e => setVYear(e.target.value)} placeholder="2021" type="number" min="1990" max="2030" />
+                </div>
+                <div className="dd-vehicle-field">
+                  <div className="dd-vehicle-field-label">Plate</div>
+                  <input className="dd-vehicle-input" value={vPlate} onChange={e => setVPlate(e.target.value.toUpperCase())} placeholder="ABC 123" />
                 </div>
               </div>
-            )}
-            {vehicleError && <div className="dd-vehicle-error">{vehicleError}</div>}
-            <div className="dd-vehicle-actions">
-              <button className="dd-vehicle-cancel" onClick={() => setEditingVehicle(false)}>Cancel</button>
-              <button className="dd-vehicle-save" onClick={saveVehicle} disabled={vehicleSaving}>
-                {vehicleSaving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="dd-vehicle-display">
-            <div className="dd-vehicle-display-main">
-              {[driver.vehicle_make, driver.vehicle_model, driver.vehicle_year].filter(Boolean).join(' ')}
-            </div>
-            <div className="dd-vehicle-display-sub">
-              {driver.plate_number ?? '—'}
-              {vehicleClasses.length > 0 && (' · ' + (vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? 'No class set'))}
+              {vehicleClasses.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>Vehicle class</div>
+                  <div className="dd-class-picker">
+                    {vehicleClasses.map((vc: any) => (
+                      <button
+                        key={vc.id}
+                        className={`dd-class-option${vClassId === vc.id ? ' selected' : ''}`}
+                        onClick={() => { setVClassId(vc.id); setClassTouched(true); }}
+                        type="button"
+                      >
+                        <div className="dd-class-name">{vc.name}</div>
+                        <div className="dd-class-cap">{vc.capacity} seats</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {vehicleError && <div className="dd-vehicle-error" style={{ marginBottom: 10 }}>{vehicleError}</div>}
+              <div className="dd-confirm-actions">
+                <button className="dd-confirm-cancel" onClick={() => setEditingVehicle(false)}>Cancel</button>
+                <button className="dd-confirm-ok" onClick={saveVehicle} disabled={vehicleSaving}>
+                  {vehicleSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         )}
-        <div style={{ marginBottom: 16 }} />
 
         <div className="dd-section-label">Ride history</div>
         {loading ? (
@@ -707,6 +725,17 @@ function DriverDetailPanel({
   );
 }
 
+function coverageDisplay(ride: any): { label: string; color: string; bg: string } {
+  const minsUntil = ride.scheduled_at
+    ? (new Date(ride.scheduled_at).getTime() - Date.now()) / 60_000
+    : Infinity;
+  if (minsUntil > 24 * 60) return { label: "Healthy", color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+  const cov = ride.coverage_status ?? "covered";
+  if (cov === "uncovered") return { label: "No drivers", color: "#F87171", bg: "rgba(248,113,113,0.12)" };
+  if (cov === "at_risk")   return { label: "At risk",    color: "#F59E0B", bg: "rgba(245,158,11,0.12)" };
+  return { label: "Covered", color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+}
+
 // Scheduled Ride Card
 function ScheduledRideCard({
   ride,
@@ -741,6 +770,7 @@ function ScheduledRideCard({
         minute: "2-digit",
       })
     : "—";
+  const cov = coverageDisplay(ride);
 
   return (
     <div className="db-sched-card" onClick={onCardClick}>
@@ -763,6 +793,12 @@ function ScheduledRideCard({
         </svg>
         <span className="db-sched-date">{formattedDate}</span>
         <span className="db-sched-time-val">{formattedTime}</span>
+        <span
+          className="db-cov-pill"
+          style={{ color: cov.color, background: cov.bg, borderColor: cov.color + "30" }}
+        >
+          {cov.label}
+        </span>
       </div>
       <div className="db-sched-body">
         <div className="db-sched-name">
@@ -881,6 +917,8 @@ export default function DashboardPage({
   const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+  const [detailOverlayActive, setDetailOverlayActive] = useState(false);
+  const [driverSearch, setDriverSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
@@ -947,6 +985,8 @@ export default function DashboardPage({
   const [flaggedReviews, setFlaggedReviews] = useState(0);
   const [openReports, setOpenReports] = useState(0);
   const [navExpanded, setNavExpanded] = useState(false);
+  const [coverageToast, setCoverageToast] = useState<string | null>(null);
+  const coverageToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const tryInit = () => {
@@ -1024,11 +1064,28 @@ export default function DashboardPage({
               computeStats(next);
               updateMapMarkers(next);
               if (["completed", "cancelled"].includes((payload.new as any).status)) fetchStats();
-              // Only re-fetch when driver_id changes — that's the only case where
-              // enriched profile data (name, avatar) needs to be loaded fresh.
               const driverChanged =
                 existing && existing.driver_id !== (payload.new as any).driver_id;
               if (!existing || driverChanged) fetchRides();
+
+              // Coverage degradation toast
+              const COV_SEV: Record<string, number> = { covered: 0, at_risk: 1, uncovered: 2 };
+              const prevCov  = (existing as any)?.coverage_status ?? "covered";
+              const newCov   = (payload.new as any).coverage_status;
+              if (newCov && COV_SEV[newCov] > (COV_SEV[prevCov] ?? 0)) {
+                const when = (payload.new as any).scheduled_at
+                  ? new Date((payload.new as any).scheduled_at).toLocaleTimeString("en-CA", {
+                      hour: "numeric", minute: "2-digit", timeZone: "America/Halifax",
+                    })
+                  : "scheduled ride";
+                const msg = newCov === "uncovered"
+                  ? `No eligible drivers for ${when} ride`
+                  : `${when} ride is at risk — no active drivers`;
+                setCoverageToast(msg);
+                if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
+                coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 6000);
+              }
+
               return next;
             });
           }
@@ -1229,7 +1286,15 @@ export default function DashboardPage({
       .order("is_active", { ascending: false });
     if (!data) return;
     const driverIds = data.map((d: any) => d.id);
-    const profileMap = await batchProfiles(driverIds);
+    const [profileMap, classesRes] = await Promise.all([
+      batchProfiles(driverIds),
+      profile?.company_id
+        ? supabase.from("vehicle_classes").select("id, name").eq("company_id", profile.company_id)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const classNameMap = new Map<string, string>(
+      ((classesRes as any).data ?? []).map((c: any) => [c.id, c.name])
+    );
 
     // Fetch account-status fields separately so a schema-cache miss on new columns
     // can't break the name/phone/avatar lookups in batchProfiles.
@@ -1249,6 +1314,7 @@ export default function DashboardPage({
 
     const enriched = data.map((d: any) => ({
       ...d,
+      vehicle_class_name: d.vehicle_class_id ? (classNameMap.get(d.vehicle_class_id) ?? null) : null,
       profile: profileMap.get(d.id)
         ? { ...profileMap.get(d.id), ...(statusMap.get(d.id) ?? { is_active: true, deactivation_pending: false, deleted_at: null }) }
         : null,
@@ -2103,6 +2169,22 @@ export default function DashboardPage({
               ? "Messages"
               : tab.charAt(0).toUpperCase() + tab.slice(1);
 
+  const filteredDrivers = (() => {
+    const q = driverSearch.trim().toLowerCase();
+    const base = drivers.filter(d => !(d as any).profile?.deleted_at);
+    if (!q) return base;
+    return base.filter(d => {
+      const name = ((d as any).profile?.name ?? "").toLowerCase();
+      const phone = ((d as any).profile?.phone ?? "").replace(/\D/g, "");
+      const make = (d.vehicle_make ?? "").toLowerCase();
+      const model = (d.vehicle_model ?? "").toLowerCase();
+      const plate = (d.plate_number ?? "").toLowerCase();
+      const qDigits = q.replace(/\D/g, "");
+      return name.includes(q) || make.includes(q) || model.includes(q) || plate.includes(q)
+        || (qDigits.length > 0 && phone.includes(qDigits));
+    });
+  })();
+
   if (loading)
     return (
       <div
@@ -2180,6 +2262,9 @@ export default function DashboardPage({
         .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
         .db-panel-scroll::-webkit-scrollbar { width: 3px; }
         .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .db-driver-search { width: 100%; box-sizing: border-box; margin-top: 8px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); border-radius: 8px; color: #E2E8F0; font-size: 12px; padding: 6px 10px; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.12s; }
+        .db-driver-search::placeholder { color: #4B5563; }
+        .db-driver-search:focus { border-color: rgba(255,255,255,0.2); }
         .db-section-divider { margin: 10px 0 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
         .db-section-divider-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
         .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; }
@@ -2220,6 +2305,15 @@ export default function DashboardPage({
         .db-sched-driver-name { font-size: 11px; font-weight: 500; color: #1D9E75; }
         .db-sched-assign-btn { flex: 1; background: rgba(168,85,247,0.07); color: #C084FC; border: 1px solid rgba(168,85,247,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
         .db-sched-assign-btn:hover { background: rgba(168,85,247,0.13); }
+        .db-cov-pill { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; border: 1px solid; margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
+        .db-cov-bar { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid; }
+        .db-cov-bar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .db-cov-bar-text { font-size: 11px; font-weight: 600; }
+        .db-cov-toast { position: fixed; bottom: 24px; right: 24px; display: flex; align-items: center; gap: 10px; background: #1E2A3A; border: 1px solid rgba(245,158,11,0.35); border-radius: 10px; padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); font-size: 13px; color: #F9FAFB; z-index: 9999; max-width: 320px; animation: db-toast-in 0.2s ease; }
+        .db-cov-toast-icon { color: #F59E0B; font-size: 15px; flex-shrink: 0; }
+        .db-cov-toast-close { background: none; border: none; color: #6B7280; cursor: pointer; font-size: 13px; padding: 0 0 0 6px; line-height: 1; flex-shrink: 0; }
+        .db-cov-toast-close:hover { color: #9CA3AF; }
+        @keyframes db-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
         .db-driver-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -2333,11 +2427,8 @@ export default function DashboardPage({
         .dd-confirm-ok.danger { background: rgba(226,75,74,0.1); color: #F87171; border-color: rgba(226,75,74,0.25); }
         .dd-confirm-ok.danger:hover:not(:disabled) { background: rgba(226,75,74,0.18); }
         .dd-confirm-ok.green { background: rgba(29,158,117,0.1); color: #1D9E75; border-color: rgba(29,158,117,0.25); }
-        .dd-edit-vehicle-btn { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #6B7280; font-size: 11px; font-weight: 600; padding: 3px 10px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; }
-        .dd-edit-vehicle-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
-        .dd-vehicle-display { background: #1E2A3A; border-radius: 10px; padding: 11px 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
-        .dd-vehicle-display-main { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
-        .dd-vehicle-display-sub { font-size: 12px; color: #6B7280; }
+        .dd-action-edit { background: rgba(74,158,255,0.07); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-action-edit:hover { background: rgba(74,158,255,0.14); }
         .dd-vehicle-card { background: #1E2A3A; border-radius: 10px; padding: 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
         .dd-vehicle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .dd-vehicle-field { display: flex; flex-direction: column; gap: 4px; }
@@ -2636,8 +2727,12 @@ export default function DashboardPage({
             style={{
               display:
                 showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages ? "none" : "flex",
+              position: "relative",
             }}
           >
+            {detailOverlayActive && (
+              <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)", zIndex: 40, pointerEvents: "none" }} />
+            )}
             <div className="db-panel">
               {tab === "rides" && (
                 <>
@@ -2802,6 +2897,25 @@ export default function DashboardPage({
                             {scheduledRides.length}
                           </span>
                         </div>
+                        {(() => {
+                          const soon = scheduledRides.filter((r: any) =>
+                            r.scheduled_at && (new Date(r.scheduled_at).getTime() - Date.now()) <= 24 * 60 * 60_000
+                          );
+                          const uncovered = soon.filter((r: any) => r.coverage_status === "uncovered").length;
+                          const atRisk    = soon.filter((r: any) => r.coverage_status === "at_risk").length;
+                          const barColor  = uncovered > 0 ? "#F87171" : atRisk > 0 ? "#F59E0B" : "#1D9E75";
+                          const barText   = uncovered > 0
+                            ? `${uncovered} uncovered${atRisk > 0 ? ` · ${atRisk} at risk` : ""}`
+                            : atRisk > 0
+                              ? `${atRisk} at risk within 24 h`
+                              : soon.length > 0 ? "All covered within 24 h" : "No rides in next 24 h";
+                          return (
+                            <div className="db-cov-bar" style={{ borderColor: barColor + "30", background: barColor + "0d" }}>
+                              <span className="db-cov-bar-dot" style={{ background: barColor }} />
+                              <span className="db-cov-bar-text" style={{ color: barColor }}>{barText}</span>
+                            </div>
+                          );
+                        })()}
                         {scheduledRides.map((ride) => (
                           <ScheduledRideCard
                             key={ride.id}
@@ -2876,7 +2990,7 @@ export default function DashboardPage({
                 <>
                   <div className="db-panel-header">
                     <div className="db-panel-title">Drivers</div>
-                    <div className="db-panel-count">{drivers.length}</div>
+                    <div className="db-panel-count">{drivers.filter(d => !(d as any).profile?.deleted_at).length}</div>
                   </div>
                   <div className="db-panel-scroll">
                     <div
@@ -3022,15 +3136,19 @@ export default function DashboardPage({
                         className="db-section-divider-count"
                         style={{ color: "#6B7280" }}
                       >
-                        {drivers.length}
+                        {drivers.filter(d => !(d as any).profile?.deleted_at).length}
                       </span>
                     </div>
-                    {drivers.filter((d) => !(d as any).profile?.deleted_at).length === 0 && (
-                      <div className="db-empty">No drivers registered yet</div>
+                    <input
+                      className="db-driver-search"
+                      placeholder="Search by name, phone, vehicle or plate…"
+                      value={driverSearch}
+                      onChange={e => setDriverSearch(e.target.value)}
+                    />
+                    {filteredDrivers.length === 0 && (
+                      <div className="db-empty">{driverSearch.trim() ? "No drivers match your search" : "No drivers registered yet"}</div>
                     )}
-                    {drivers
-                      .filter((d) => !(d as any).profile?.deleted_at)
-                      .map((driver) => {
+                    {filteredDrivers.map((driver) => {
                       const driverActiveRide = rides.find(
                         (r) =>
                           r.driver_id === driver.id &&
@@ -3078,6 +3196,7 @@ export default function DashboardPage({
                               <div className="db-driver-sub">
                                 {driver.vehicle_make} {driver.vehicle_model} ·{" "}
                                 {driver.plate_number}
+                                {(driver as any).vehicle_class_name ? ` · ${(driver as any).vehicle_class_name}` : ""}
                               </div>
                               {!isAccountActive ? (
                                 <div style={{ fontSize: 11, color: "#F87171", marginTop: 3, fontWeight: 500 }}>
@@ -3127,11 +3246,13 @@ export default function DashboardPage({
                   driver={selectedDriver}
                   rides={rides}
                   companyId={profile.company_id!}
-                  onClose={() => setSelectedDriver(null)}
+                  dispatcherId={profile.id}
+                  onClose={() => { setSelectedDriver(null); setDetailOverlayActive(false); }}
                   onDeactivate={(hasActiveRide) => deactivateDriver(selectedDriver.id, hasActiveRide)}
                   onActivate={() => activateDriver(selectedDriver.id)}
                   onDelete={() => deleteDriver(selectedDriver.id)}
                   onVehicleUpdated={(updates) => { setSelectedDriver((prev: any) => ({ ...prev, ...updates })); fetchDrivers(); }}
+                  onOverlayChange={setDetailOverlayActive}
                 />
               )}
               <div
@@ -3697,6 +3818,14 @@ export default function DashboardPage({
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {coverageToast && (
+        <div className="db-cov-toast">
+          <span className="db-cov-toast-icon">⚠</span>
+          <span>{coverageToast}</span>
+          <button className="db-cov-toast-close" onClick={() => setCoverageToast(null)}>✕</button>
         </div>
       )}
     </>
