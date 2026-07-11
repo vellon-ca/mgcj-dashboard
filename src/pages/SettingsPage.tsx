@@ -86,6 +86,7 @@ export default function SettingsPage({ companyId, adminId }: Props) {
 
   async function saveEditClass() {
     if (!editingClassId) return;
+    const before = vehicleClasses.find(v => v.id === editingClassId);
     const cap = parseInt(editCapacity);
     const sur = parseFloat(editSurcharge);
     if (!editName.trim()) { setEditError("Name is required."); return; }
@@ -98,12 +99,34 @@ export default function SettingsPage({ companyId, adminId }: Props) {
       .eq("id", editingClassId);
     setEditSaving(false);
     if (err) { setEditError(err.message); return; }
+    if (before) {
+      logDispatchEvent({
+        companyId,
+        dispatcherId: adminId,
+        eventType: "settings.vehicle_class_updated",
+        details: {
+          name: editName.trim(),
+          name_from: before.name,
+          name_to: editName.trim(),
+          capacity_from: before.capacity,
+          capacity_to: cap,
+          surcharge_percent_from: before.surcharge_percent,
+          surcharge_percent_to: sur,
+        },
+      });
+    }
     setEditingClassId(null);
     fetchVehicleClasses();
   }
 
   async function toggleClassActive(vc: VehicleClass) {
     await supabase.from("vehicle_classes").update({ is_active: !vc.is_active }).eq("id", vc.id);
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "settings.vehicle_class_status_changed",
+      details: { name: vc.name, is_active: !vc.is_active },
+    });
     fetchVehicleClasses();
   }
 
@@ -125,6 +148,12 @@ export default function SettingsPage({ companyId, adminId }: Props) {
     });
     setAddSaving(false);
     if (err) { setAddError(err.message); return; }
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "settings.vehicle_class_created",
+      details: { name: newName.trim(), capacity: cap, surcharge_percent: sur },
+    });
     setAddingClass(false);
     setNewName(''); setNewCapacity(''); setNewSurcharge('0');
     fetchVehicleClasses();

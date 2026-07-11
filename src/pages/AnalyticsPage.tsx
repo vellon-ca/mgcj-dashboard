@@ -144,6 +144,9 @@ const EVENT_LABELS: Record<string, string> = {
   "export.pdf": "Exported PDF",
   "invoice.printed": "Printed receipt",
   "settings.pricing_updated": "Updated pricing",
+  "settings.vehicle_class_created": "Added vehicle class",
+  "settings.vehicle_class_updated": "Edited vehicle class",
+  "settings.vehicle_class_status_changed": "Vehicle class status changed",
 };
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
@@ -172,6 +175,9 @@ const EVENT_COLORS: Record<string, string> = {
   "export.pdf": "#6B7280",
   "invoice.printed": "#A855F7",
   "settings.pricing_updated": "#F59E0B",
+  "settings.vehicle_class_created": "#1D9E75",
+  "settings.vehicle_class_updated": "#60A5FA",
+  "settings.vehicle_class_status_changed": "#6B7280",
 };
 
 function formatEventDetails(type: string, details: any): string {
@@ -258,6 +264,23 @@ function formatEventDetails(type: string, details: any): string {
           ? `Rate $${Number(details.rate_per_km_from).toFixed(2)} → $${Number(details.rate_per_km_to).toFixed(2)}/km`
           : null,
       ].filter(Boolean).join(" · ");
+    case "settings.vehicle_class_created":
+      return `${details.name ?? "—"} · ${details.capacity ?? "?"} seats · +${details.surcharge_percent ?? 0}%`;
+    case "settings.vehicle_class_updated": {
+      const parts = [details.name];
+      if (details.capacity_from != null && details.capacity_to != null && details.capacity_from !== details.capacity_to) {
+        parts.push(`Seats ${details.capacity_from} → ${details.capacity_to}`);
+      }
+      if (details.surcharge_percent_from != null && details.surcharge_percent_to != null && details.surcharge_percent_from !== details.surcharge_percent_to) {
+        parts.push(`Surcharge ${details.surcharge_percent_from}% → ${details.surcharge_percent_to}%`);
+      }
+      if (details.name_from != null && details.name_to != null && details.name_from !== details.name_to) {
+        parts[0] = `${details.name_from} → ${details.name_to}`;
+      }
+      return parts.filter(Boolean).join(" · ") || "—";
+    }
+    case "settings.vehicle_class_status_changed":
+      return `${details.name ?? "—"} · ${details.is_active ? "Activated" : "Deactivated"}`;
     case "export.csv":
     case "export.pdf": {
       const sectionLabels: Record<string, string> = {
@@ -3025,6 +3048,12 @@ export default function AnalyticsPage({
                     <optgroup label="Announcements">
                       <option value="announcement.drivers">Driver announcement</option>
                       <option value="announcement.passengers">Passenger announcement</option>
+                    </optgroup>
+                    <optgroup label="Settings">
+                      <option value="settings.pricing_updated">Updated pricing</option>
+                      <option value="settings.vehicle_class_created">Added vehicle class</option>
+                      <option value="settings.vehicle_class_updated">Edited vehicle class</option>
+                      <option value="settings.vehicle_class_status_changed">Vehicle class status changed</option>
                     </optgroup>
                     <optgroup label="Exports">
                       <option value="export.csv">CSV export</option>

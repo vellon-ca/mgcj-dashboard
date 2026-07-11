@@ -2426,7 +2426,7 @@ export default function DashboardPage({
         .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
         .db-ride-card.dimmed { opacity: 0.7; }
         .db-ride-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
-        .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; }
+        .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; font-family: system-ui, -apple-system, sans-serif; }
         .db-ride-time { font-size: 11px; color: #6B7280; }
         .db-ride-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
         .db-ride-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2502,9 +2502,9 @@ export default function DashboardPage({
         .db-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
         .db-overlay { flex: 1; overflow: hidden; background: #111827; display: flex; flex-direction: column; }
         .db-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-        .db-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-        .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
-        .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+        .db-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; font-family: system-ui, -apple-system, sans-serif; }
         .db-modal-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
         .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
         .db-modal-input::placeholder { color: #6B7280; }
@@ -2523,8 +2523,8 @@ export default function DashboardPage({
         .db-modal-submit-btn:hover { opacity: 0.88; }
         .db-modal-submit-btn:disabled { opacity: 0.5; }
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; }
-        .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
+        .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; font-family: system-ui, -apple-system, sans-serif; }
+        .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; font-family: system-ui, -apple-system, sans-serif; }
         .dd-panel { position: absolute; inset: 0; background: #111827; display: flex; flex-direction: column; overflow: hidden; }
         .dd-header { height: 48px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
         .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
