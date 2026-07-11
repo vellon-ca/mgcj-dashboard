@@ -221,6 +221,26 @@ const NAV_ICONS: Record<Tab, React.ReactElement> = {
   drivers: <IconDrivers />,
 };
 
+interface DiscountCodeOption {
+  id: string;
+  code: string;
+  label: string | null;
+  amount_type: "percent" | "fixed";
+  amount: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  active: boolean;
+}
+
+interface VehicleClassOption {
+  id: string;
+  name: string;
+  capacity: number | null;
+  surcharge_percent: number | null;
+  is_active: boolean;
+  display_order: number | null;
+}
+
 interface Stats {
   activeRides: number;
   driversOnline: number;
@@ -233,6 +253,31 @@ interface Stats {
 }
 
 // Driver Detail Panel
+// Flat-rate fare formula, mirrored from the mobile app's booking estimate:
+// $4 base + $1.80/km, plus the selected vehicle class's surcharge on top.
+function fareForDistance(
+  metres: number,
+  surchargePercent: number,
+  paymentMethod: string,
+): number {
+  const raw = (4 + (metres / 1000) * 1.8) * (1 + surchargePercent / 100);
+  return paymentMethod === "cash" ? Math.ceil(raw) : Math.round(raw * 100) / 100;
+}
+
+// Client-side preview of `compute_discount_for_booking` (percent/fixed code
+// math only — student-discount eligibility needs a server roundtrip and is
+// still resolved for real at submit time). Mirrors the same order of
+// operations as createManualBooking: discount off the displayed base fare,
+// then ceil again since manual bookings are always cash.
+function applyDiscountPreview(baseFare: number, code: DiscountCodeOption | undefined): number {
+  if (!code) return baseFare;
+  const amount =
+    code.amount_type === "percent"
+      ? Math.round(baseFare * (code.amount / 100) * 100) / 100
+      : Math.min(code.amount, baseFare);
+  return Math.ceil(baseFare - amount);
+}
+
 const VAN_KEYWORDS = ['caravan', 'sienna', 'odyssey', 'transit', 'sprinter', 'express', 'savana', 'villager', 'entourage', 'sedona', 'routan', 'quest', 'windstar', 'promaster', 'econoline'];
 const SUV_KEYWORDS = ['explorer', 'tahoe', 'suburban', 'yukon', 'expedition', 'navigator', 'pathfinder', 'armada', 'sequoia', '4runner', 'highlander', 'pilot', 'traverse', 'enclave', 'acadia', 'terrain', 'equinox', 'escape', 'edge', 'flex', 'cx-9', 'qx', 'mdx', 'rdx', 'xt5', 'xt6', 'rav4', 'forester', 'outback', 'ascent', 'santa fe', 'tucson', 'telluride', 'sorento', 'palisade'];
 
@@ -949,6 +994,16 @@ export default function DashboardPage({
   const [bookFareLoading, setBookFareLoading] = useState(false);
   const [bookFareError, setBookFareError] = useState(false);
   const [bookDiscountCode, setBookDiscountCode] = useState("");
+  const [discountCodes, setDiscountCodes] = useState<DiscountCodeOption[]>([]);
+  const [bookVehicleClassId, setBookVehicleClassId] = useState("");
+  const [bookDistanceMetres, setBookDistanceMetres] = useState<number | null>(null);
+  const [bookBaseFare, setBookBaseFare] = useState<number | null>(null);
+  const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
+
+  function surchargeFor(vehicleClassId: string): number {
+    if (!vehicleClassId) return 0;
+    return vehicleClasses.find((vc) => vc.id === vehicleClassId)?.surcharge_percent ?? 0;
+  }
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
   const [bookLoading, setBookLoading] = useState(false);
@@ -974,6 +1029,9 @@ export default function DashboardPage({
   const [editFare, setEditFare] = useState("");
   const [editFareLoading, setEditFareLoading] = useState(false);
   const [editAddressChanged, setEditAddressChanged] = useState(false);
+  const [editVehicleClassId, setEditVehicleClassId] = useState("");
+  const [editVehicleClassTouched, setEditVehicleClassTouched] = useState(false);
+  const [editDistanceMetres, setEditDistanceMetres] = useState<number | null>(null);
   const [editPayment, setEditPayment] = useState("");
   const [editScheduled, setEditScheduled] = useState("");
   const [editSaving, setEditSaving] = useState(false);
@@ -1199,8 +1257,32 @@ export default function DashboardPage({
       fetchInvites(),
       fetchReviewsBadge(),
       fetchReportsBadge(),
+      fetchDiscountCodes(),
+      fetchVehicleClasses(),
     ]);
     setLoading(false);
+  }
+
+  async function fetchDiscountCodes() {
+    if (!profile?.company_id) return;
+    const { data } = await supabase
+      .from("discount_codes")
+      .select("id, code, label, amount_type, amount, starts_at, ends_at, active")
+      .eq("company_id", profile.company_id)
+      .eq("active", true)
+      .order("code", { ascending: true });
+    setDiscountCodes(data ?? []);
+  }
+
+  async function fetchVehicleClasses() {
+    if (!profile?.company_id) return;
+    const { data } = await supabase
+      .from("vehicle_classes")
+      .select("id, name, capacity, surcharge_percent, is_active, display_order")
+      .eq("company_id", profile.company_id)
+      .eq("is_active", true)
+      .order("display_order", { ascending: true });
+    setVehicleClasses(data ?? []);
   }
 
   async function fetchStats() {
@@ -1644,19 +1726,38 @@ export default function DashboardPage({
         setBookFareLoading(false);
         const element = response?.rows[0]?.elements[0];
         if (status === "OK" && element?.status === "OK" && element.distance?.value) {
-          const metres = element.distance.value;
-          // Manual bookings are always cash; round up to the nearest dollar
-          // so the displayed estimate matches the fare that gets saved.
-          setBookFare(Math.ceil(4 + (metres / 1000) * 1.8).toFixed(2));
+          setBookDistanceMetres(element.distance.value);
         } else {
           setBookFareError(true);
+          setBookDistanceMetres(null);
         }
       },
     );
   }, [bookPickupCoords, bookDropoffCoords]);
 
   useEffect(() => {
-    if (!editAddressChanged) return;
+    // Manual bookings are always cash; round up to the nearest dollar so the
+    // displayed estimate matches the fare that gets saved. Re-runs whenever
+    // the distance or the selected vehicle class (and its surcharge) changes.
+    if (bookDistanceMetres == null) return;
+    setBookBaseFare(fareForDistance(bookDistanceMetres, surchargeFor(bookVehicleClassId), "cash"));
+  }, [bookDistanceMetres, bookVehicleClassId]);
+
+  useEffect(() => {
+    // Layers the selected discount code on top of the base fare so picking
+    // one from the dropdown updates the estimate immediately, without
+    // waiting for compute_discount_for_booking (still the source of truth
+    // — re-validated, including student discount, at submit time).
+    if (bookBaseFare == null) return;
+    const code = discountCodes.find((c) => c.code === bookDiscountCode);
+    setBookFare(applyDiscountPreview(bookBaseFare, code).toFixed(2));
+  }, [bookBaseFare, bookDiscountCode, discountCodes]);
+
+  useEffect(() => {
+    // Fetches the distance for the current pickup/dropoff unconditionally
+    // (including on initial edit-form load) so it's cached and ready for
+    // the recalculation effect below — without needing to re-fetch it
+    // separately just because the vehicle class changed.
     if (!editPickupCoords || !editDropoffCoords) return;
     if (!(window as any).google?.maps) return;
     setEditFareLoading(true);
@@ -1676,19 +1777,27 @@ export default function DashboardPage({
       },
       (response, status) => {
         setEditFareLoading(false);
-        if (status === "OK" && response) {
-          const metres = response.rows[0]?.elements[0]?.distance?.value ?? 0;
-          const rawFare = 4 + (metres / 1000) * 1.8;
-          setEditFare(
-            (editPayment === "cash"
-              ? Math.ceil(rawFare)
-              : Math.round(rawFare * 100) / 100
-            ).toFixed(2),
-          );
-        }
+        const element = response?.rows[0]?.elements[0];
+        setEditDistanceMetres(
+          status === "OK" && element?.status === "OK" && element.distance?.value
+            ? element.distance.value
+            : null,
+        );
       },
     );
-  }, [editAddressChanged, editPickupCoords, editDropoffCoords, editPayment]);
+  }, [editPickupCoords, editDropoffCoords]);
+
+  useEffect(() => {
+    // Recalculates the fare when the dispatcher changed the pickup/dropoff,
+    // or explicitly picked a different vehicle class — but not on the
+    // initial values populated from the ride when the edit form opens,
+    // which would otherwise silently overwrite a manually-set fare.
+    if (editDistanceMetres == null) return;
+    if (!editAddressChanged && !editVehicleClassTouched) return;
+    setEditFare(
+      fareForDistance(editDistanceMetres, surchargeFor(editVehicleClassId), editPayment).toFixed(2),
+    );
+  }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment]);
 
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
@@ -1839,6 +1948,7 @@ export default function DashboardPage({
         discount_type: discountType,
         discount_code_id: discountCodeId,
         payment_method: "cash",
+        vehicle_class_id: bookVehicleClassId || null,
       };
       if (bookScheduled) {
         rideData.status = "scheduled";
@@ -1879,6 +1989,9 @@ export default function DashboardPage({
       setBookFareError(false);
       setBookPassengerRegistered(false);
       setBookDiscountCode("");
+      setBookVehicleClassId("");
+      setBookDistanceMetres(null);
+      setBookBaseFare(null);
       setBookDriver("");
       setBookScheduled("");
       fetchRides();
@@ -1966,6 +2079,9 @@ export default function DashboardPage({
     setEditDropoffCoords({ lat: ride.dropoff_lat, lng: ride.dropoff_lng });
     setEditFare(ride.fare_estimate != null ? String(ride.fare_estimate) : "");
     setEditPayment(ride.payment_method);
+    setEditVehicleClassId(ride.vehicle_class_id ?? "");
+    setEditVehicleClassTouched(false);
+    setEditDistanceMetres(null);
     setEditScheduled(
       ride.scheduled_at
         ? new Date(
@@ -1999,6 +2115,7 @@ export default function DashboardPage({
         : null,
       payment_method: editPayment,
       scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
+      vehicle_class_id: editVehicleClassId || null,
     };
     const { error } = await supabase
       .from("rides")
@@ -2157,6 +2274,12 @@ export default function DashboardPage({
       .map((r) => r.driver_id),
   );
   const onlineDrivers = drivers.filter((d) => d.is_active && !activeRideDriverIds.has(d.id));
+  const availableDiscountCodes = discountCodes.filter((c) => {
+    const now = new Date();
+    if (c.starts_at && now < new Date(c.starts_at)) return false;
+    if (c.ends_at && now > new Date(c.ends_at)) return false;
+    return true;
+  });
   const topbarTitle = showAnalytics
     ? "Analytics"
     : showReports
@@ -3431,7 +3554,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        Auto-calculated
+                        {bookDiscountCode ? "Auto-calculated · discount applied" : "Auto-calculated"}
                       </span>
                     )}
                 </label>
@@ -3449,6 +3572,25 @@ export default function DashboardPage({
                   </div>
                 )}
               </div>
+              {vehicleClasses.length > 1 && (
+                <div>
+                  <label className="db-modal-label">Vehicle class</label>
+                  <select
+                    className="db-modal-select"
+                    value={bookVehicleClassId}
+                    onChange={(e) => setBookVehicleClassId(e.target.value)}
+                  >
+                    <option value="">— Any vehicle —</option>
+                    {vehicleClasses.map((vc) => (
+                      <option key={vc.id} value={vc.id}>
+                        {vc.name}
+                        {vc.capacity ? ` · seats ${vc.capacity}` : ""}
+                        {vc.surcharge_percent ? ` · +${vc.surcharge_percent}%` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="db-modal-label">
                   Discount code{" "}
@@ -3465,13 +3607,22 @@ export default function DashboardPage({
                     (optional — overridden by a verified student discount)
                   </span>
                 </label>
-                <input
-                  className="db-modal-input"
-                  placeholder="CHURCH25"
+                <select
+                  className="db-modal-select"
                   value={bookDiscountCode}
                   onChange={(e) => setBookDiscountCode(e.target.value)}
-                  style={{ textTransform: "uppercase" }}
-                />
+                >
+                  <option value="">— No discount —</option>
+                  {availableDiscountCodes.map((c) => (
+                    <option key={c.id} value={c.code}>
+                      {c.code}
+                      {c.label ? ` — ${c.label}` : ""} ·{" "}
+                      {c.amount_type === "percent"
+                        ? `${c.amount}% off`
+                        : `$${c.amount.toFixed(2)} off`}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="db-modal-label">Assign driver</label>
@@ -3698,6 +3849,28 @@ export default function DashboardPage({
                     onChange={(e) => setEditFare(e.target.value)}
                   />
                 </div>
+                {vehicleClasses.length > 1 && (
+                  <div>
+                    <label className="db-modal-label">Vehicle class</label>
+                    <select
+                      className="db-modal-select"
+                      value={editVehicleClassId}
+                      onChange={(e) => {
+                        setEditVehicleClassId(e.target.value);
+                        setEditVehicleClassTouched(true);
+                      }}
+                    >
+                      <option value="">— Any vehicle —</option>
+                      {vehicleClasses.map((vc) => (
+                        <option key={vc.id} value={vc.id}>
+                          {vc.name}
+                          {vc.capacity ? ` · seats ${vc.capacity}` : ""}
+                          {vc.surcharge_percent ? ` · +${vc.surcharge_percent}%` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="db-modal-label">Payment method</label>
                   <select

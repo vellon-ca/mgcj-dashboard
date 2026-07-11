@@ -49,6 +49,7 @@ export interface Ride {
   created_at: string;
   passenger_id: string;
   driver_id: string | null;
+  vehicle_class_id: string | null;
   passenger?: Profile;
   driver?: Driver & { profile?: Profile };
 }
