@@ -271,7 +271,7 @@ export default function SettingsPage({ companyId, adminId }: Props) {
                       </tr>
                     </thead>
                     <tbody>
-                      {vehicleClasses.map((vc, i) => {
+                      {vehicleClasses.map((vc) => {
                         const baseRate = parseFloat(savedRatePerKm) || 0;
                         const effectiveRate = baseRate * (1 + vc.surcharge_percent / 100);
                         const isEditing = editingClassId === vc.id;

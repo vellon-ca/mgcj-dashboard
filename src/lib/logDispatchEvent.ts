@@ -11,6 +11,7 @@ export type DispatchEventType =
   | "driver.suspended"
   | "driver.reactivated"
   | "driver.deleted"
+  | "driver.vehicle_updated"
   | "invite.created"
   | "invite.revoked"
   | "discount.created"

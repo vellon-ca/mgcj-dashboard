@@ -55,7 +55,7 @@ interface RideRow {
   driver_name: string;
   passenger_id: string;
   driver_id: string | null;
-  invoice_number: string | null;
+  receipt_number: string | null;
 }
 interface ReviewRow {
   id: string;
@@ -87,9 +87,9 @@ interface EventRow {
   details: Record<string, any>;
   dispatcher_name: string | null;
 }
-interface InvoiceRow {
+interface ReceiptRow {
   id: string;
-  invoice_number: string;
+  receipt_number: string;
   ride_id: string | null;
   passenger_name: string | null;
   driver_name: string | null;
@@ -98,6 +98,9 @@ interface InvoiceRow {
   pickup_address: string | null;
   dropoff_address: string | null;
   fare: number;
+  pre_discount_fare: number | null;
+  discount_amount: number | null;
+  discount_label: string | null;
   payment_method: string | null;
   sent_at: string;
 }
@@ -125,6 +128,7 @@ const EVENT_LABELS: Record<string, string> = {
   "driver.suspended": "Suspended driver",
   "driver.reactivated": "Reactivated driver",
   "driver.deleted": "Deleted driver",
+  "driver.vehicle_updated": "Updated vehicle",
   "invite.created": "Created invite",
   "invite.revoked": "Revoked invite",
   "discount.created": "Created discount",
@@ -152,6 +156,7 @@ const EVENT_COLORS: Record<string, string> = {
   "driver.suspended": "#F59E0B",
   "driver.reactivated": "#1D9E75",
   "driver.deleted": "#E24B4A",
+  "driver.vehicle_updated": "#60A5FA",
   "invite.created": "#1D9E75",
   "invite.revoked": "#E24B4A",
   "discount.created": "#E8500A",
@@ -210,6 +215,15 @@ function formatEventDetails(type: string, details: any): string {
     case "driver.reactivated":
     case "driver.deleted":
       return details.driver_name ?? "—";
+    case "driver.vehicle_updated": {
+      const parts = [
+        details.driver_name,
+        [details.make, details.model, details.year].filter(Boolean).join(" ") || null,
+        details.plate || null,
+        details.vehicle_class || null,
+      ].filter(Boolean);
+      return parts.join(" · ") || "—";
+    }
     case "invite.created":
       return `Code: ${details.code}${details.name ? ` · ${details.name}` : ""}`;
     case "invite.revoked":
@@ -231,7 +245,7 @@ function formatEventDetails(type: string, details: any): string {
       return details.title ?? "—";
     case "invoice.printed":
       return [
-        details.invoice_number,
+        details.receipt_number,
         details.passenger_name,
         details.fare != null ? `$${Number(details.fare).toFixed(2)}` : null,
       ].filter(Boolean).join(" · ");
@@ -264,14 +278,14 @@ function formatEventDetails(type: string, details: any): string {
   }
 }
 
-type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "invoices";
+type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "receipts";
 const SECTION_ITEMS: { id: Section; label: string }[] = [
   { id: "revenue", label: "Revenue" },
   { id: "rides", label: "Ride History" },
   { id: "reviews", label: "Reviews" },
   { id: "drivers", label: "Drivers" },
   { id: "activity", label: "Activity Log" },
-  { id: "invoices", label: "Invoices" },
+  { id: "receipts", label: "Receipts" },
 ];
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -455,12 +469,12 @@ export default function AnalyticsPage({
   const fetchActivityLogRef = useRef<() => void>(() => {});
   const ridesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Invoices
-  const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
-  const [invoicesLoading, setInvoicesLoading] = useState(false);
-  const [invoiceSearch, setInvoiceSearch] = useState("");
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
-  const invoicesFetchId = useRef(0);
+  // Receipts
+  const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  const [receiptSearch, setReceiptSearch] = useState("");
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRow | null>(null);
+  const receiptsFetchId = useRef(0);
 
   // Peak
   const [hourStats, setHourStats] = useState<HourStat[]>([]);
@@ -487,7 +501,7 @@ export default function AnalyticsPage({
   }, [section, activityDateFrom, activityDateTo]);
 
   useEffect(() => {
-    if (section === "invoices") fetchInvoices();
+    if (section === "receipts") fetchReceipts();
   }, [section]);
 
   useEffect(() => {
@@ -511,10 +525,10 @@ export default function AnalyticsPage({
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "invoices", filter: `company_id=eq.${companyId}` },
+        { event: "INSERT", schema: "public", table: "ride_receipts", filter: `company_id=eq.${companyId}` },
         () => {
-          fetchRideHistory(); // refreshes the invoice # column in ride history
-          if (section === "invoices") fetchInvoices();
+          fetchRideHistory(); // refreshes the receipt # column in ride history
+          if (section === "receipts") fetchReceipts();
         },
       )
       .on(
@@ -782,14 +796,14 @@ export default function AnalyticsPage({
       const passengerIds = rides.map((r: any) => r.passenger_id);
       const driverIds = rides.map((r: any) => r.driver_id).filter(Boolean);
       const rideIds = rides.map((r: any) => r.id);
-      const [profileMap, invoiceResult] = await Promise.all([
+      const [profileMap, receiptResult] = await Promise.all([
         batchProfiles([...passengerIds, ...driverIds]),
-        supabase.from("invoices").select("ride_id, invoice_number").in("ride_id", rideIds),
+        supabase.from("ride_receipts").select("ride_id, receipt_number").in("ride_id", rideIds),
       ]);
       if (fetchId !== historyFetchId.current) return;
 
-      const invoiceMap = new Map<string, string>();
-      invoiceResult.data?.forEach((inv: any) => invoiceMap.set(inv.ride_id, inv.invoice_number));
+      const receiptMap = new Map<string, string>();
+      receiptResult.data?.forEach((inv: any) => receiptMap.set(inv.ride_id, inv.receipt_number));
 
       const enriched: RideRow[] = rides.map((r: any) => ({
         id: r.id,
@@ -804,7 +818,7 @@ export default function AnalyticsPage({
         driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
         passenger_id: r.passenger_id,
         driver_id: r.driver_id ?? null,
-        invoice_number: invoiceMap.get(r.id) ?? null,
+        receipt_number: receiptMap.get(r.id) ?? null,
       }));
 
       if (fetchId === historyFetchId.current) setAllRides(enriched);
@@ -951,37 +965,38 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchInvoices() {
-    const fetchId = ++invoicesFetchId.current;
-    setInvoicesLoading(true);
+  async function fetchReceipts() {
+    const fetchId = ++receiptsFetchId.current;
+    setReceiptsLoading(true);
     try {
       const { data } = await supabase
-        .from("invoices")
+        .from("ride_receipts")
         .select("*")
         .order("sent_at", { ascending: false })
         .limit(500);
-      if (fetchId !== invoicesFetchId.current || !data) return;
-      setInvoices(data as InvoiceRow[]);
+      if (fetchId !== receiptsFetchId.current || !data) return;
+      setReceipts(data as ReceiptRow[]);
     } catch (e) {
       console.error(e);
     } finally {
-      if (fetchId === invoicesFetchId.current) setInvoicesLoading(false);
+      if (fetchId === receiptsFetchId.current) setReceiptsLoading(false);
     }
   }
 
-  function printInvoiceReceipt(inv: InvoiceRow) {
+  function printReceipt(inv: ReceiptRow) {
     logDispatchEvent({
       companyId,
       dispatcherId,
       eventType: "invoice.printed",
       details: {
-        invoice_number: inv.invoice_number,
+        receipt_number: inv.receipt_number,
         passenger_name: inv.passenger_name,
         fare: inv.fare,
       },
     });
     const subtotal = inv.fare / 1.15;
     const hst = inv.fare - subtotal;
+    const hasDiscount = !!(inv.discount_amount && inv.pre_discount_fare != null);
     const date = new Date(inv.sent_at).toLocaleString("en-CA", {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "numeric", minute: "2-digit",
@@ -990,9 +1005,15 @@ export default function AnalyticsPage({
       <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
         <div style="text-align: center; padding: 24px 0;">
           <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${esc(inv.company_name) || "Your Taxi"}</h1>
-          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${esc(inv.invoice_number)}</p>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${esc(inv.receipt_number)}</p>
         </div>
         <div style="background: #f7f7f7; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+          ${hasDiscount ? `
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Original fare</p>
+          <p style="margin: 0 0 8px; font-size: 15px; color: #9CA3AF; text-decoration: line-through;">$${inv.pre_discount_fare!.toFixed(2)}</p>
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Discount${inv.discount_label ? ` — ${esc(inv.discount_label)}` : ""}</p>
+          <p style="margin: 0 0 12px; font-size: 15px; color: #1D9E75;">-$${inv.discount_amount!.toFixed(2)}</p>
+          ` : ""}
           <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Total fare</p>
           <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${inv.fare.toFixed(2)}</p>
           <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280; text-transform: capitalize;">Paid by ${inv.payment_method ?? "—"}</p>
@@ -1016,7 +1037,7 @@ export default function AnalyticsPage({
     const win = window.open("", "_blank");
     if (!win) return;
     win.document.write(`<!DOCTYPE html><html><head>
-      <title>${inv.invoice_number}</title>
+      <title>${inv.receipt_number}</title>
       <style>* { box-sizing: border-box; } body { margin: 0; padding: 40px; background: #fff; } @page { margin: 0; } @media print { body { padding: 60px 56px; } }</style>
     </head><body>${html}</body></html>`);
     win.document.close();
@@ -1215,7 +1236,7 @@ export default function AnalyticsPage({
         <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
         <td>${STATUS_LABELS[r.status] ?? r.status}</td>
         <td>${esc(r.payment_method)}</td>
-        <td style="font-family:monospace;font-size:11px">${esc(r.invoice_number) || "—"}</td>
+        <td style="font-family:monospace;font-size:11px">${esc(r.receipt_number) || "—"}</td>
       </tr>`,
       )
       .join("");
@@ -1230,7 +1251,7 @@ export default function AnalyticsPage({
         <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value">${completed.length}</div></div>
         <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">$${group.totalRevenue.toFixed(2)}</div></div>
       </div>
-      <table><thead><tr class="pg-spacer"><td colspan="9"></td></tr><tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Invoice #</th></tr></thead>
+      <table><thead><tr class="pg-spacer"><td colspan="9"></td></tr><tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr></thead>
       <tbody>${rows || "<tr><td colspan='9' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
       <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot></table>
       ${APPROVAL_BLOCK}
@@ -1261,7 +1282,7 @@ export default function AnalyticsPage({
           <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
           <td>${STATUS_LABELS[r.status] ?? r.status}</td>
           <td>${esc(r.payment_method)}</td>
-          <td style="font-family:monospace;font-size:11px">${esc(r.invoice_number) || "—"}</td>
+          <td style="font-family:monospace;font-size:11px">${esc(r.receipt_number) || "—"}</td>
         </tr>`,
           )
           .join("");
@@ -1269,7 +1290,7 @@ export default function AnalyticsPage({
         <div class="month-heading-row">${group.label} · ${group.rides.length} rides · $${group.totalRevenue.toFixed(2)}</div>
         <table><thead>
           <tr class="pg-spacer-sm"><td colspan="9"></td></tr>
-          <tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Invoice #</th></tr>
+          <tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr>
         </thead>
         <tbody>${rows || "<tr><td colspan='9' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot>
@@ -1309,7 +1330,7 @@ export default function AnalyticsPage({
         "Fare",
         "Status",
         "Payment",
-        "Invoice #",
+        "Receipt #",
       ],
       rides.map((r) => [
         new Date(r.created_at).toLocaleDateString("en-CA"),
@@ -1324,7 +1345,7 @@ export default function AnalyticsPage({
             : "",
         STATUS_LABELS[r.status] ?? r.status,
         r.payment_method,
-        r.invoice_number ?? "",
+        r.receipt_number ?? "",
       ]),
     );
   }
@@ -1535,12 +1556,12 @@ export default function AnalyticsPage({
     `, label);
   }
 
-  function exportInvoicesPDF() {
-    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "invoices", row_count: filteredInvoices.length } });
-    const total = filteredInvoices.reduce((s, inv) => s + inv.fare, 0);
-    const tableRows = filteredInvoices.map((inv) => `
+  function exportReceiptsPDF() {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "receipts", row_count: filteredReceipts.length } });
+    const total = filteredReceipts.reduce((s, inv) => s + inv.fare, 0);
+    const tableRows = filteredReceipts.map((inv) => `
       <tr>
-        <td style="font-family:monospace;font-size:11px;font-weight:700">${inv.invoice_number}</td>
+        <td style="font-family:monospace;font-size:11px;font-weight:700">${inv.receipt_number}</td>
         <td style="white-space:nowrap">${new Date(inv.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</td>
         <td>${inv.passenger_name ?? "—"}</td>
         <td>${inv.driver_name ?? "—"}</td>
@@ -1548,29 +1569,29 @@ export default function AnalyticsPage({
         <td style="color:#15803d;font-weight:600">$${inv.fare.toFixed(2)}</td>
         <td style="text-transform:capitalize">${inv.payment_method ?? "—"}</td>
       </tr>`).join("");
-    printReport(`Invoices — ${label}`, `
-      <h1>${label} — Invoices</h1>
+    printReport(`Receipts — ${label}`, `
+      <h1>${label} — Receipts</h1>
       <p class="sub">Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Invoices</div><div class="kpi-value">${filteredInvoices.length}</div></div>
+        <div class="kpi"><div class="kpi-label">Receipts</div><div class="kpi-value">${filteredReceipts.length}</div></div>
         <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">$${total.toFixed(2)}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="7"></td></tr><tr><th>Invoice #</th><th>Date</th><th>Passenger</th><th>Driver</th><th>Route</th><th>Amount</th><th>Payment</th></tr></thead>
-        <tbody>${tableRows || "<tr><td colspan='7' style='color:#9ca3af'>No invoices</td></tr>"}</tbody>
+        <thead><tr class="pg-spacer"><td colspan="7"></td></tr><tr><th>Receipt #</th><th>Date</th><th>Passenger</th><th>Driver</th><th>Route</th><th>Amount</th><th>Payment</th></tr></thead>
+        <tbody>${tableRows || "<tr><td colspan='7' style='color:#9ca3af'>No receipts</td></tr>"}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="7"></td></tr></tfoot>
       </table>
       ${APPROVAL_BLOCK}
     `, label);
   }
 
-  function exportInvoicesCSV() {
-    logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "invoices", row_count: filteredInvoices.length } });
+  function exportReceiptsCSV() {
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "receipts", row_count: filteredReceipts.length } });
     downloadCSV(
-      "invoices.csv",
-      ["Invoice #", "Date", "Passenger", "Driver", "Pickup", "Drop-off", "Amount", "Payment"],
-      filteredInvoices.map((inv) => [
-        inv.invoice_number,
+      "receipts.csv",
+      ["Receipt #", "Date", "Passenger", "Driver", "Pickup", "Drop-off", "Amount", "Payment"],
+      filteredReceipts.map((inv) => [
+        inv.receipt_number,
         new Date(inv.sent_at).toLocaleDateString("en-CA"),
         inv.passenger_name ?? "",
         inv.driver_name ?? "",
@@ -1587,12 +1608,12 @@ export default function AnalyticsPage({
     new Set(allRides.map((r) => new Date(r.created_at).getFullYear())),
   ).sort((a, b) => b - a);
 
-  const filteredInvoices = invoiceSearch.trim()
-    ? invoices.filter((inv) =>
-        inv.invoice_number.toLowerCase().includes(invoiceSearch.toLowerCase()) ||
-        (inv.passenger_name ?? "").toLowerCase().includes(invoiceSearch.toLowerCase()),
+  const filteredReceipts = receiptSearch.trim()
+    ? receipts.filter((inv) =>
+        inv.receipt_number.toLowerCase().includes(receiptSearch.toLowerCase()) ||
+        (inv.passenger_name ?? "").toLowerCase().includes(receiptSearch.toLowerCase()),
       )
-    : invoices;
+    : receipts;
   const filteredRides =
     rideFilter === "all"
       ? allRides
@@ -1818,12 +1839,12 @@ export default function AnalyticsPage({
         /* Activity log */
         .an-date-input { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
         .an-date-input:focus { border-color: rgba(232,80,10,0.4); }
-        /* Invoices */
+        /* Receipts */
         .inv-search-row { margin-bottom: 16px; }
         .inv-search { width: 100%; max-width: 380px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
         .inv-search:focus { border-color: rgba(232,80,10,0.4); }
         .inv-search::placeholder { color: #6B7280; }
-        .inv-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: #E8500A; background: rgba(232,80,10,0.08); border: 1px solid rgba(232,80,10,0.2); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+        .receipt-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: #E8500A; background: rgba(232,80,10,0.08); border: 1px solid rgba(232,80,10,0.2); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
         .an-type-select { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
         .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #111E2E; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
         .al-toolbar-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.07); margin: 0 2px; }
@@ -2475,7 +2496,7 @@ export default function AnalyticsPage({
                                       "Fare",
                                       "Status",
                                       "Payment",
-                                      "Invoice",
+                                      "Receipt",
                                     ].map((h) => (
                                       <th
                                         key={h}
@@ -2554,8 +2575,8 @@ export default function AnalyticsPage({
                                         {r.payment_method}
                                       </td>
                                       <td className="an-td">
-                                        {r.invoice_number ? (
-                                          <span className="inv-tag">{r.invoice_number}</span>
+                                        {r.receipt_number ? (
+                                          <span className="receipt-tag">{r.receipt_number}</span>
                                         ) : (
                                           <span style={{ color: "#6B7280" }}>—</span>
                                         )}
@@ -2992,6 +3013,7 @@ export default function AnalyticsPage({
                       <option value="driver.suspended">Suspended driver</option>
                       <option value="driver.reactivated">Reactivated driver</option>
                       <option value="driver.deleted">Deleted driver</option>
+                      <option value="driver.vehicle_updated">Updated vehicle</option>
                       <option value="invite.created">Created invite</option>
                       <option value="invite.revoked">Revoked invite</option>
                     </optgroup>
@@ -3088,53 +3110,53 @@ export default function AnalyticsPage({
             );
           })()}
 
-          {/* ── INVOICES ── */}
-          {section === "invoices" && (
+          {/* ── RECEIPTS ── */}
+          {section === "receipts" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Invoices</div>
+                <div className="an-section-title">Receipts</div>
                 <div className="an-controls">
                   <span className="an-filter-count">
-                    {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""}
+                    {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? "s" : ""}
                   </span>
-                  <button className="an-download-btn" onClick={exportInvoicesPDF} disabled={filteredInvoices.length === 0}>↓ PDF</button>
-                  <button className="an-csv-btn" onClick={exportInvoicesCSV} disabled={filteredInvoices.length === 0}>↓ CSV</button>
+                  <button className="an-download-btn" onClick={exportReceiptsPDF} disabled={filteredReceipts.length === 0}>↓ PDF</button>
+                  <button className="an-csv-btn" onClick={exportReceiptsCSV} disabled={filteredReceipts.length === 0}>↓ CSV</button>
                 </div>
               </div>
               <div className="inv-search-row">
                 <input
                   className="inv-search"
-                  placeholder="Search by invoice # or passenger name…"
-                  value={invoiceSearch}
-                  onChange={(e) => setInvoiceSearch(e.target.value)}
+                  placeholder="Search by receipt # or passenger name…"
+                  value={receiptSearch}
+                  onChange={(e) => setReceiptSearch(e.target.value)}
                 />
               </div>
-              {invoicesLoading ? (
+              {receiptsLoading ? (
                 <div className="an-loading">Loading…</div>
-              ) : filteredInvoices.length === 0 ? (
+              ) : filteredReceipts.length === 0 ? (
                 <div className="an-no-data" style={{ padding: "48px 0" }}>
-                  {invoiceSearch ? "No invoices match your search" : "No invoices yet — receipts will appear here after rides complete"}
+                  {receiptSearch ? "No receipts match your search" : "No receipts yet — receipts will appear here after rides complete"}
                 </div>
               ) : (
                 <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
                   <table className="an-table">
                     <thead>
                       <tr>
-                        {["Invoice #", "Date", "Passenger", "Driver", "Route", "Amount", "Payment"].map((h) => (
+                        {["Receipt #", "Date", "Passenger", "Driver", "Route", "Amount", "Payment"].map((h) => (
                           <th key={h} className="an-th" style={{ padding: "12px 14px" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInvoices.map((inv, i) => (
+                      {filteredReceipts.map((inv, i) => (
                         <tr
                           key={inv.id}
                           className="an-ride-row"
                           style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}
-                          onClick={() => setSelectedInvoice(inv)}
+                          onClick={() => setSelectedReceipt(inv)}
                         >
                           <td className="an-td">
-                            <span className="inv-tag">{inv.invoice_number}</span>
+                            <span className="receipt-tag">{inv.receipt_number}</span>
                           </td>
                           <td className="an-td" style={{ whiteSpace: "nowrap" }}>
                             {new Date(inv.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
@@ -3155,28 +3177,34 @@ export default function AnalyticsPage({
                 </div>
               )}
 
-              {selectedInvoice && (
-                <div className="an-modal-overlay" onClick={() => setSelectedInvoice(null)}>
+              {selectedReceipt && (
+                <div className="an-modal-overlay" onClick={() => setSelectedReceipt(null)}>
                   <div className="an-modal" onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <div className="an-modal-title" style={{ marginBottom: 0 }}>Invoice</div>
-                      <span className="inv-tag" style={{ fontSize: 13, padding: "4px 10px" }}>
-                        {selectedInvoice.invoice_number}
+                      <div className="an-modal-title" style={{ marginBottom: 0 }}>Receipt</div>
+                      <span className="receipt-tag" style={{ fontSize: 13, padding: "4px 10px" }}>
+                        {selectedReceipt.receipt_number}
                       </span>
                     </div>
                     {(
                       [
-                        ["Date", new Date(selectedInvoice.sent_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })],
-                        ["Company", selectedInvoice.company_name ?? "—"],
-                        ...(selectedInvoice.hst_number ? [["HST Reg", selectedInvoice.hst_number]] : []),
-                        ["Passenger", selectedInvoice.passenger_name ?? "—"],
-                        ["Driver", selectedInvoice.driver_name ?? "—"],
-                        ["Pickup", selectedInvoice.pickup_address ?? "—"],
-                        ["Drop-off", selectedInvoice.dropoff_address ?? "—"],
-                        ["Payment", selectedInvoice.payment_method ?? "—"],
-                        ["Subtotal", `$${(selectedInvoice.fare / 1.15).toFixed(2)}`],
-                        ["HST (15%)", `$${(selectedInvoice.fare - selectedInvoice.fare / 1.15).toFixed(2)}`],
-                        ["Total", `$${selectedInvoice.fare.toFixed(2)}`],
+                        ["Date", new Date(selectedReceipt.sent_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })],
+                        ["Company", selectedReceipt.company_name ?? "—"],
+                        ...(selectedReceipt.hst_number ? [["HST Reg", selectedReceipt.hst_number]] : []),
+                        ["Passenger", selectedReceipt.passenger_name ?? "—"],
+                        ["Driver", selectedReceipt.driver_name ?? "—"],
+                        ["Pickup", selectedReceipt.pickup_address ?? "—"],
+                        ["Drop-off", selectedReceipt.dropoff_address ?? "—"],
+                        ["Payment", selectedReceipt.payment_method ?? "—"],
+                        ...(selectedReceipt.discount_amount && selectedReceipt.pre_discount_fare != null
+                          ? ([
+                              ["Original fare", `$${selectedReceipt.pre_discount_fare.toFixed(2)}`],
+                              [`Discount${selectedReceipt.discount_label ? ` — ${selectedReceipt.discount_label}` : ""}`, `-$${selectedReceipt.discount_amount.toFixed(2)}`],
+                            ] as [string, string][])
+                          : []),
+                        ["Subtotal", `$${(selectedReceipt.fare / 1.15).toFixed(2)}`],
+                        ["HST (15%)", `$${(selectedReceipt.fare - selectedReceipt.fare / 1.15).toFixed(2)}`],
+                        ["Total", `$${selectedReceipt.fare.toFixed(2)}`],
                       ] as [string, string][]
                     ).map(([lbl, val]) => (
                       <div
@@ -3196,11 +3224,11 @@ export default function AnalyticsPage({
                     <button
                       className="an-download-btn"
                       style={{ width: "100%", marginTop: 16, textAlign: "center" }}
-                      onClick={() => printInvoiceReceipt(selectedInvoice)}
+                      onClick={() => printReceipt(selectedReceipt)}
                     >
                       Print Receipt
                     </button>
-                    <button className="an-modal-close" onClick={() => setSelectedInvoice(null)}>
+                    <button className="an-modal-close" onClick={() => setSelectedReceipt(null)}>
                       Close
                     </button>
                   </div>

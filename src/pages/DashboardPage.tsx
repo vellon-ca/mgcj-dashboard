@@ -254,14 +254,19 @@ interface Stats {
 
 // Driver Detail Panel
 // Flat-rate fare formula, mirrored from the mobile app's booking estimate:
-// $4 base + $1.80/km, plus the selected vehicle class's surcharge on top.
+// company base fare + company rate/km, plus the selected vehicle class's
+// surcharge on top. Dispatch-booked fares always round up to the nearest
+// dollar, regardless of payment method, so the estimate matches what will
+// actually be charged.
 function fareForDistance(
   metres: number,
   surchargePercent: number,
-  paymentMethod: string,
+  _paymentMethod: string,
+  baseFare = 4,
+  ratePerKm = 1.8,
 ): number {
-  const raw = (4 + (metres / 1000) * 1.8) * (1 + surchargePercent / 100);
-  return paymentMethod === "cash" ? Math.ceil(raw) : Math.round(raw * 100) / 100;
+  const raw = (baseFare + (metres / 1000) * ratePerKm) * (1 + surchargePercent / 100);
+  return Math.ceil(raw);
 }
 
 // Client-side preview of `compute_discount_for_booking` (percent/fixed code
@@ -270,7 +275,9 @@ function fareForDistance(
 // operations as createManualBooking: discount off the displayed base fare,
 // then ceil again since manual bookings are always cash.
 function applyDiscountPreview(baseFare: number, code: DiscountCodeOption | undefined): number {
-  if (!code) return baseFare;
+  // Manual bookings are always cash; round up to the nearest dollar so the
+  // preview matches what will actually be charged (see submit-time Math.ceil).
+  if (!code) return Math.ceil(baseFare);
   const amount =
     code.amount_type === "percent"
       ? Math.round(baseFare * (code.amount / 100) * 100) / 100
@@ -999,6 +1006,8 @@ export default function DashboardPage({
   const [bookDistanceMetres, setBookDistanceMetres] = useState<number | null>(null);
   const [bookBaseFare, setBookBaseFare] = useState<number | null>(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
+  const [companyBaseFare, setCompanyBaseFare] = useState<number | null>(null);
+  const [companyRatePerKm, setCompanyRatePerKm] = useState<number | null>(null);
 
   function surchargeFor(vehicleClassId: string): number {
     if (!vehicleClassId) return 0;
@@ -1259,8 +1268,20 @@ export default function DashboardPage({
       fetchReportsBadge(),
       fetchDiscountCodes(),
       fetchVehicleClasses(),
+      fetchCompanyPricing(),
     ]);
     setLoading(false);
+  }
+
+  async function fetchCompanyPricing() {
+    if (!profile?.company_id) return;
+    const { data } = await supabase
+      .from("companies")
+      .select("base_fare, rate_per_km")
+      .eq("id", profile.company_id)
+      .maybeSingle();
+    setCompanyBaseFare(data?.base_fare ?? 4);
+    setCompanyRatePerKm(data?.rate_per_km ?? 1.8);
   }
 
   async function fetchDiscountCodes() {
@@ -1740,8 +1761,16 @@ export default function DashboardPage({
     // displayed estimate matches the fare that gets saved. Re-runs whenever
     // the distance or the selected vehicle class (and its surcharge) changes.
     if (bookDistanceMetres == null) return;
-    setBookBaseFare(fareForDistance(bookDistanceMetres, surchargeFor(bookVehicleClassId), "cash"));
-  }, [bookDistanceMetres, bookVehicleClassId]);
+    setBookBaseFare(
+      fareForDistance(
+        bookDistanceMetres,
+        surchargeFor(bookVehicleClassId),
+        "cash",
+        companyBaseFare ?? 4,
+        companyRatePerKm ?? 1.8,
+      ),
+    );
+  }, [bookDistanceMetres, bookVehicleClassId, companyBaseFare, companyRatePerKm]);
 
   useEffect(() => {
     // Layers the selected discount code on top of the base fare so picking
@@ -1795,9 +1824,15 @@ export default function DashboardPage({
     if (editDistanceMetres == null) return;
     if (!editAddressChanged && !editVehicleClassTouched) return;
     setEditFare(
-      fareForDistance(editDistanceMetres, surchargeFor(editVehicleClassId), editPayment).toFixed(2),
+      fareForDistance(
+        editDistanceMetres,
+        surchargeFor(editVehicleClassId),
+        editPayment,
+        companyBaseFare ?? 4,
+        companyRatePerKm ?? 1.8,
+      ).toFixed(2),
     );
-  }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment]);
+  }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment, companyBaseFare, companyRatePerKm]);
 
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
@@ -2108,11 +2143,7 @@ export default function DashboardPage({
       dropoff_address: editDropoff.trim(),
       dropoff_lat: editDropoffCoords?.lat,
       dropoff_lng: editDropoffCoords?.lng,
-      fare_estimate: editFare
-        ? editPayment === "cash"
-          ? Math.ceil(parseFloat(editFare))
-          : parseFloat(editFare)
-        : null,
+      fare_estimate: editFare ? Math.ceil(parseFloat(editFare)) : null,
       payment_method: editPayment,
       scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
       vehicle_class_id: editVehicleClassId || null,
@@ -2129,11 +2160,7 @@ export default function DashboardPage({
     setEditingRide(false);
     setRideDetail(null);
     fetchRides();
-    const newFare = editFare
-      ? editPayment === "cash"
-        ? Math.ceil(parseFloat(editFare))
-        : parseFloat(editFare)
-      : null;
+    const newFare = editFare ? Math.ceil(parseFloat(editFare)) : null;
     logDispatchEvent({
       companyId: profile.company_id!,
       dispatcherId: profile.id,
