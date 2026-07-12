@@ -29,7 +29,8 @@ export type DispatchEventType =
   | "settings.pricing_updated"
   | "settings.vehicle_class_created"
   | "settings.vehicle_class_updated"
-  | "settings.vehicle_class_status_changed";
+  | "settings.vehicle_class_status_changed"
+  | "dispatch_report.submitted";
 
 export async function logDispatchEvent(params: {
   companyId: string;

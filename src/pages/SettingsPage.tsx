@@ -7,12 +7,34 @@ interface Props {
   adminId: string;
 }
 
-type Section = "pricing" | "vehicle_classes";
+type Section = "pricing" | "vehicle_classes" | "support";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "pricing", label: "Pricing" },
   { id: "vehicle_classes", label: "Vehicle Classes" },
+  { id: "support", label: "Support" },
 ];
+
+interface DispatchReport {
+  id: string;
+  admin_id: string;
+  category: string;
+  message: string;
+  status: "open" | "resolved";
+  created_at: string;
+  admin_name: string | null;
+}
+
+const REPORT_CATEGORIES: { id: string; label: string }[] = [
+  { id: "bug", label: "Bug / technical issue" },
+  { id: "driver_issue", label: "Driver issue" },
+  { id: "billing", label: "Payment / billing" },
+  { id: "feature_request", label: "Feature request" },
+  { id: "other", label: "Other" },
+];
+const REPORT_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
+  REPORT_CATEGORIES.map(c => [c.id, c.label])
+);
 
 export default function SettingsPage({ companyId, adminId }: Props) {
   const [section, setSection] = useState<Section>("pricing");
@@ -43,6 +65,60 @@ export default function SettingsPage({ companyId, adminId }: Props) {
   const [newSurcharge, setNewSurcharge] = useState('0');
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Support/report state
+  const [reportCategory, setReportCategory] = useState(REPORT_CATEGORIES[0].id);
+  const [reportMessage, setReportMessage] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportSent, setReportSent] = useState(false);
+  const [reports, setReports] = useState<DispatchReport[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchReports();
+  }, [companyId]);
+
+  async function fetchReports() {
+    setReportsLoading(true);
+    const { data } = await supabase
+      .from("dispatch_reports")
+      .select("id, admin_id, category, message, status, created_at")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+    const rows = data ?? [];
+    const adminIds = [...new Set(rows.map(r => r.admin_id))];
+    const { data: admins } = adminIds.length
+      ? await supabase.from("profiles").select("id, name").in("id", adminIds)
+      : { data: [] as { id: string; name: string | null }[] };
+    const nameById = new Map((admins ?? []).map(a => [a.id, a.name]));
+    setReports(rows.map(r => ({ ...r, admin_name: nameById.get(r.admin_id) ?? null })));
+    setReportsLoading(false);
+  }
+
+  async function submitReport() {
+    setReportError(null);
+    setReportSent(false);
+    if (!reportMessage.trim()) { setReportError("Please describe the problem."); return; }
+    setReportSubmitting(true);
+    const { error: err } = await supabase.from("dispatch_reports").insert({
+      company_id: companyId,
+      admin_id: adminId,
+      category: reportCategory,
+      message: reportMessage.trim(),
+    });
+    setReportSubmitting(false);
+    if (err) { setReportError(err.message); return; }
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "dispatch_report.submitted",
+      details: { category: reportCategory },
+    });
+    setReportMessage("");
+    setReportSent(true);
+    fetchReports();
+  }
 
   useEffect(() => {
     supabase
@@ -256,6 +332,18 @@ export default function SettingsPage({ companyId, adminId }: Props) {
         .vc-add-class-btn { background: none; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px; color: #6B7280; font-size: 13px; padding: 9px 16px; cursor: pointer; font-family: system-ui, sans-serif; display: flex; align-items: center; gap: 6px; margin-top: 8px; transition: color 0.12s; max-width: 620px; width: 100%; }
         .vc-add-class-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
         .vc-error { font-size: 12px; color: #F87171; margin-top: 6px; }
+
+        .st-select { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 9px 10px; outline: none; width: 100%; box-sizing: border-box; margin-bottom: 14px; }
+        .st-textarea { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 10px; outline: none; width: 100%; box-sizing: border-box; min-height: 100px; resize: vertical; }
+        .rp-table { width: 100%; max-width: 720px; border-collapse: collapse; margin-top: 8px; }
+        .rp-row { background: #1E2A3A; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .rp-row + .rp-row { margin-top: 6px; }
+        .rp-td { padding: 12px; font-size: 13px; color: #E2E8F0; vertical-align: top; }
+        .rp-td.muted { color: #6B7280; font-size: 12px; white-space: nowrap; }
+        .rp-cat { font-size: 11px; font-weight: 600; color: #E8500A; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+        .rp-msg { font-size: 13px; color: #E2E8F0; white-space: pre-wrap; }
+        .rp-badge-open { background: rgba(74,158,255,0.1); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .rp-badge-resolved { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
       `}</style>
 
       <div className="st-wrap">
@@ -467,6 +555,79 @@ export default function SettingsPage({ companyId, adminId }: Props) {
 
                   {error && <p className="st-error">{error}</p>}
                 </div>
+              )}
+            </>
+          )}
+
+          {section === "support" && (
+            <>
+              <div className="st-header">
+                <div>
+                  <div className="st-title">Support</div>
+                  <div className="st-subtitle">
+                    Report a bug, a driver issue, or anything else — this goes straight to the Vellon team.
+                  </div>
+                </div>
+              </div>
+
+              <div className="st-card">
+                <p className="st-card-label">New report</p>
+
+                <select
+                  className="st-select"
+                  value={reportCategory}
+                  onChange={e => setReportCategory(e.target.value)}
+                >
+                  {REPORT_CATEGORIES.map(c => (
+                    <option key={c.id} value={c.id}>{c.label}</option>
+                  ))}
+                </select>
+
+                <textarea
+                  className="st-textarea"
+                  placeholder="Describe the problem…"
+                  value={reportMessage}
+                  onChange={e => { setReportMessage(e.target.value); setReportSent(false); }}
+                />
+
+                {reportError && <p className="st-error">{reportError}</p>}
+
+                <div style={{ marginTop: 14 }}>
+                  <button
+                    className={`st-save-btn${reportSent ? " st-saved" : ""}`}
+                    onClick={submitReport}
+                    disabled={reportSubmitting}
+                  >
+                    {reportSubmitting ? "Sending…" : reportSent ? "Sent ✓" : "Send report"}
+                  </button>
+                </div>
+              </div>
+
+              <p className="st-card-label" style={{ marginTop: 24 }}>Company reports</p>
+              {reportsLoading ? (
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+              ) : reports.length === 0 ? (
+                <div style={{ color: "#6B7280", fontSize: 14 }}>No reports yet.</div>
+              ) : (
+                <table className="rp-table">
+                  <tbody>
+                    {reports.map(r => (
+                      <tr key={r.id} className="rp-row">
+                        <td className="rp-td" style={{ width: "60%" }}>
+                          <div className="rp-cat">{REPORT_CATEGORY_LABELS[r.category] ?? r.category}</div>
+                          <div className="rp-msg">{r.message}</div>
+                        </td>
+                        <td className="rp-td muted">{r.admin_name ?? "Unknown"}</td>
+                        <td className="rp-td muted">{new Date(r.created_at).toLocaleDateString()}</td>
+                        <td className="rp-td">
+                          <span className={r.status === "resolved" ? "rp-badge-resolved" : "rp-badge-open"}>
+                            {r.status === "resolved" ? "Resolved" : "Open"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </>
           )}
