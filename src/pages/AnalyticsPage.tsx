@@ -46,6 +46,7 @@ interface RideRow {
   id: string;
   created_at: string;
   status: string;
+  cancelled_reason: string | null;
   pickup_address: string;
   dropoff_address: string;
   fare_estimate: number | null;
@@ -327,6 +328,12 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
   scheduled: "Scheduled",
+};
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  timeout: "No drivers found in time",
+  missed_window: "Missed scheduled window — no driver engaged",
+  passenger_cancelled: "Cancelled by passenger",
+  dispatch_cancelled: "Cancelled by dispatch",
 };
 
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
@@ -832,6 +839,7 @@ export default function AnalyticsPage({
         id: r.id,
         created_at: r.created_at,
         status: r.status,
+        cancelled_reason: r.cancelled_reason ?? null,
         pickup_address: r.pickup_address,
         dropoff_address: r.dropoff_address,
         fare_estimate: r.fare_estimate,
@@ -3321,6 +3329,12 @@ export default function AnalyticsPage({
                     : "—",
                 ],
                 ["Payment", rideDetail.ride.payment_method],
+                ...(rideDetail.ride.status === "cancelled" && rideDetail.ride.cancelled_reason
+                  ? ([[
+                      "Cancelled reason",
+                      CANCEL_REASON_LABELS[rideDetail.ride.cancelled_reason] ?? rideDetail.ride.cancelled_reason,
+                    ]] as [string, string][])
+                  : []),
               ] as [string, string][]
             ).map(([label, value]) => (
               <div key={label} className="an-detail-row">

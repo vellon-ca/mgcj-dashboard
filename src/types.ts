@@ -46,6 +46,7 @@ export interface Ride {
   fare_final: number | null;
   payment_method: string;
   scheduled_at: string | null;
+  cancelled_reason: string | null;
   created_at: string;
   passenger_id: string;
   driver_id: string | null;

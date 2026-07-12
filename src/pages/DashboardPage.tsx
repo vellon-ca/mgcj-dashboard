@@ -33,6 +33,24 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const NON_EDITABLE_STATUSES = new Set(["in_progress", "completed", "cancelled"]);
 
+// Distinguishes system-driven cancellations from a plain passenger cancel —
+// surfaced as a dedicated section in the ride-detail modal (not baked into
+// the badge, which stays plain red/"Cancelled" for every cancellation reason).
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  timeout: "No drivers found in time",
+  missed_window: "Missed scheduled window — no driver engaged",
+  passenger_cancelled: "Cancelled by passenger",
+  dispatch_cancelled: "Cancelled by dispatch",
+};
+
+function rideStatusColor(ride: { status: string }): string {
+  return STATUS_COLORS[ride.status];
+}
+
+function rideStatusLabel(ride: { status: string }): string {
+  return STATUS_LABELS[ride.status] ?? ride.status;
+}
+
 type Tab = "rides" | "drivers";
 
 const NAV_ITEMS: { tab: Tab; label: string }[] = [
@@ -354,7 +372,7 @@ function DriverDetailPanel({
       supabase
         .from("rides")
         .select(
-          "id, status, pickup_address, dropoff_address, fare_final, fare_estimate, created_at, passenger_id",
+          "id, status, cancelled_reason, pickup_address, dropoff_address, fare_final, fare_estimate, created_at, passenger_id",
         )
         .eq("driver_id", driver.id)
         .order("created_at", { ascending: false })
@@ -741,13 +759,13 @@ function DriverDetailPanel({
                 <span
                   className="db-status-badge"
                   style={{
-                    background: STATUS_COLORS[ride.status] + "18",
-                    color: STATUS_COLORS[ride.status],
-                    border: `1px solid ${STATUS_COLORS[ride.status]}30`,
+                    background: rideStatusColor(ride) + "18",
+                    color: rideStatusColor(ride),
+                    border: `1px solid ${rideStatusColor(ride)}30`,
                     fontSize: 10,
                   }}
                 >
-                  {STATUS_LABELS[ride.status]}
+                  {rideStatusLabel(ride)}
                 </span>
                 <div className="dd-ride-passenger">{ride.passenger_name}</div>
                 <div className="dd-ride-addr">
@@ -2090,7 +2108,7 @@ export default function DashboardPage({
     const ride = rides.find((r) => r.id === rideId);
     await supabase
       .from("rides")
-      .update({ status: "cancelled" })
+      .update({ status: "cancelled", cancelled_reason: "dispatch_cancelled" })
       .eq("id", rideId);
     fetchRides();
     logDispatchEvent({
@@ -2906,12 +2924,12 @@ export default function DashboardPage({
                           <span
                             className="db-status-badge"
                             style={{
-                              background: STATUS_COLORS[ride.status] + "18",
-                              color: STATUS_COLORS[ride.status],
-                              border: `1px solid ${STATUS_COLORS[ride.status]}30`,
+                              background: rideStatusColor(ride) + "18",
+                              color: rideStatusColor(ride),
+                              border: `1px solid ${rideStatusColor(ride)}30`,
                             }}
                           >
-                            {STATUS_LABELS[ride.status]}
+                            {rideStatusLabel(ride)}
                           </span>
                           <span className="db-ride-time">
                             {new Date(ride.created_at).toLocaleTimeString(
@@ -3105,12 +3123,12 @@ export default function DashboardPage({
                           <span
                             className="db-status-badge"
                             style={{
-                              background: STATUS_COLORS[ride.status] + "18",
-                              color: STATUS_COLORS[ride.status],
-                              border: `1px solid ${STATUS_COLORS[ride.status]}30`,
+                              background: rideStatusColor(ride) + "18",
+                              color: rideStatusColor(ride),
+                              border: `1px solid ${rideStatusColor(ride)}30`,
                             }}
                           >
-                            {STATUS_LABELS[ride.status]}
+                            {rideStatusLabel(ride)}
                           </span>
                           <span
                             className="db-ride-fare"
@@ -3768,12 +3786,12 @@ export default function DashboardPage({
               <span
                 className="db-status-badge"
                 style={{
-                  background: STATUS_COLORS[rideDetail.status] + "18",
-                  color: STATUS_COLORS[rideDetail.status],
-                  border: `1px solid ${STATUS_COLORS[rideDetail.status]}30`,
+                  background: rideStatusColor(rideDetail) + "18",
+                  color: rideStatusColor(rideDetail),
+                  border: `1px solid ${rideStatusColor(rideDetail)}30`,
                 }}
               >
-                {STATUS_LABELS[rideDetail.status]}
+                {rideStatusLabel(rideDetail)}
               </span>
               <span style={{ fontSize: 12, color: "#6B7280" }}>
                 {new Date(rideDetail.created_at).toLocaleString("en-CA", {
@@ -3992,6 +4010,12 @@ export default function DashboardPage({
                           )
                         : "Immediate",
                     ],
+                    ...(rideDetail.status === "cancelled" && rideDetail.cancelled_reason
+                      ? ([[
+                          "Cancelled reason",
+                          CANCEL_REASON_LABELS[rideDetail.cancelled_reason] ?? rideDetail.cancelled_reason,
+                        ]] as [string, string][])
+                      : []),
                   ] as [string, string][]
                 ).map(([label, value]) => (
                   <div key={label} className="db-detail-row">
