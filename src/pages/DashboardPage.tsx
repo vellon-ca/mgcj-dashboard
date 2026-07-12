@@ -880,7 +880,7 @@ function ScheduledRideCard({
           <div className="db-sched-fare">${ride.fare_estimate.toFixed(2)}</div>
         )}
       </div>
-      {ride.driver_id && (
+      {ride.driver_id && ride.confirmed_by_driver && (
         <div className="db-sched-driver-row">
           <div className="db-sched-driver-dot" />
           <span className="db-sched-driver-name">
@@ -888,9 +888,9 @@ function ScheduledRideCard({
           </span>
         </div>
       )}
-      {ride.status === "offered" && (
+      {ride.driver_id && !ride.confirmed_by_driver && (
         <div className="db-pending-badge" style={{ margin: "8px 12px 0" }}>
-          ⏳ Awaiting driver confirmation
+          ⏳ Waiting for {(ride as any).driver?.profile?.name ?? "driver"} to confirm
         </div>
       )}
       <div style={{ padding: "8px 12px 10px" }}>
@@ -909,6 +909,7 @@ function ScheduledRideCard({
                 }}
               >
                 {(d as any).profile?.name ?? "Driver"}
+                {(ride.declined_by ?? []).includes(d.id) ? " (declined)" : ""}
               </button>
             ))}
             <button
@@ -1033,6 +1034,8 @@ export default function DashboardPage({
   }
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
+  const [bookPreferredDriver, setBookPreferredDriver] = useState("");
+  const [bookPreferredExclusive, setBookPreferredExclusive] = useState(false);
   const [bookLoading, setBookLoading] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const activeRideIdsRef = useRef<string[]>([]);
@@ -1042,6 +1045,15 @@ export default function DashboardPage({
   const dropoffAutocompleteRef = useRef<any>(null);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+
+  // Keep the open ride-detail modal in sync with realtime updates to the
+  // underlying `rides` array (e.g. a driver declining) instead of only
+  // reflecting the snapshot taken at the moment the card was clicked.
+  useEffect(() => {
+    if (!rideDetail) return;
+    const updated = rides.find((r) => r.id === rideDetail.id);
+    if (updated && updated !== rideDetail) setRideDetail(updated);
+  }, [rides, rideDetail]);
   const [editingRide, setEditingRide] = useState(false);
   const [editPickup, setEditPickup] = useState("");
   const [editPickupCoords, setEditPickupCoords] = useState<{
@@ -1061,6 +1073,8 @@ export default function DashboardPage({
   const [editDistanceMetres, setEditDistanceMetres] = useState<number | null>(null);
   const [editPayment, setEditPayment] = useState("");
   const [editScheduled, setEditScheduled] = useState("");
+  const [editPreferredDriver, setEditPreferredDriver] = useState("");
+  const [editPreferredExclusive, setEditPreferredExclusive] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const editPickupInputRef = useRef<HTMLInputElement>(null);
@@ -2010,7 +2024,12 @@ export default function DashboardPage({
       if (bookDriver) {
         rideData.driver_id = bookDriver;
         rideData.status = bookScheduled ? "scheduled" : "offered";
-        if (bookScheduled) rideData.confirmed_by_driver = true;
+      } else if (bookScheduled && bookPreferredDriver) {
+        // No immediate driver assignment — just bias the automatic release
+        // pipeline toward this driver. Ride stays 'scheduled', untouched,
+        // until scheduled-release picks it up on its own.
+        rideData.preferred_driver_id = bookPreferredDriver;
+        rideData.preferred_driver_exclusive = bookPreferredExclusive;
       }
       const { error } = await supabase.from("rides").insert(rideData);
       if (error) {
@@ -2047,6 +2066,8 @@ export default function DashboardPage({
       setBookBaseFare(null);
       setBookDriver("");
       setBookScheduled("");
+      setBookPreferredDriver("");
+      setBookPreferredExclusive(false);
       fetchRides();
     } catch (e: any) {
       setBookError(e.message);
@@ -2070,9 +2091,9 @@ export default function DashboardPage({
           ? {
               driver_id: driverId,
               status: "scheduled",
-              confirmed_by_driver: true,
+              confirmed_by_driver: false,
             }
-          : { driver_id: driverId, status: "offered" },
+          : { driver_id: driverId, status: "offered", confirmed_by_driver: false },
       )
       .eq("id", rideId);
     setAssigningRide(null);
@@ -2146,6 +2167,8 @@ export default function DashboardPage({
         : "",
     );
     setEditAddressChanged(false);
+    setEditPreferredDriver(ride.preferred_driver_id ?? "");
+    setEditPreferredExclusive(ride.preferred_driver_exclusive ?? false);
     setEditError(null);
     setEditingRide(true);
   }
@@ -2166,6 +2189,10 @@ export default function DashboardPage({
       scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
       vehicle_class_id: editVehicleClassId || null,
     };
+    if (rideDetail?.status === "scheduled" && !rideDetail?.driver_id) {
+      updates.preferred_driver_id = editPreferredDriver || null;
+      updates.preferred_driver_exclusive = editPreferredDriver ? editPreferredExclusive : false;
+    }
     const { error } = await supabase
       .from("rides")
       .update(updates)
@@ -2971,6 +2998,7 @@ export default function DashboardPage({
                                     }}
                                   >
                                     {(d as any).profile?.name ?? "Driver"}
+                                    {((ride as any).declined_by ?? []).includes(d.id) ? " (declined)" : ""}
                                   </button>
                                 ))}
                                 <button
@@ -3674,7 +3702,13 @@ export default function DashboardPage({
                 <select
                   className="db-modal-select"
                   value={bookDriver}
-                  onChange={(e) => setBookDriver(e.target.value)}
+                  onChange={(e) => {
+                    setBookDriver(e.target.value);
+                    if (e.target.value) {
+                      setBookPreferredDriver("");
+                      setBookPreferredExclusive(false);
+                    }
+                  }}
                 >
                   <option value="">— No driver yet —</option>
                   {onlineDrivers.map((d) => (
@@ -3694,6 +3728,66 @@ export default function DashboardPage({
                   onChange={(e) => setBookScheduled(e.target.value)}
                 />
               </div>
+              {bookScheduled && !bookDriver && (
+                <div>
+                  <label className="db-modal-label">
+                    Preferred driver{" "}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "#6B7280",
+                        fontWeight: 400,
+                        marginLeft: 6,
+                        textTransform: "none",
+                        letterSpacing: 0,
+                      }}
+                    >
+                      (optional — release stays automatic, this just biases who it goes to)
+                    </span>
+                  </label>
+                  <select
+                    className="db-modal-select"
+                    value={bookPreferredDriver}
+                    onChange={(e) => setBookPreferredDriver(e.target.value)}
+                  >
+                    <option value="">— No preference —</option>
+                    {drivers
+                      .filter(
+                        (d) =>
+                          d.is_active &&
+                          (!bookVehicleClassId ||
+                            !d.vehicle_class_id ||
+                            d.vehicle_class_id === bookVehicleClassId),
+                      )
+                      .map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                          {d.vehicle_model}
+                        </option>
+                      ))}
+                  </select>
+                  {bookPreferredDriver && (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginTop: 8,
+                        fontSize: 12,
+                        color: "#9CA3AF",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={bookPreferredExclusive}
+                        onChange={(e) => setBookPreferredExclusive(e.target.checked)}
+                      />
+                      Exclusive — only offer to this driver, never substitute
+                    </label>
+                  )}
+                </div>
+              )}
               {bookError && (
                 <div
                   style={{
@@ -3938,6 +4032,66 @@ export default function DashboardPage({
                     />
                   </div>
                 )}
+                {rideDetail.status === "scheduled" && !rideDetail.driver_id && (
+                  <div>
+                    <label className="db-modal-label">
+                      Preferred driver{" "}
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#6B7280",
+                          fontWeight: 400,
+                          marginLeft: 6,
+                          textTransform: "none",
+                          letterSpacing: 0,
+                        }}
+                      >
+                        (optional — release stays automatic, this just biases who it goes to)
+                      </span>
+                    </label>
+                    <select
+                      className="db-modal-select"
+                      value={editPreferredDriver}
+                      onChange={(e) => setEditPreferredDriver(e.target.value)}
+                    >
+                      <option value="">— No preference —</option>
+                      {drivers
+                        .filter(
+                          (d) =>
+                            d.is_active &&
+                            (!editVehicleClassId ||
+                              !d.vehicle_class_id ||
+                              d.vehicle_class_id === editVehicleClassId),
+                        )
+                        .map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                            {d.vehicle_model}
+                          </option>
+                        ))}
+                    </select>
+                    {editPreferredDriver && (
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          marginTop: 8,
+                          fontSize: 12,
+                          color: "#9CA3AF",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editPreferredExclusive}
+                          onChange={(e) => setEditPreferredExclusive(e.target.checked)}
+                        />
+                        Exclusive — only offer to this driver, never substitute
+                      </label>
+                    )}
+                  </div>
+                )}
                 {editError && (
                   <div
                     style={{
@@ -3984,8 +4138,14 @@ export default function DashboardPage({
                     ["Phone", (rideDetail as any).passenger?.phone ?? "—"],
                     [
                       "Driver",
-                      (rideDetail as any).driver?.profile?.name ??
-                        "Unassigned",
+                      rideDetail.driver_id
+                        ? `${(rideDetail as any).driver?.profile?.name ?? "Driver"}${
+                            rideDetail.status === "scheduled" &&
+                            !(rideDetail as any).confirmed_by_driver
+                              ? " (pending confirmation)"
+                              : ""
+                          }`
+                        : "Unassigned",
                     ],
                     ["Pickup", rideDetail.pickup_address],
                     ["Drop-off", rideDetail.dropoff_address],
@@ -4014,6 +4174,14 @@ export default function DashboardPage({
                       ? ([[
                           "Cancelled reason",
                           CANCEL_REASON_LABELS[rideDetail.cancelled_reason] ?? rideDetail.cancelled_reason,
+                        ]] as [string, string][])
+                      : []),
+                    ...(rideDetail.declined_by && rideDetail.declined_by.length > 0
+                      ? ([[
+                          "Declined by",
+                          [...new Set(rideDetail.declined_by)]
+                            .map((id) => drivers.find((d) => d.id === id)?.profile?.name ?? "Unknown driver")
+                            .join(", "),
                         ]] as [string, string][])
                       : []),
                   ] as [string, string][]

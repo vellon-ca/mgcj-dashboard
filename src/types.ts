@@ -51,6 +51,9 @@ export interface Ride {
   passenger_id: string;
   driver_id: string | null;
   vehicle_class_id: string | null;
+  preferred_driver_id: string | null;
+  preferred_driver_exclusive: boolean;
+  declined_by: string[] | null;
   passenger?: Profile;
   driver?: Driver & { profile?: Profile };
 }
