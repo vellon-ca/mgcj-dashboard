@@ -2185,7 +2185,11 @@ export default function DashboardPage({
       dropoff_lat: editDropoffCoords?.lat,
       dropoff_lng: editDropoffCoords?.lng,
       fare_estimate: editFare ? Math.ceil(parseFloat(editFare)) : null,
-      payment_method: editPayment,
+      // payment_method is intentionally NOT editable here: cash->card would
+      // strand the ride with no PaymentIntent (dispatch-booked passengers have
+      // no card on file), and card->cash risks a lingering hold / double charge.
+      // The field is shown read-only in the modal; the guard_ride_payment_method
+      // trigger backstops this against any direct client write.
       scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
       vehicle_class_id: editVehicleClassId || null,
     };
@@ -2554,6 +2558,8 @@ export default function DashboardPage({
         .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
         .db-modal-input::placeholder { color: #6B7280; }
         .db-modal-select { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-select:disabled { opacity: 0.55; cursor: not-allowed; }
+        .db-modal-hint { font-size: 11px; color: #6B7280; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
         .pac-container { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
         .pac-item { padding: 8px 12px; color: #9CA3AF; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
         .pac-item:first-child { border-top: none; }
@@ -4015,11 +4021,13 @@ export default function DashboardPage({
                   <select
                     className="db-modal-select"
                     value={editPayment}
-                    onChange={(e) => setEditPayment(e.target.value)}
+                    disabled
+                    title="Payment method is fixed at booking and can't be changed here."
                   >
                     <option value="cash">Cash</option>
                     <option value="card">Card</option>
                   </select>
+                  <div className="db-modal-hint">Set at booking — can't be changed here.</div>
                 </div>
                 {rideDetail.status === "scheduled" && (
                   <div>
