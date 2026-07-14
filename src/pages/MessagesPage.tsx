@@ -29,6 +29,51 @@ interface Props {
   onUnreadChange?: (unreadCount: number) => void;
 }
 
+function dayKey(iso: string) {
+  return new Date(iso).toLocaleDateString("en-CA");
+}
+
+function formatDateLabel(iso: string) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffDays = Math.round(
+    (new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return d.toLocaleDateString("en-CA", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
+const URL_RE = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+
+function linkifyBody(text: string) {
+  const parts = text.split(URL_RE);
+  return parts.map((part, i) => {
+    // text.split on a global regex with one capture group alternates
+    // plain-text, match, plain-text, match... — odd indices are URLs.
+    if (i % 2 === 0) return <span key={i}>{part}</span>;
+    const href = part.startsWith("www.") ? `https://${part}` : part;
+    return (
+      <a
+        key={i}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mc-bubble-link"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {part}
+      </a>
+    );
+  });
+}
+
 export default function MessagesPage({ companyId, adminId, isActive, onUnreadChange }: Props) {
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [threads, setThreads] = useState<Map<string, ThreadSummary>>(new Map());
@@ -251,6 +296,10 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
         .mc-thread-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #6B7280; font-size: 14px; }
         .mc-thread-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
 
+        .mc-date-sep { display: flex; align-items: center; justify-content: center; margin: 6px 0 4px; }
+        .mc-date-sep span { font-size: 11px; font-weight: 600; color: #6B7280; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 999px; padding: 3px 12px; }
+        .mc-bubble-link { color: inherit; text-decoration: underline; word-break: break-all; }
+
         .mc-bubble-row { display: flex; }
         .mc-bubble-row.admin { justify-content: flex-end; }
         .mc-bubble-row.driver { justify-content: flex-start; }
@@ -325,19 +374,32 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
                 ) : messages.length === 0 ? (
                   <div className="mc-empty">No messages yet — say hello.</div>
                 ) : (
-                  messages.map((m) => (
-                    <div key={m.id} className={`mc-bubble-row ${m.sender_role}`}>
-                      <div className="mc-bubble-col">
-                        <div className={`mc-bubble ${m.sender_role}`}>{m.body}</div>
-                        <div className="mc-bubble-time">
-                          {new Date(m.created_at).toLocaleTimeString("en-CA", {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
+                  messages.map((m, i) => {
+                    const showSeparator =
+                      i === 0 || dayKey(m.created_at) !== dayKey(messages[i - 1].created_at);
+                    return (
+                      <div key={m.id}>
+                        {showSeparator && (
+                          <div className="mc-date-sep">
+                            <span>{formatDateLabel(m.created_at)}</span>
+                          </div>
+                        )}
+                        <div className={`mc-bubble-row ${m.sender_role}`}>
+                          <div className="mc-bubble-col">
+                            <div className={`mc-bubble ${m.sender_role}`}>
+                              {linkifyBody(m.body)}
+                            </div>
+                            <div className="mc-bubble-time">
+                              {new Date(m.created_at).toLocaleTimeString("en-CA", {
+                                hour: "numeric",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
               <div className="mc-input-row">

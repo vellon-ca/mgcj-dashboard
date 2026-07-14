@@ -815,6 +815,7 @@ function ScheduledRideCard({
   onAssign,
   onCancelAssign,
   onAssignDriver,
+  onEdit,
   onCancel,
 }: {
   ride: any;
@@ -824,6 +825,7 @@ function ScheduledRideCard({
   onAssign: () => void;
   onCancelAssign: () => void;
   onAssignDriver: (driverId: string) => void;
+  onEdit: () => void;
   onCancel: () => void;
 }) {
   const scheduledDate = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
@@ -932,6 +934,15 @@ function ScheduledRideCard({
               }}
             >
               {ride.driver_id ? "Reassign driver" : "Assign driver"}
+            </button>
+            <button
+              className="db-sched-assign-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
+            >
+              Edit
             </button>
             <button
               className="db-cancel-ride-btn"
@@ -3132,6 +3143,10 @@ export default function DashboardPage({
                             onAssignDriver={(driverId) =>
                               assignDriver(ride.id, driverId)
                             }
+                            onEdit={() => {
+                              setRideDetail(ride);
+                              startEditRide(ride);
+                            }}
                             onCancel={() => setCancelPendingId(ride.id)}
                           />
                         ))}
