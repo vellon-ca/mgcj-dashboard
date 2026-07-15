@@ -467,6 +467,7 @@ export default function AnalyticsPage({
   // Ride history
   const [allRides, setAllRides] = useState<RideRow[]>([]);
   const [rideFilter, setRideFilter] = useState<string>("all");
+  const [rideSearch, setRideSearch] = useState("");
   const [ridesLoading, setRidesLoading] = useState(true);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(
     new Set([getCurrentMonthKey()]),
@@ -1645,10 +1646,21 @@ export default function AnalyticsPage({
         (inv.passenger_name ?? "").toLowerCase().includes(receiptSearch.toLowerCase()),
       )
     : receipts;
-  const filteredRides =
+  const filteredRides = (
     rideFilter === "all"
       ? allRides
-      : allRides.filter((r) => r.status === rideFilter);
+      : allRides.filter((r) => r.status === rideFilter)
+  ).filter((r) => {
+    if (!rideSearch.trim()) return true;
+    const q = rideSearch.toLowerCase();
+    return (
+      (r.passenger_name ?? "").toLowerCase().includes(q) ||
+      (r.driver_name ?? "").toLowerCase().includes(q) ||
+      (r.pickup_address ?? "").toLowerCase().includes(q) ||
+      (r.dropoff_address ?? "").toLowerCase().includes(q) ||
+      (r.receipt_number ?? "").toLowerCase().includes(q)
+    );
+  });
 
   const monthGroups: MonthGroup[] = (() => {
     const map = new Map<string, RideRow[]>();
@@ -2448,13 +2460,22 @@ export default function AnalyticsPage({
                       {filteredRides.length} rides
                     </span>
                   </div>
+                  <div className="inv-search-row">
+                    <input
+                      className="inv-search"
+                      placeholder="Search by passenger, driver, address, or receipt #…"
+                      value={rideSearch}
+                      onChange={(e) => setRideSearch(e.target.value)}
+                    />
+                  </div>
                   {monthGroups.length === 0 ? (
                     <div className="an-no-data" style={{ padding: "48px 0" }}>
-                      No rides found
+                      {rideSearch ? "No rides match your search" : "No rides found"}
                     </div>
                   ) : (
                     monthGroups.map((group) => {
-                      const isOpen = expandedMonths.has(group.key);
+                      const isOpen =
+                        expandedMonths.has(group.key) || rideSearch.trim() !== "";
                       return (
                         <div key={group.key} className="an-month-group">
                           <div
