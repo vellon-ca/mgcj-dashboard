@@ -497,7 +497,7 @@ export default function AnalyticsPage({
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>("all");
   const [activityError, setActivityError] = useState<string | null>(null);
   const activityFetchId = useRef(0);
-  const fetchActivityLogRef = useRef<() => void>(() => {});
+  const fetchActivityLogRef = useRef<(silent?: boolean) => void>(() => {});
   const ridesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Receipts
@@ -541,9 +541,9 @@ export default function AnalyticsPage({
     function scheduleRidesRefresh() {
       if (ridesDebounceRef.current) clearTimeout(ridesDebounceRef.current);
       ridesDebounceRef.current = setTimeout(() => {
-        fetchRevenue();
-        fetchRideHistory();
-        fetchPeak();
+        fetchRevenue(true);
+        fetchRideHistory(true);
+        fetchPeak(true);
       }, 1200);
     }
 
@@ -558,19 +558,19 @@ export default function AnalyticsPage({
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "ride_receipts", filter: `company_id=eq.${companyId}` },
         () => {
-          fetchRideHistory(); // refreshes the receipt # column in ride history
-          if (section === "receipts") fetchReceipts();
+          fetchRideHistory(true); // refreshes the receipt # column in ride history
+          if (section === "receipts") fetchReceipts(true);
         },
       )
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "ride_reviews" },
-        () => fetchReviews(),
+        () => fetchReviews(true),
       )
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "ride_reviews" },
-        () => { if (section === "reviews") fetchReviews(); },
+        () => { if (section === "reviews") fetchReviews(true); },
       )
       .subscribe();
 
@@ -592,7 +592,7 @@ export default function AnalyticsPage({
           table: "dispatch_events",
           filter: `company_id=eq.${companyId}`,
         },
-        () => fetchActivityLogRef.current(),
+        () => fetchActivityLogRef.current(true),
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -612,9 +612,9 @@ export default function AnalyticsPage({
   }
 
   // ── Fetchers ──────────────────────────────────────────────────────
-  async function fetchRevenue() {
+  async function fetchRevenue(silent = false) {
     const fetchId = ++revenueFetchId.current;
-    setRevenueLoading(true);
+    if (!silent) setRevenueLoading(true);
     try {
       const now = new Date();
       let startDate: Date;
@@ -812,9 +812,9 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchRideHistory() {
+  async function fetchRideHistory(silent = false) {
     const fetchId = ++historyFetchId.current;
-    setRidesLoading(true);
+    if (!silent) setRidesLoading(true);
     try {
       const { data: rides } = await supabase
         .from("rides")
@@ -861,9 +861,9 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchReviews() {
+  async function fetchReviews(silent = false) {
     const fetchId = ++reviewsFetchId.current;
-    setReviewsLoading(true);
+    if (!silent) setReviewsLoading(true);
     try {
       const { data: rows } = await supabase
         .from("ride_reviews")
@@ -921,9 +921,9 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchPeak() {
+  async function fetchPeak(silent = false) {
     const fetchId = ++peakFetchId.current;
-    setPeakLoading(true);
+    if (!silent) setPeakLoading(true);
     try {
       const { data: rides } = await supabase
         .from("rides")
@@ -961,9 +961,9 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchActivityLog() {
+  async function fetchActivityLog(silent = false) {
     const fetchId = ++activityFetchId.current;
-    setActivityLoading(true);
+    if (!silent) setActivityLoading(true);
     try {
       const { data, error } = await supabase
         .from("dispatch_events")
@@ -997,9 +997,9 @@ export default function AnalyticsPage({
     }
   }
 
-  async function fetchReceipts() {
+  async function fetchReceipts(silent = false) {
     const fetchId = ++receiptsFetchId.current;
-    setReceiptsLoading(true);
+    if (!silent) setReceiptsLoading(true);
     try {
       const { data } = await supabase
         .from("ride_receipts")
