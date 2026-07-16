@@ -148,6 +148,11 @@ const EVENT_LABELS: Record<string, string> = {
   "settings.vehicle_class_created": "Added vehicle class",
   "settings.vehicle_class_updated": "Edited vehicle class",
   "settings.vehicle_class_status_changed": "Vehicle class status changed",
+  "staff.created": "Added team member",
+  "staff.updated": "Edited team member",
+  "staff.deactivated": "Deactivated team member",
+  "staff.reactivated": "Reactivated team member",
+  "dispatch_report.submitted": "Submitted support report",
 };
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
@@ -179,6 +184,11 @@ const EVENT_COLORS: Record<string, string> = {
   "settings.vehicle_class_created": "#1D9E75",
   "settings.vehicle_class_updated": "#60A5FA",
   "settings.vehicle_class_status_changed": "#6B7280",
+  "staff.created": "#1D9E75",
+  "staff.updated": "#60A5FA",
+  "staff.deactivated": "#F59E0B",
+  "staff.reactivated": "#1D9E75",
+  "dispatch_report.submitted": "#A855F7",
 };
 
 function formatEventDetails(type: string, details: any): string {
@@ -282,6 +292,38 @@ function formatEventDetails(type: string, details: any): string {
     }
     case "settings.vehicle_class_status_changed":
       return `${details.name ?? "—"} · ${details.is_active ? "Activated" : "Deactivated"}`;
+    case "staff.created":
+      return [
+        details.name,
+        details.role ? (details.role === "admin" ? "Admin" : "Dispatcher") : null,
+      ].filter(Boolean).join(" · ") || "—";
+    case "staff.updated": {
+      const parts: string[] = [];
+      if (details.name_from != null && details.name_to != null) {
+        parts.push(`${details.name_from} → ${details.name_to}`);
+      } else if (details.name) {
+        parts.push(details.name);
+      }
+      if (details.phone_from != null && details.phone_to != null) {
+        parts.push(`${details.phone_from} → ${details.phone_to}`);
+      }
+      return parts.join(" · ") || "—";
+    }
+    case "staff.deactivated":
+    case "staff.reactivated":
+      return details.name ?? "—";
+    case "dispatch_report.submitted": {
+      const categoryLabels: Record<string, string> = {
+        bug: "Bug",
+        driver_issue: "Driver issue",
+        billing: "Billing",
+        feature_request: "Feature request",
+        other: "Other",
+      };
+      return details.category
+        ? (categoryLabels[details.category as string] ?? details.category)
+        : "—";
+    }
     case "export.csv":
     case "export.pdf": {
       const sectionLabels: Record<string, string> = {
@@ -476,6 +518,7 @@ export default function AnalyticsPage({
     new Date().getFullYear(),
   );
   const [rideDetail, setRideDetail] = useState<RideDetailModal | null>(null);
+  const [printingRide, setPrintingRide] = useState(false);
 
   // Reviews
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
@@ -1015,7 +1058,10 @@ export default function AnalyticsPage({
     }
   }
 
-  function printReceipt(inv: ReceiptRow) {
+  function printReceipt(
+    inv: ReceiptRow,
+    opts?: { extraHtml?: string; footerHtml?: string },
+  ) {
     logDispatchEvent({
       companyId,
       dispatcherId,
@@ -1060,10 +1106,12 @@ export default function AnalyticsPage({
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Subtotal</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST (15%)</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
         </table>
+        ${opts?.extraHtml ?? ""}
         <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
           ${inv.passenger_name ? `Thanks for riding with us, ${esc(inv.passenger_name)}!` : "Thank you for your business."}<br/>
           ${esc(inv.company_name) || "Your Taxi"}
         </p>
+        ${opts?.footerHtml ?? ""}
       </div>
     `;
     const win = window.open("", "_blank");
@@ -1109,6 +1157,52 @@ export default function AnalyticsPage({
       };
     }
     setRideDetail({ ride, review });
+  }
+
+  // Print the receipt for a ride opened from Ride History. Builds on the same
+  // receipt document as the Receipts tab (receipt #, HST reg, discount breakdown)
+  // but augments it with the review when one exists and an "Authorized by" footer
+  // — matching the provenance line on the revenue/PDF exports. Only offered when
+  // the ride actually has a receipt (receipt_number set).
+  async function printRideReceipt(ride: RideRow, review: ReviewRow | null) {
+    setPrintingRide(true);
+    try {
+      const { data, error } = await supabase
+        .from("ride_receipts")
+        .select("*")
+        .eq("ride_id", ride.id)
+        .maybeSingle();
+      if (error || !data) {
+        console.error("[printRideReceipt]", error?.message);
+        return;
+      }
+
+      // Review section (stars + comment) with a low-rating flag for 1–2 stars.
+      const extraHtml = review
+        ? `
+        <div style="margin-bottom: 16px;">
+          <p style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin: 0 0 8px;">
+            Review${review.rating <= 2 ? ` <span style="font-weight: 600; color: #B45309; background: #FEF3C7; border-radius: 4px; padding: 1px 6px; font-size: 11px;">⚠ Low rating</span>` : ""}
+          </p>
+          <div style="background: #f7f7f7; border-radius: 10px; padding: 14px;">
+            <p style="margin: 0 0 ${review.comment ? "6px" : "0"}; font-size: 16px; color: #F59E0B; letter-spacing: 2px;">
+              ${"★".repeat(review.rating)}${"☆".repeat(5 - review.rating)}
+              <span style="font-size: 12px; color: #6B7280; letter-spacing: 0;"> ${review.rating}/5</span>
+            </p>
+            ${review.comment ? `<p style="margin: 0; font-size: 13px; color: #374151; font-style: italic;">"${esc(review.comment)}"</p>` : ""}
+          </div>
+        </div>`
+        : "";
+
+      const footerHtml = `
+        <p style="font-size: 11px; color: #9CA3AF; text-align: center; margin-top: 16px; border-top: 1px solid #f3f4f6; padding-top: 12px;">
+          Generated by ${esc(label)} Dispatch · ${new Date().toLocaleString("en-CA")}
+        </p>`;
+
+      printReceipt(data as ReceiptRow, { extraHtml, footerHtml });
+    } finally {
+      setPrintingRide(false);
+    }
   }
 
   async function markReviewReviewed(reviewId: string) {
@@ -3460,6 +3554,16 @@ export default function AnalyticsPage({
               </div>
             )}
 
+            {rideDetail.ride.receipt_number && (
+              <button
+                className="an-download-btn"
+                style={{ width: "100%", marginTop: 16, textAlign: "center" }}
+                disabled={printingRide}
+                onClick={() => printRideReceipt(rideDetail.ride, rideDetail.review)}
+              >
+                {printingRide ? "Preparing…" : "Print Receipt"}
+              </button>
+            )}
             <button
               className="an-modal-close"
               onClick={() => setRideDetail(null)}

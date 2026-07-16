@@ -33,6 +33,25 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
+
+    // Only send an OTP to numbers that belong to a dispatch account (admin or
+    // dispatcher). phone_is_dispatch() is SECURITY DEFINER so it works without a
+    // session. If the check itself errors, fall through and send anyway — App.tsx
+    // still gates access post-login, so we fail open rather than lock out staff.
+    const { data: isDispatch, error: checkError } = await supabase.rpc(
+      "phone_is_dispatch",
+      { p_phone: e164 },
+    );
+    if (checkError) {
+      console.error("[Login] dispatch check error:", checkError);
+    } else if (!isDispatch) {
+      setLoading(false);
+      setError(
+        "This number isn't registered to a dispatch account. Contact your administrator if you think this is a mistake.",
+      );
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
     setLoading(false);
     if (error) {

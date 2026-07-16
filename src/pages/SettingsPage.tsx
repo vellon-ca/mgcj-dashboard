@@ -163,12 +163,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     const savedName = editStaffName.trim();
     const savedPhone = editStaffPhone.trim();
     setStaff(prev => prev.map(m => m.id === editingStaffId ? { ...m, name: savedName, phone: savedPhone } : m));
-    logDispatchEvent({
-      companyId,
-      dispatcherId: adminId,
-      eventType: "staff.updated",
-      details: { staff_id: editingStaffId, name: savedName },
-    });
+    // The update-staff-account edge function logs the staff.updated activity event
+    // server-side (with before→after detail), so we deliberately don't log here.
     setEditingStaffId(null);
     fetchStaff(true);
   }
