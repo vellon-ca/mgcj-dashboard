@@ -57,17 +57,8 @@ export default function LoginPage() {
       setError("Incorrect code. Try again.");
       return;
     }
-    if (data.user) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", data.user.id)
-        .single();
-      if (profile?.role !== "admin") {
-        await supabase.auth.signOut();
-        setError("Access denied. Staff accounts only.");
-      }
-    }
+    // Role gating happens in App.tsx via useAuth's profile fetch, which is
+    // the single source of truth for this — no separate check needed here.
   }
 
   return (

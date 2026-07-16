@@ -970,6 +970,8 @@ export default function DashboardPage({
   companyName: string | null;
   onSignOut: () => void;
 }) {
+  const isAdmin = profile.role === "admin";
+
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
@@ -2759,18 +2761,20 @@ export default function DashboardPage({
                 <span className="db-badge-count">{openReports}</span>
               )}
             </button>
-            <button
-              className={`db-nav-utility db-nav-discounts${showDiscounts ? " active-util" : ""}`}
-              onClick={() => {
-                navigateTo("discounts");
-                setSelectedDriver(null);
-              }}
-            >
-              <span className="db-nav-icon">
-                <IconDiscounts />
-              </span>
-              {navExpanded && <span className="db-nav-label">Discounts</span>}
-            </button>
+            {isAdmin && (
+              <button
+                className={`db-nav-utility db-nav-discounts${showDiscounts ? " active-util" : ""}`}
+                onClick={() => {
+                  navigateTo("discounts");
+                  setSelectedDriver(null);
+                }}
+              >
+                <span className="db-nav-icon">
+                  <IconDiscounts />
+                </span>
+                {navExpanded && <span className="db-nav-label">Discounts</span>}
+              </button>
+            )}
             <button
               className={`db-nav-utility db-nav-settings${showSettings ? " active-util" : ""}`}
               onClick={() => {
@@ -2886,7 +2890,7 @@ export default function DashboardPage({
             style={{ display: showSettings ? "flex" : "none" }}
           >
             {profile.company_id && (
-              <SettingsPage companyId={profile.company_id} adminId={profile.id} />
+              <SettingsPage companyId={profile.company_id} adminId={profile.id} isAdmin={isAdmin} />
             )}
           </div>
 

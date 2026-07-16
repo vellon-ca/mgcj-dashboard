@@ -30,7 +30,11 @@ export type DispatchEventType =
   | "settings.vehicle_class_created"
   | "settings.vehicle_class_updated"
   | "settings.vehicle_class_status_changed"
-  | "dispatch_report.submitted";
+  | "dispatch_report.submitted"
+  | "staff.created"
+  | "staff.updated"
+  | "staff.deactivated"
+  | "staff.reactivated";
 
 export async function logDispatchEvent(params: {
   companyId: string;

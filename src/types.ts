@@ -3,7 +3,7 @@ export interface Profile {
   company_id: string | null;
   name: string | null;
   phone: string | null;
-  role: "passenger" | "driver" | "admin";
+  role: "passenger" | "driver" | "admin" | "dispatcher";
   avatar_url: string | null;
   is_active: boolean;
   deactivation_pending: boolean;

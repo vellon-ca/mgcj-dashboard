@@ -43,6 +43,27 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Realtime: push profile changes (e.g. an admin deactivating this dispatcher)
+  // to state immediately, so a logged-in session reacts without a manual refresh.
+  // Mirrors the mobile app's AuthContext self-subscription.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    const channel = supabase
+      .channel("profile-self-" + userId)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
+        (payload) => {
+          setProfile(payload.new as Profile);
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id]);
+
   async function fetchProfile(userId: string, retries = 5) {
     if (fetchingForRef.current === userId) return;
     fetchingForRef.current = userId;

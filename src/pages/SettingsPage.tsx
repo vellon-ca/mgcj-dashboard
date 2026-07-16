@@ -5,15 +5,10 @@ import { logDispatchEvent } from "../lib/logDispatchEvent";
 interface Props {
   companyId: string;
   adminId: string;
+  isAdmin: boolean;
 }
 
-type Section = "pricing" | "vehicle_classes" | "support";
-
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: "pricing", label: "Pricing" },
-  { id: "vehicle_classes", label: "Vehicle Classes" },
-  { id: "support", label: "Support" },
-];
+type Section = "pricing" | "vehicle_classes" | "support" | "team";
 
 interface DispatchReport {
   id: string;
@@ -36,8 +31,26 @@ const REPORT_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
   REPORT_CATEGORIES.map(c => [c.id, c.label])
 );
 
-export default function SettingsPage({ companyId, adminId }: Props) {
-  const [section, setSection] = useState<Section>("pricing");
+interface StaffMember {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  role: "admin" | "dispatcher";
+  is_active: boolean;
+  created_at: string;
+}
+
+export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
+  const SECTIONS: { id: Section; label: string }[] = isAdmin
+    ? [
+        { id: "pricing", label: "Pricing" },
+        { id: "vehicle_classes", label: "Vehicle Classes" },
+        { id: "team", label: "Team" },
+        { id: "support", label: "Support" },
+      ]
+    : [{ id: "support", label: "Support" }];
+
+  const [section, setSection] = useState<Section>(isAdmin ? "pricing" : "support");
 
   // Pricing state
   const [baseFare, setBaseFare] = useState("");
@@ -75,9 +88,117 @@ export default function SettingsPage({ companyId, adminId }: Props) {
   const [reports, setReports] = useState<DispatchReport[]>([]);
   const [reportsLoading, setReportsLoading] = useState(true);
 
+  // Team state — admins manage dispatchers only; admin accounts are vendor-managed.
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staffLoading, setStaffLoading] = useState(true);
+  const [addingStaff, setAddingStaff] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [staffSaving, setStaffSaving] = useState(false);
+  const [staffError, setStaffError] = useState<string | null>(null);
+  const [staffBusyId, setStaffBusyId] = useState<string | null>(null);
+  // Dispatcher edit state
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [editStaffName, setEditStaffName] = useState('');
+  const [editStaffPhone, setEditStaffPhone] = useState('');
+  const [editStaffSaving, setEditStaffSaving] = useState(false);
+  const [editStaffError, setEditStaffError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchReports();
   }, [companyId]);
+
+  useEffect(() => {
+    if (isAdmin) fetchStaff();
+  }, [companyId, isAdmin]);
+
+  // background=true skips the loading flag so an optimistic patch isn't blanked
+  // out by a "Loading…" flash when we reconcile after a write.
+  async function fetchStaff(background = false) {
+    if (!background) setStaffLoading(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, name, phone, role, is_active, created_at")
+      .eq("company_id", companyId)
+      .in("role", ["admin", "dispatcher"])
+      .order("created_at");
+    setStaff((data ?? []) as StaffMember[]);
+    if (!background) setStaffLoading(false);
+  }
+
+  async function addStaff() {
+    setStaffError(null);
+    if (!newStaffName.trim()) { setStaffError("Name is required."); return; }
+    if (!newStaffPhone.trim()) { setStaffError("Phone number is required."); return; }
+    setStaffSaving(true);
+    const { data, error: err } = await supabase.functions.invoke("create-staff-account", {
+      body: { name: newStaffName.trim(), phone: newStaffPhone.trim() },
+    });
+    setStaffSaving(false);
+    if (err || data?.error) { setStaffError(data?.error ?? err?.message ?? "Failed to create account."); return; }
+    setAddingStaff(false);
+    setNewStaffName(''); setNewStaffPhone('');
+    fetchStaff(true);
+  }
+
+  function openEditStaff(member: StaffMember) {
+    setEditingStaffId(member.id);
+    setEditStaffName(member.name ?? '');
+    setEditStaffPhone(member.phone ?? '');
+    setEditStaffError(null);
+  }
+
+  async function saveStaffEdit() {
+    if (!editingStaffId) return;
+    setEditStaffError(null);
+    if (!editStaffName.trim()) { setEditStaffError("Name is required."); return; }
+    if (!editStaffPhone.trim()) { setEditStaffError("Phone number is required."); return; }
+    setEditStaffSaving(true);
+    const { data, error: err } = await supabase.functions.invoke("update-staff-account", {
+      body: { staff_id: editingStaffId, name: editStaffName.trim(), phone: editStaffPhone.trim() },
+    });
+    setEditStaffSaving(false);
+    if (err || data?.error) { setEditStaffError(data?.error ?? err?.message ?? "Failed to save changes."); return; }
+    // Optimistic local patch so the edited name/phone shows immediately.
+    const savedName = editStaffName.trim();
+    const savedPhone = editStaffPhone.trim();
+    setStaff(prev => prev.map(m => m.id === editingStaffId ? { ...m, name: savedName, phone: savedPhone } : m));
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "staff.updated",
+      details: { staff_id: editingStaffId, name: savedName },
+    });
+    setEditingStaffId(null);
+    fetchStaff(true);
+  }
+
+  async function toggleStaffActive(member: StaffMember) {
+    // Dispatchers only — admin rows are read-only in the UI and blocked by RLS.
+    setStaffBusyId(member.id);
+    const nextActive = !member.is_active;
+    const { data: updated, error: err } = await supabase
+      .from("profiles")
+      .update({ is_active: nextActive })
+      .eq("id", member.id)
+      .select("id, is_active");
+    setStaffBusyId(null);
+    if (err) { setStaffError(err.message); return; }
+    if (!updated?.length) {
+      setStaffError("No rows updated — you can only manage dispatchers at your own company.");
+      return;
+    }
+    // Optimistic local patch so the badge flips immediately (same as the driver
+    // list's patchDriverProfile), then reconcile with a background refetch.
+    setStaff(prev => prev.map(m => m.id === member.id ? { ...m, is_active: nextActive } : m));
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: nextActive ? "staff.reactivated" : "staff.deactivated",
+      details: { staff_id: member.id, name: member.name },
+    });
+    fetchStaff(true);
+  }
 
   async function fetchReports() {
     setReportsLoading(true);
@@ -344,6 +465,13 @@ export default function SettingsPage({ companyId, adminId }: Props) {
         .rp-msg { font-size: 13px; color: #E2E8F0; white-space: pre-wrap; }
         .rp-badge-open { background: rgba(74,158,255,0.1); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
         .rp-badge-resolved { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+        .tm-table { width: 100%; max-width: 620px; border-collapse: collapse; }
+        .tm-row { background: #1E2A3A; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .tm-row + .tm-row { margin-top: 6px; }
+        .tm-td { padding: 12px; font-size: 13px; color: #E2E8F0; vertical-align: middle; }
+        .tm-td.muted { color: #6B7280; font-size: 12px; }
+        .tm-badge-role { background: rgba(74,158,255,0.1); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
       `}</style>
 
       <div className="st-wrap">
@@ -555,6 +683,110 @@ export default function SettingsPage({ companyId, adminId }: Props) {
 
                   {error && <p className="st-error">{error}</p>}
                 </div>
+              )}
+            </>
+          )}
+
+          {section === "team" && (
+            <>
+              <div className="st-header">
+                <div>
+                  <div className="st-title">Team</div>
+                  <div className="st-subtitle">
+                    Add and manage dispatchers, who handle day-to-day ride ops. Admin accounts (pricing, discounts, staff) are managed by Vellon — contact us to add or change one.
+                  </div>
+                </div>
+              </div>
+
+              {staffLoading ? (
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+              ) : (
+                <table className="tm-table" style={{ marginBottom: 4 }}>
+                  <tbody>
+                    {staff.map(member => {
+                      const isAdminRow = member.role === "admin";
+                      const isEditing = editingStaffId === member.id;
+                      if (isEditing) {
+                        return (
+                          <tr key={member.id} className="tm-row">
+                            <td className="tm-td" colSpan={5}>
+                              <div className="vc-add-grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 10 }}>
+                                <div className="vc-add-field">
+                                  <div className="vc-add-label">Name</div>
+                                  <input className="vc-input" value={editStaffName} onChange={e => setEditStaffName(e.target.value)} autoFocus />
+                                </div>
+                                <div className="vc-add-field">
+                                  <div className="vc-add-label">Phone</div>
+                                  <input className="vc-input" value={editStaffPhone} onChange={e => setEditStaffPhone(e.target.value)} />
+                                </div>
+                              </div>
+                              {editStaffError && <div className="vc-error" style={{ marginBottom: 8 }}>{editStaffError}</div>}
+                              <div className="vc-add-actions">
+                                <button className="vc-add-cancel" onClick={() => { setEditingStaffId(null); setEditStaffError(null); }}>Cancel</button>
+                                <button className="vc-add-save" onClick={saveStaffEdit} disabled={editStaffSaving}>{editStaffSaving ? 'Saving…' : 'Save'}</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={member.id} className="tm-row">
+                          <td className="tm-td" style={{ minWidth: 140 }}>
+                            <strong>{member.name ?? "Unnamed"}</strong>
+                            {member.id === adminId && <span className="tm-td muted"> (you)</span>}
+                          </td>
+                          <td className="tm-td muted">{member.phone}</td>
+                          <td className="tm-td">
+                            <span className="tm-badge-role">{member.role}</span>
+                          </td>
+                          <td className="tm-td">
+                            <span className={member.is_active ? "vc-badge-active" : "vc-badge-inactive"}>
+                              {member.is_active ? "Active" : "Deactivated"}
+                            </span>
+                          </td>
+                          <td className="tm-td right" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {isAdminRow ? (
+                              <span className="tm-td muted" style={{ fontSize: 11 }}>Managed by Vellon</span>
+                            ) : (
+                              <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                                <button className="vc-btn" onClick={() => openEditStaff(member)}>Edit</button>
+                                <button
+                                  className="vc-btn"
+                                  onClick={() => toggleStaffActive(member)}
+                                  disabled={staffBusyId === member.id}
+                                >
+                                  {staffBusyId === member.id ? '…' : member.is_active ? 'Deactivate' : 'Reactivate'}
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+
+              {addingStaff ? (
+                <div className="vc-add-row">
+                  <div className="vc-add-field" style={{ marginBottom: 10 }}>
+                    <div className="vc-add-label">Name</div>
+                    <input className="vc-input" placeholder="Full name" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} autoFocus />
+                  </div>
+                  <div className="vc-add-field" style={{ marginBottom: 10 }}>
+                    <div className="vc-add-label">Phone</div>
+                    <input className="vc-input" placeholder="(902) 555-0100" value={newStaffPhone} onChange={e => setNewStaffPhone(e.target.value)} />
+                  </div>
+                  {staffError && <div className="vc-error">{staffError}</div>}
+                  <div className="vc-add-actions">
+                    <button className="vc-add-cancel" onClick={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffPhone(''); setStaffError(null); }}>Cancel</button>
+                    <button className="vc-add-save" onClick={addStaff} disabled={staffSaving}>{staffSaving ? 'Adding…' : 'Add dispatcher'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button className="vc-add-class-btn" onClick={() => setAddingStaff(true)}>
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add dispatcher
+                </button>
               )}
             </>
           )}
