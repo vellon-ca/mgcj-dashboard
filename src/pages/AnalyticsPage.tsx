@@ -2021,6 +2021,8 @@ export default function AnalyticsPage({
         .an-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .an-detail-label { font-size: 12px; color: #9CA3AF; font-weight: 500; }
         .an-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
+        .an-detail-row-warning { background: rgba(226,75,74,0.1); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
+        .an-detail-value-warning { color: #E24B4A; font-weight: 700; }
         .an-modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; width: 100%; margin-top: 16px; transition: background 0.12s; }
         .an-modal-close:hover { background: rgba(255,255,255,0.04); }
         .an-modal-section { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
@@ -3540,12 +3542,26 @@ export default function AnalyticsPage({
                     ]] as [string, string][])
                   : []),
               ] as [string, string][]
-            ).map(([label, value]) => (
-              <div key={label} className="an-detail-row">
-                <span className="an-detail-label">{label}</span>
-                <span className="an-detail-value">{value}</span>
-              </div>
-            ))}
+            ).map(([label, value]) => {
+              const isSettlementWarning =
+                label === "Settlement" &&
+                ["transfer_failed", "transfer_reversed", "reversal_failed", "retransfer_failed"].includes(
+                  rideDetail.ride.settlement_route ?? "",
+                );
+              return (
+                <div
+                  key={label}
+                  className={`an-detail-row${isSettlementWarning ? " an-detail-row-warning" : ""}`}
+                >
+                  <span className="an-detail-label">{label}</span>
+                  <span
+                    className={`an-detail-value${isSettlementWarning ? " an-detail-value-warning" : ""}`}
+                  >
+                    {value}
+                  </span>
+                </div>
+              );
+            })}
 
             {rideDetail.review && (
               <>

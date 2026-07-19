@@ -2599,6 +2599,8 @@ export default function DashboardPage({
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; font-family: system-ui, -apple-system, sans-serif; }
         .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; font-family: system-ui, -apple-system, sans-serif; }
+        .db-detail-row-warning { background: rgba(226,75,74,0.1); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
+        .db-detail-value-warning { color: #E24B4A; font-weight: 700; }
         .dd-panel { position: absolute; inset: 0; background: #111827; display: flex; flex-direction: column; overflow: hidden; }
         .dd-header { height: 48px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
         .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
@@ -4260,12 +4262,26 @@ export default function DashboardPage({
                         ]] as [string, string][])
                       : []),
                   ] as [string, string][]
-                ).map(([label, value]) => (
-                  <div key={label} className="db-detail-row">
-                    <span className="db-detail-label">{label}</span>
-                    <span className="db-detail-value">{value}</span>
-                  </div>
-                ))}
+                ).map(([label, value]) => {
+                  const isSettlementWarning =
+                    label === "Settlement" &&
+                    ["transfer_failed", "transfer_reversed", "reversal_failed", "retransfer_failed"].includes(
+                      rideDetail.settlement_route ?? "",
+                    );
+                  return (
+                    <div
+                      key={label}
+                      className={`db-detail-row${isSettlementWarning ? " db-detail-row-warning" : ""}`}
+                    >
+                      <span className="db-detail-label">{label}</span>
+                      <span
+                        className={`db-detail-value${isSettlementWarning ? " db-detail-value-warning" : ""}`}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  );
+                })}
                 <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
                   <button
                     className="db-modal-cancel-btn"
