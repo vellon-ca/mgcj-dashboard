@@ -43,6 +43,13 @@ const CANCEL_REASON_LABELS: Record<string, string> = {
   dispatch_cancelled: "Cancelled by dispatch",
 };
 
+const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
+  driver_transfer: "Paid directly to the driver",
+  company_transfer: "Routed to your company account",
+  platform_invoiced: "Held by Vellon — pending invoice",
+  transfer_failed: "Transfer failed — contact Vellon support",
+};
+
 function rideStatusColor(ride: { status: string }): string {
   return STATUS_COLORS[ride.status];
 }
@@ -4189,6 +4196,44 @@ export default function DashboardPage({
                         : "—",
                     ],
                     ["Payment", rideDetail.payment_method],
+                    ...(rideDetail.payment_method === "card" && rideDetail.settlement_route
+                      ? ([
+                          [
+                            "Vellon fee",
+                            rideDetail.fare_final != null &&
+                            rideDetail.platform_fee_percent_at_completion != null
+                              ? `$${(
+                                  rideDetail.fare_final *
+                                  (rideDetail.platform_fee_percent_at_completion / 100)
+                                ).toFixed(2)} (${rideDetail.platform_fee_percent_at_completion}%)`
+                              : "—",
+                          ],
+                          [
+                            "Card processing fee",
+                            rideDetail.stripe_fee != null
+                              ? `$${rideDetail.stripe_fee.toFixed(2)}`
+                              : "Pending",
+                          ],
+                          [
+                            "Net settled",
+                            rideDetail.fare_final != null &&
+                            rideDetail.platform_fee_percent_at_completion != null &&
+                            rideDetail.stripe_fee != null
+                              ? `$${(
+                                  rideDetail.fare_final -
+                                  rideDetail.fare_final *
+                                    (rideDetail.platform_fee_percent_at_completion / 100) -
+                                  rideDetail.stripe_fee
+                                ).toFixed(2)}`
+                              : "—",
+                          ],
+                          [
+                            "Settlement",
+                            SETTLEMENT_ROUTE_LABELS[rideDetail.settlement_route] ??
+                              rideDetail.settlement_route,
+                          ],
+                        ] as [string, string][])
+                      : []),
                     [
                       "Scheduled",
                       rideDetail.scheduled_at
