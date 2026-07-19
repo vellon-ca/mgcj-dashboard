@@ -386,6 +386,9 @@ const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
   company_transfer: "Routed to your company account",
   platform_invoiced: "Held by Vellon — pending invoice",
   transfer_failed: "Transfer failed — contact Vellon support",
+  transfer_reversed: "Payout reversed — charge was disputed",
+  reversal_failed: "Dispute reversal failed — contact Vellon support",
+  retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
 };
 
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
