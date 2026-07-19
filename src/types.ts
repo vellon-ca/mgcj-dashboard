@@ -58,6 +58,8 @@ export interface Ride {
   stripe_transfer_id: string | null;
   stripe_fee: number | null;
   platform_fee_percent_at_completion: number | null;
+  settlement_resolved_at: string | null;
+  settlement_resolved_by: string | null;
   passenger?: Profile;
   driver?: Driver & { profile?: Profile };
 }

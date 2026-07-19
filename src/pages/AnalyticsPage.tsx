@@ -83,6 +83,14 @@ interface RideDetailModal {
   ride: RideRow;
   review: ReviewRow | null;
 }
+interface NeedsAttentionRow {
+  id: string;
+  completed_at: string | null;
+  created_at: string;
+  fare_final: number | null;
+  driver_name: string;
+  settlement_route: string;
+}
 interface EventRow {
   id: string;
   created_at: string;
@@ -347,15 +355,36 @@ function formatEventDetails(type: string, details: any): string {
   }
 }
 
-type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "receipts";
+type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "receipts" | "settlements";
 const SECTION_ITEMS: { id: Section; label: string }[] = [
   { id: "revenue", label: "Revenue" },
   { id: "rides", label: "Ride History" },
+  { id: "settlements", label: "Settlements" },
   { id: "reviews", label: "Reviews" },
   { id: "drivers", label: "Drivers" },
   { id: "activity", label: "Activity Log" },
   { id: "receipts", label: "Receipts" },
 ];
+
+// Needs a human to manually move money -- the only settlement_route values
+// that ever warrant a "Mark resolved" action. transfer_reversed (dispute
+// open or lost) is deliberately excluded: an open dispute resolves itself
+// automatically via the stripe-webhook dispute.closed handler, and a LOST
+// dispute's reversal is the correct final state -- nothing for dispatch to
+// collect or send either way, it's Vellon's own P&L exposure, not theirs.
+const SETTLEMENT_ACTIONABLE_ROUTES = [
+  "platform_invoiced",
+  "transfer_failed",
+  "reversal_failed",
+  "retransfer_failed",
+] as const;
+
+const SETTLEMENT_ACTION_HINTS: Record<string, string> = {
+  platform_invoiced: "No driver/company Connect account was available at capture -- funds are sitting on Vellon's balance. Coordinate with Vellon to collect this amount, then pay the driver directly.",
+  transfer_failed: "The automatic payout to the driver/company never went through. Pay them manually, then mark this resolved.",
+  reversal_failed: "A dispute was opened but Vellon couldn't claw the payout back from the driver/company's account (commonly: already paid out to their bank). Collect this amount from them directly, then mark resolved.",
+  retransfer_failed: "Vellon won this ride's dispute, but re-sending the driver/company's share failed. Pay them manually, then mark this resolved.",
+};
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
   assigned: "#4a9eff",
@@ -389,6 +418,7 @@ const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
   transfer_reversed: "Payout reversed — charge was disputed",
   reversal_failed: "Dispute reversal failed — contact Vellon support",
   retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
+  unsettled: "Not yet settled — capture still pending",
 };
 
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
@@ -568,10 +598,25 @@ export default function AnalyticsPage({
   const [dayStats, setDayStats] = useState<DayStat[]>([]);
   const [peakLoading, setPeakLoading] = useState(true);
 
+  // Settlements
+  const [settlementRollup, setSettlementRollup] = useState<
+    { settlement_route: string; rides_count: number; total_fares: number }[]
+  >([]);
+  const [settlementRollupLoading, setSettlementRollupLoading] = useState(true);
+  const [needsAttention, setNeedsAttention] = useState<NeedsAttentionRow[]>([]);
+  const [needsAttentionLoading, setNeedsAttentionLoading] = useState(true);
+  const [resolvingRideId, setResolvingRideId] = useState<string | null>(null);
+
   const revenueFetchId = useRef(0);
   const historyFetchId = useRef(0);
   const reviewsFetchId = useRef(0);
   const peakFetchId = useRef(0);
+  const settlementFetchId = useRef(0);
+  // scheduleRidesRefresh below only re-subscribes on companyId change, so it
+  // would otherwise close over a stale `section` from mount -- same fix
+  // pattern as fetchActivityLogRef further down.
+  const sectionRef = useRef(section);
+  useEffect(() => { sectionRef.current = section; }, [section]);
 
   useEffect(() => {
     fetchRevenue();
@@ -592,6 +637,14 @@ export default function AnalyticsPage({
   }, [section]);
 
   useEffect(() => {
+    if (section === "settlements") fetchSettlementRollup();
+  }, [section, period]);
+
+  useEffect(() => {
+    if (section === "settlements") fetchNeedsAttention();
+  }, [section]);
+
+  useEffect(() => {
     if (!companyId) return;
 
     function scheduleRidesRefresh() {
@@ -600,6 +653,10 @@ export default function AnalyticsPage({
         fetchRevenue(true);
         fetchRideHistory(true);
         fetchPeak(true);
+        if (sectionRef.current === "settlements") {
+          fetchSettlementRollup(true);
+          fetchNeedsAttention(true);
+        }
       }, 1200);
     }
 
@@ -917,6 +974,118 @@ export default function AnalyticsPage({
       console.error(e);
     } finally {
       if (fetchId === historyFetchId.current) setRidesLoading(false);
+    }
+  }
+
+  // ── Settlements ──────────────────────────────────────────────────────
+  async function fetchSettlementRollup(silent = false) {
+    const fetchId = ++settlementFetchId.current;
+    if (!silent) setSettlementRollupLoading(true);
+    try {
+      const now = new Date();
+      let startDate: Date;
+      if (period === "today")
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      else if (period === "week")
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === "month")
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      else startDate = new Date(now.getFullYear(), 0, 1);
+
+      const { data, error } = await supabase.rpc("company_settlement_rollup", {
+        p_from: startDate.toISOString(),
+        p_to: now.toISOString(),
+      });
+      if (fetchId !== settlementFetchId.current) return;
+      if (error) {
+        console.error("[fetchSettlementRollup]", error.message);
+        setSettlementRollup([]);
+      } else {
+        setSettlementRollup(data ?? []);
+      }
+    } finally {
+      if (fetchId === settlementFetchId.current) setSettlementRollupLoading(false);
+    }
+  }
+
+  // Deliberately NOT period-scoped -- these are outstanding todos, not
+  // historical stats. A platform_invoiced ride from 3 months ago that never
+  // got manually paid out shouldn't disappear because "this month" is selected.
+  async function fetchNeedsAttention(silent = false) {
+    if (!silent) setNeedsAttentionLoading(true);
+    try {
+      const { data: rides } = await supabase
+        .from("rides")
+        .select("id, completed_at, created_at, fare_final, driver_id, settlement_route")
+        .eq("company_id", companyId)
+        .eq("payment_method", "card")
+        .in("settlement_route", SETTLEMENT_ACTIONABLE_ROUTES as unknown as string[])
+        .is("settlement_resolved_at", null)
+        .order("completed_at", { ascending: true });
+
+      if (!rides) {
+        setNeedsAttention([]);
+        return;
+      }
+
+      const driverIds = rides.map((r: any) => r.driver_id).filter(Boolean);
+      const profileMap = await batchProfiles(driverIds);
+
+      setNeedsAttention(
+        rides.map((r: any) => ({
+          id: r.id,
+          completed_at: r.completed_at,
+          created_at: r.created_at,
+          fare_final: r.fare_final,
+          driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
+          settlement_route: r.settlement_route,
+        })),
+      );
+    } finally {
+      setNeedsAttentionLoading(false);
+    }
+  }
+
+  async function resolveSettlement(row: NeedsAttentionRow) {
+    setResolvingRideId(row.id);
+    try {
+      // .select() is required here, not cosmetic -- a Supabase update that
+      // matches zero rows under RLS returns success with an empty result,
+      // not an error. Without this we'd log a "resolved" audit event and
+      // optimistically clear the row for a write that never actually
+      // happened, and it would silently reappear on the next fetch.
+      const { data, error } = await supabase
+        .from("rides")
+        .update({
+          settlement_resolved_at: new Date().toISOString(),
+          settlement_resolved_by: dispatcherId,
+        })
+        .eq("id", row.id)
+        .select("id");
+
+      if (error) {
+        console.error("[resolveSettlement]", error.message);
+        return;
+      }
+      if (!data || data.length === 0) {
+        console.error("[resolveSettlement] update matched no rows (RLS or already resolved) for ride", row.id);
+        return;
+      }
+
+      await logDispatchEvent({
+        companyId,
+        dispatcherId,
+        eventType: "settlement.resolved",
+        rideId: row.id,
+        details: {
+          settlement_route: row.settlement_route,
+          fare_final: row.fare_final,
+        },
+      });
+
+      setNeedsAttention((prev) => prev.filter((r) => r.id !== row.id));
+    } finally {
+      setResolvingRideId(null);
     }
   }
 
@@ -2791,6 +2960,139 @@ export default function AnalyticsPage({
                     })
                   )}
                 </>
+              )}
+            </>
+          )}
+
+          {/* ── SETTLEMENTS ── */}
+          {section === "settlements" && (
+            <>
+              <div className="an-section-header">
+                <div className="an-section-title">Settlement Rollup</div>
+                <div className="an-controls">
+                  <div className="an-period-btns">
+                    {(["today", "week", "month", "year"] as const).map((p) => (
+                      <button
+                        key={p}
+                        className={`an-period-btn${period === p ? " active" : ""}`}
+                        onClick={() => setPeriod(p)}
+                      >
+                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {settlementRollupLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : settlementRollup.length === 0 ? (
+                <div className="an-no-data">No card settlements for this period</div>
+              ) : (
+                <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
+                  <table className="an-table">
+                    <thead>
+                      <tr>
+                        {["Settlement route", "Rides", "Total fares"].map((h) => (
+                          <th key={h} className="an-th" style={{ padding: "12px 14px" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settlementRollup.map((row, i) => {
+                        const isProblem = (
+                          SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
+                        ).includes(row.settlement_route);
+                        return (
+                          <tr
+                            key={row.settlement_route}
+                            style={{
+                              background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                            }}
+                          >
+                            <td
+                              className="an-td primary"
+                              style={isProblem ? { color: "#E24B4A", fontWeight: 700 } : {}}
+                            >
+                              {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
+                            </td>
+                            <td className="an-td">{row.rides_count}</td>
+                            <td className="an-td green">${row.total_fares.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="an-section-header" style={{ marginTop: 28 }}>
+                <div className="an-section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  Needs Attention
+                  {needsAttention.length > 0 && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#E24B4A",
+                        background: "rgba(226,75,74,0.12)",
+                        borderRadius: 999,
+                        padding: "2px 9px",
+                      }}
+                    >
+                      {needsAttention.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {needsAttentionLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : needsAttention.length === 0 ? (
+                <div className="an-no-data">Nothing needs attention — all settlements resolved</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {needsAttention.map((row) => (
+                    <div
+                      key={row.id}
+                      style={{
+                        background: "rgba(226,75,74,0.08)",
+                        border: "1px solid rgba(226,75,74,0.25)",
+                        borderRadius: 10,
+                        padding: 14,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 12,
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#E24B4A" }}>
+                            {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>
+                            {row.driver_name} · ${row.fare_final?.toFixed(2) ?? "—"} ·{" "}
+                            {new Date(row.completed_at ?? row.created_at).toLocaleDateString("en-CA")}
+                          </div>
+                          <div style={{ fontSize: 12, color: "#D1D5DB", marginTop: 6, maxWidth: 520 }}>
+                            {SETTLEMENT_ACTION_HINTS[row.settlement_route] ?? ""}
+                          </div>
+                        </div>
+                        <button
+                          className="an-download-btn"
+                          disabled={resolvingRideId === row.id}
+                          onClick={() => resolveSettlement(row)}
+                        >
+                          {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </>
           )}

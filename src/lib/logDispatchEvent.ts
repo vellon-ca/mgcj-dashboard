@@ -34,7 +34,8 @@ export type DispatchEventType =
   | "staff.created"
   | "staff.updated"
   | "staff.deactivated"
-  | "staff.reactivated";
+  | "staff.reactivated"
+  | "settlement.resolved";
 
 export async function logDispatchEvent(params: {
   companyId: string;
