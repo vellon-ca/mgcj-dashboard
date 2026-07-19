@@ -8,7 +8,7 @@ This is the React / Vite / TypeScript web dispatch dashboard for the M&G C&J tax
 
 ## Repo-Specific Stack Details
 
-- Deployed at: `mgcj-dashboard.vercel.app`
+- Deployed at: `vellon-dispatch.vercel.app`
 - Hosting: Vercel, auto-deploy on push to `main` (the repo has no other branches and no CI config — no GitHub Actions, no `vercel.json`).
 - Env vars / secrets managed: locally via a gitignored `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_KEY`), read through `import.meta.env` in `src/lib/supabase.ts` and `src/pages/DashboardPage.tsx`. Where the production values live (presumably Vercel project settings) isn't configured anywhere in this repo — can't confirm from the code alone.
 
