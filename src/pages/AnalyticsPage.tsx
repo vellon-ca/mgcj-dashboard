@@ -83,13 +83,15 @@ interface RideDetailModal {
   ride: RideRow;
   review: ReviewRow | null;
 }
-interface NeedsAttentionRow {
+interface SettlementRideRow {
   id: string;
   completed_at: string | null;
   created_at: string;
   fare_final: number | null;
   driver_name: string;
   settlement_route: string;
+  settlement_resolved_at: string | null;
+  stripe_dispute_id: string | null;
 }
 interface EventRow {
   id: string;
@@ -603,7 +605,14 @@ export default function AnalyticsPage({
     { settlement_route: string; rides_count: number; total_fares: number }[]
   >([]);
   const [settlementRollupLoading, setSettlementRollupLoading] = useState(true);
-  const [needsAttention, setNeedsAttention] = useState<NeedsAttentionRow[]>([]);
+  // Per-ride drilldown for the rollup -- period-scoped, covers EVERY
+  // settlement_route (not just the actionable ones), so dispatch can see
+  // exactly which ride/driver/amount makes up any bucket, including the
+  // ones that already settled fine.
+  const [settlementRides, setSettlementRides] = useState<SettlementRideRow[]>([]);
+  const [settlementRidesLoading, setSettlementRidesLoading] = useState(true);
+  const [settlementRouteFilter, setSettlementRouteFilter] = useState<string>("all");
+  const [needsAttention, setNeedsAttention] = useState<SettlementRideRow[]>([]);
   const [needsAttentionLoading, setNeedsAttentionLoading] = useState(true);
   const [resolvingRideId, setResolvingRideId] = useState<string | null>(null);
 
@@ -637,7 +646,10 @@ export default function AnalyticsPage({
   }, [section]);
 
   useEffect(() => {
-    if (section === "settlements") fetchSettlementRollup();
+    if (section === "settlements") {
+      fetchSettlementRollup();
+      fetchSettlementRides();
+    }
   }, [section, period]);
 
   useEffect(() => {
@@ -655,6 +667,7 @@ export default function AnalyticsPage({
         fetchPeak(true);
         if (sectionRef.current === "settlements") {
           fetchSettlementRollup(true);
+          fetchSettlementRides(true);
           fetchNeedsAttention(true);
         }
       }, 1200);
@@ -1014,14 +1027,16 @@ export default function AnalyticsPage({
   async function fetchNeedsAttention(silent = false) {
     if (!silent) setNeedsAttentionLoading(true);
     try {
-      const { data: rides } = await supabase
+      const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, completed_at, created_at, fare_final, driver_id, settlement_route")
+        .select("id, completed_at, created_at, fare_final, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .in("settlement_route", SETTLEMENT_ACTIONABLE_ROUTES as unknown as string[])
         .is("settlement_resolved_at", null)
         .order("completed_at", { ascending: true });
+
+      if (error) console.error("[fetchNeedsAttention]", error.message);
 
       if (!rides) {
         setNeedsAttention([]);
@@ -1039,6 +1054,8 @@ export default function AnalyticsPage({
           fare_final: r.fare_final,
           driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
           settlement_route: r.settlement_route,
+          settlement_resolved_at: r.settlement_resolved_at,
+          stripe_dispute_id: r.stripe_dispute_id,
         })),
       );
     } finally {
@@ -1046,7 +1063,61 @@ export default function AnalyticsPage({
     }
   }
 
-  async function resolveSettlement(row: NeedsAttentionRow) {
+  // Period-scoped drilldown -- EVERY card ride that has a settlement_route
+  // (any state, not just the actionable ones), so the rollup tiles above
+  // can be traced back to specific rides/drivers/amounts.
+  async function fetchSettlementRides(silent = false) {
+    if (!silent) setSettlementRidesLoading(true);
+    try {
+      const now = new Date();
+      let startDate: Date;
+      if (period === "today")
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      else if (period === "week")
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === "month")
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      else startDate = new Date(now.getFullYear(), 0, 1);
+
+      const { data: rides, error } = await supabase
+        .from("rides")
+        .select("id, completed_at, created_at, fare_final, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
+        .eq("company_id", companyId)
+        .eq("payment_method", "card")
+        .eq("status", "completed")
+        .not("settlement_route", "is", null)
+        .gte("completed_at", startDate.toISOString())
+        .lt("completed_at", now.toISOString())
+        .order("completed_at", { ascending: false });
+
+      if (error) console.error("[fetchSettlementRides]", error.message);
+
+      if (!rides) {
+        setSettlementRides([]);
+        return;
+      }
+
+      const driverIds = rides.map((r: any) => r.driver_id).filter(Boolean);
+      const profileMap = await batchProfiles(driverIds);
+
+      setSettlementRides(
+        rides.map((r: any) => ({
+          id: r.id,
+          completed_at: r.completed_at,
+          created_at: r.created_at,
+          fare_final: r.fare_final,
+          driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
+          settlement_route: r.settlement_route,
+          settlement_resolved_at: r.settlement_resolved_at,
+          stripe_dispute_id: r.stripe_dispute_id,
+        })),
+      );
+    } finally {
+      setSettlementRidesLoading(false);
+    }
+  }
+
+  async function resolveSettlement(row: SettlementRideRow) {
     setResolvingRideId(row.id);
     try {
       // .select() is required here, not cosmetic -- a Supabase update that
@@ -1083,7 +1154,11 @@ export default function AnalyticsPage({
         },
       });
 
+      const resolvedAt = new Date().toISOString();
       setNeedsAttention((prev) => prev.filter((r) => r.id !== row.id));
+      setSettlementRides((prev) =>
+        prev.map((r) => (r.id === row.id ? { ...r, settlement_resolved_at: resolvedAt } : r)),
+      );
     } finally {
       setResolvingRideId(null);
     }
@@ -3007,9 +3082,17 @@ export default function AnalyticsPage({
                         return (
                           <tr
                             key={row.settlement_route}
+                            onClick={() => setSettlementRouteFilter(row.settlement_route)}
                             style={{
-                              background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                              background:
+                                settlementRouteFilter === row.settlement_route
+                                  ? "rgba(29,158,117,0.06)"
+                                  : i % 2 === 0
+                                    ? "transparent"
+                                    : "rgba(255,255,255,0.015)",
+                              cursor: "pointer",
                             }}
+                            title="Click to filter the ride list below"
                           >
                             <td
                               className="an-td primary"
@@ -3025,6 +3108,102 @@ export default function AnalyticsPage({
                     </tbody>
                   </table>
                 </div>
+              )}
+
+              {/* Per-ride drilldown -- click a rollup row above to filter,
+                  or use "All" to see everything for the selected period.
+                  Answers "which ride/driver/amount makes up this bucket." */}
+              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                {["all", ...settlementRollup.map((r) => r.settlement_route)].map((route) => (
+                  <button
+                    key={route}
+                    className={`an-period-btn${settlementRouteFilter === route ? " active" : ""}`}
+                    onClick={() => setSettlementRouteFilter(route)}
+                  >
+                    {route === "all" ? "All" : SETTLEMENT_ROUTE_LABELS[route] ?? route}
+                  </button>
+                ))}
+              </div>
+              {settlementRidesLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : (
+                (() => {
+                  const filtered =
+                    settlementRouteFilter === "all"
+                      ? settlementRides
+                      : settlementRides.filter((r) => r.settlement_route === settlementRouteFilter);
+                  return filtered.length === 0 ? (
+                    <div className="an-no-data">No rides match this filter for the selected period</div>
+                  ) : (
+                    <div
+                      className="an-chart-card"
+                      style={{ padding: 0, overflow: "hidden", marginTop: 10 }}
+                    >
+                      <table className="an-table">
+                        <thead>
+                          <tr>
+                            {["Date", "Driver", "Fare", "Settlement", "Status"].map((h) => (
+                              <th key={h} className="an-th" style={{ padding: "12px 14px" }}>
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((row, i) => {
+                            const isProblem = (
+                              SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
+                            ).includes(row.settlement_route);
+                            return (
+                              <tr
+                                key={row.id}
+                                style={{
+                                  background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                                }}
+                              >
+                                <td className="an-td" style={{ whiteSpace: "nowrap" }}>
+                                  {new Date(row.completed_at ?? row.created_at).toLocaleDateString("en-CA")}
+                                </td>
+                                <td className="an-td primary">{row.driver_name}</td>
+                                <td className="an-td">
+                                  {row.fare_final != null ? `$${row.fare_final.toFixed(2)}` : "—"}
+                                </td>
+                                <td
+                                  className="an-td"
+                                  style={isProblem ? { color: "#E24B4A", fontWeight: 600 } : {}}
+                                >
+                                  {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
+                                  {row.stripe_dispute_id && (
+                                    <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
+                                      Dispute: {row.stripe_dispute_id}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="an-td">
+                                  {!isProblem ? (
+                                    <span style={{ fontSize: 12, color: "#6B7280" }}>—</span>
+                                  ) : row.settlement_resolved_at ? (
+                                    <span style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
+                                      ✓ Resolved
+                                    </span>
+                                  ) : (
+                                    <button
+                                      className="an-download-btn"
+                                      disabled={resolvingRideId === row.id}
+                                      onClick={() => resolveSettlement(row)}
+                                    >
+                                      {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()
               )}
 
               <div className="an-section-header" style={{ marginTop: 28 }}>
@@ -3077,6 +3256,10 @@ export default function AnalyticsPage({
                           <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>
                             {row.driver_name} · ${row.fare_final?.toFixed(2) ?? "—"} ·{" "}
                             {new Date(row.completed_at ?? row.created_at).toLocaleDateString("en-CA")}
+                            {row.stripe_dispute_id && ` · Dispute: ${row.stripe_dispute_id}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2, fontFamily: "monospace" }}>
+                            Ride {row.id}
                           </div>
                           <div style={{ fontSize: 12, color: "#D1D5DB", marginTop: 6, maxWidth: 520 }}>
                             {SETTLEMENT_ACTION_HINTS[row.settlement_route] ?? ""}
