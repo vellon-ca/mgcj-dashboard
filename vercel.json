@@ -1,4 +1,11 @@
 {
+  "redirects": [
+    {
+      "source": "/stripe-connect-return",
+      "destination": "mgcjapp://stripe-connect-return",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
