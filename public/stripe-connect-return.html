@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vellon &mdash; Returning to App</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, Helvetica, Arial, sans-serif;
+      background: #111827;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      max-width: 360px;
+      text-align: center;
+      padding: 32px;
+    }
+    .label {
+      font-size: 13px;
+      color: #6B7280;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 28px;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto 20px;
+      border-radius: 50%;
+      border: 3px solid #374151;
+      border-top-color: #1D9E75;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .message {
+      font-size: 16px;
+      line-height: 1.5;
+      color: #D1D5DB;
+    }
+    .fallback {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      background: #1D9E75;
+      color: white;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <p class="label">Vellon</p>
+    <div class="spinner"></div>
+    <p class="message">Returning you to the app&hellip;</p>
+    <a class="fallback" id="fallback-link" href="mgcjapp://stripe-connect-return">
+      Tap here if you're not redirected
+    </a>
+  </div>
+
+  <script>
+    // Only job of this page: forward Stripe's https-only return_url/refresh_url
+    // into the app's custom scheme so the in-app browser session (opened via
+    // expo-web-browser's openAuthSessionAsync) detects the matching redirect
+    // and auto-closes. The manual link above is a fallback for browsers that
+    // block an automatic custom-scheme navigation without a user gesture.
+    window.location.replace("mgcjapp://stripe-connect-return");
+  </script>
+</body>
+</html>
