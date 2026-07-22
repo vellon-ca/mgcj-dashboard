@@ -49,8 +49,16 @@ const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
   platform_invoiced: "Held by Vellon — pending invoice",
   transfer_failed: "Transfer failed — contact Vellon support",
   transfer_reversed: "Payout reversed — charge was disputed",
-  reversal_failed: "Dispute reversal failed — contact Vellon support",
+  refund_reversed: "Payout reversed — ride was refunded",
+  refund_review: "Refunded — payout under review by Vellon",
+  reversal_failed: "Payout reversal failed — contact Vellon support",
   retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
+};
+
+const REFUND_REASON_LABELS: Record<string, string> = {
+  driver_fault: "driver/company at fault",
+  platform_mistake: "platform mistake — Vellon absorbed",
+  goodwill: "goodwill — Vellon absorbed",
 };
 
 function rideStatusColor(ride: { status: string }): string {
@@ -2444,6 +2452,11 @@ export default function DashboardPage({
         .db-nav-label { font-size: 13px; font-weight: 500; color: #6B7280; transition: color 0.12s; }
         .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: #E8500A; }
         .db-nav-bottom { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); width: 100%; display: flex; flex-direction: column; }
+        .db-nav-profile { display: flex; align-items: center; gap: 11px; width: 100%; height: 48px; padding: 0 19px; margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+        .db-nav-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(232,80,10,0.15); color: #E8500A; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .db-nav-profile-info { display: flex; flex-direction: column; overflow: hidden; }
+        .db-nav-profile-name { font-size: 13px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-nav-profile-role { font-size: 10px; color: #6B7280; text-transform: capitalize; }
         .db-nav-utility { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
         .db-nav-utility:hover { background: rgba(255,255,255,0.05); }
         .db-nav-utility .db-nav-icon { color: #6B7280; }
@@ -2737,6 +2750,19 @@ export default function DashboardPage({
             </button>
           </div>
           <div className="db-nav-bottom">
+            <div className="db-nav-profile" title={profile.name ?? "Dispatcher"}>
+              <span className="db-nav-avatar">
+                {(profile.name ?? "?").trim().charAt(0).toUpperCase()}
+              </span>
+              {navExpanded && (
+                <span className="db-nav-profile-info">
+                  <span className="db-nav-profile-name">
+                    {profile.name ?? "Dispatcher"}
+                  </span>
+                  <span className="db-nav-profile-role">{profile.role}</span>
+                </span>
+              )}
+            </div>
             <button
               className={`db-nav-utility db-nav-analytics${showAnalytics ? " active-util" : ""}`}
               onClick={() => {
@@ -4237,6 +4263,27 @@ export default function DashboardPage({
                             SETTLEMENT_ROUTE_LABELS[rideDetail.settlement_route] ??
                               rideDetail.settlement_route,
                           ],
+                          ...(rideDetail.refunded_amount_cents &&
+                          rideDetail.refunded_amount_cents > 0
+                            ? ([
+                                [
+                                  "Refunded to passenger",
+                                  `$${(rideDetail.refunded_amount_cents / 100).toFixed(2)}` +
+                                    (rideDetail.refund_reason
+                                      ? ` (${REFUND_REASON_LABELS[rideDetail.refund_reason] ?? rideDetail.refund_reason})`
+                                      : ""),
+                                ],
+                                ...(rideDetail.transfer_reversed_cents &&
+                                rideDetail.transfer_reversed_cents > 0
+                                  ? ([
+                                      [
+                                        "Clawed back from payout",
+                                        `$${(rideDetail.transfer_reversed_cents / 100).toFixed(2)}`,
+                                      ],
+                                    ] as [string, string][])
+                                  : []),
+                              ] as [string, string][])
+                            : []),
                         ] as [string, string][])
                       : []),
                     [
@@ -4265,7 +4312,7 @@ export default function DashboardPage({
                 ).map(([label, value]) => {
                   const isSettlementWarning =
                     label === "Settlement" &&
-                    ["transfer_failed", "transfer_reversed", "reversal_failed", "retransfer_failed"].includes(
+                    ["transfer_failed", "transfer_reversed", "refund_reversed", "refund_review", "reversal_failed", "retransfer_failed"].includes(
                       rideDetail.settlement_route ?? "",
                     );
                   return (

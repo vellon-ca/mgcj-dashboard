@@ -60,6 +60,11 @@ export interface Ride {
   platform_fee_percent_at_completion: number | null;
   settlement_resolved_at: string | null;
   settlement_resolved_by: string | null;
+  refunded_amount_cents: number | null;
+  transfer_reversed_cents: number | null;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  refund_absorbed_by: string | null;
   passenger?: Profile;
   driver?: Driver & { profile?: Profile };
 }

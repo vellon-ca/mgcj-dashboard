@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   AreaChart, Area, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -60,6 +60,9 @@ interface RideRow {
   settlement_route: string | null;
   stripe_fee: number | null;
   platform_fee_percent_at_completion: number | null;
+  refunded_amount_cents: number | null;
+  transfer_reversed_cents: number | null;
+  refund_reason: string | null;
 }
 interface ReviewRow {
   id: string;
@@ -384,7 +387,7 @@ const SETTLEMENT_ACTIONABLE_ROUTES = [
 const SETTLEMENT_ACTION_HINTS: Record<string, string> = {
   platform_invoiced: "No driver/company Connect account was available at capture -- funds are sitting on Vellon's balance. Coordinate with Vellon to collect this amount, then pay the driver directly.",
   transfer_failed: "The automatic payout to the driver/company never went through. Pay them manually, then mark this resolved.",
-  reversal_failed: "A dispute was opened but Vellon couldn't claw the payout back from the driver/company's account (commonly: already paid out to their bank). Collect this amount from them directly, then mark resolved.",
+  reversal_failed: "A refund or dispute pulled the fare back, but Vellon couldn't claw the payout back from the driver/company's account (commonly: already paid out to their bank). Collect this amount from them directly, then mark resolved.",
   retransfer_failed: "Vellon won this ride's dispute, but re-sending the driver/company's share failed. Pay them manually, then mark this resolved.",
 };
 const STATUS_COLORS: Record<string, string> = {
@@ -418,10 +421,77 @@ const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
   platform_invoiced: "Held by Vellon — pending invoice",
   transfer_failed: "Transfer failed — contact Vellon support",
   transfer_reversed: "Payout reversed — charge was disputed",
-  reversal_failed: "Dispute reversal failed — contact Vellon support",
+  refund_reversed: "Payout reversed — ride was refunded",
+  refund_review: "Refunded — payout under review by Vellon",
+  reversal_failed: "Payout reversal failed — contact Vellon support",
   retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
   unsettled: "Not yet settled — capture still pending",
 };
+
+const REFUND_REASON_LABELS: Record<string, string> = {
+  driver_fault: "driver/company at fault",
+  platform_mistake: "platform mistake — Vellon absorbed",
+  goodwill: "goodwill — Vellon absorbed",
+};
+
+// Terse labels for the dispatch-internal settlement tables/chips. The long
+// SETTLEMENT_ROUTE_LABELS copy above reads as a sentence, which is right for
+// a single ride-detail row or a printed receipt but unreadable as a table
+// cell or a filter chip repeated eight times down a column.
+const SETTLEMENT_ROUTE_SHORT: Record<string, string> = {
+  driver_transfer: "Driver paid",
+  company_transfer: "Company paid",
+  platform_invoiced: "Held by Vellon",
+  transfer_failed: "Transfer failed",
+  transfer_reversed: "Reversed (dispute)",
+  refund_reversed: "Reversed (refund)",
+  refund_review: "Refund — under review",
+  reversal_failed: "Reversal failed",
+  retransfer_failed: "Re-payout failed",
+  unsettled: "Unsettled",
+};
+
+const SETTLEMENT_ROUTE_COLORS: Record<string, string> = {
+  driver_transfer: "#1D9E75",
+  company_transfer: "#4a9eff",
+  platform_invoiced: "#F59E0B",
+  transfer_reversed: "#A855F7",
+  refund_reversed: "#A855F7",
+  refund_review: "#F59E0B",
+  transfer_failed: "#E24B4A",
+  reversal_failed: "#E24B4A",
+  retransfer_failed: "#E24B4A",
+  unsettled: "#6B7280",
+};
+const settlementColor = (route: string) => SETTLEMENT_ROUTE_COLORS[route] ?? "#6B7280";
+
+// The four actionable routes are NOT the same kind of todo -- two are money
+// dispatch has to collect, two are money they have to send. Summing them into
+// one "$ outstanding" figure would net a receivable against a payable and
+// show a number that means nothing, so the Needs Attention header splits them.
+// Caveat on reversal_failed: it doesn't record which route the ride settled
+// through originally, so "collect" is only strictly right when the money went
+// to the driver (driver_transfer). If it had gone to the company's own Connect
+// account, that money is owed *by* the company, not to it. Wording is kept
+// direction-neutral ("needs collection") rather than claiming who owes whom.
+const SETTLEMENT_DIRECTION: Record<string, "collect" | "payout"> = {
+  platform_invoiced: "collect",
+  reversal_failed: "collect",
+  transfer_failed: "payout",
+  retransfer_failed: "payout",
+};
+
+// Groupings for the period rollup tiles. Note these are gross fares by route
+// over the selected period, INCLUDING rides already marked resolved -- the
+// rollup answers "where did the card money go", not "what's outstanding".
+// Anything outstanding comes from the all-time needsAttention list instead.
+const ROLLUP_SETTLED_ROUTES = ["driver_transfer", "company_transfer"];
+const ROLLUP_PROBLEM_ROUTES = [
+  "transfer_failed",
+  "transfer_reversed",
+  "reversal_failed",
+  "retransfer_failed",
+];
 
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
 const APPROVAL_BLOCK = `
@@ -612,6 +682,7 @@ export default function AnalyticsPage({
   const [settlementRides, setSettlementRides] = useState<SettlementRideRow[]>([]);
   const [settlementRidesLoading, setSettlementRidesLoading] = useState(true);
   const [settlementRouteFilter, setSettlementRouteFilter] = useState<string>("all");
+  const [settlementStateFilter, setSettlementStateFilter] = useState<"all" | "open" | "resolved">("all");
   const [needsAttention, setNeedsAttention] = useState<SettlementRideRow[]>([]);
   const [needsAttentionLoading, setNeedsAttentionLoading] = useState(true);
   const [resolvingRideId, setResolvingRideId] = useState<string | null>(null);
@@ -650,11 +721,23 @@ export default function AnalyticsPage({
       fetchSettlementRollup();
       fetchSettlementRides();
     }
-  }, [section, period]);
+  }, [section, period, companyId]);
 
   useEffect(() => {
     if (section === "settlements") fetchNeedsAttention();
-  }, [section]);
+  }, [section, companyId]);
+
+  // A route filter picked under one period is often meaningless under the
+  // next (e.g. "Transfer failed" exists this year but not today), which would
+  // otherwise strand the drilldown on an empty list with no chip highlighted
+  // and no obvious way back. Drop back to "All" whenever the selected route
+  // isn't present in the freshly-loaded rollup.
+  useEffect(() => {
+    if (settlementRouteFilter === "all" || settlementRollupLoading) return;
+    if (!settlementRollup.some((r) => r.settlement_route === settlementRouteFilter)) {
+      setSettlementRouteFilter("all");
+    }
+  }, [settlementRollup, settlementRollupLoading]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -980,6 +1063,9 @@ export default function AnalyticsPage({
         settlement_route: r.settlement_route ?? null,
         stripe_fee: r.stripe_fee ?? null,
         platform_fee_percent_at_completion: r.platform_fee_percent_at_completion ?? null,
+        refunded_amount_cents: r.refunded_amount_cents ?? null,
+        transfer_reversed_cents: r.transfer_reversed_cents ?? null,
+        refund_reason: r.refund_reason ?? null,
       }));
 
       if (fetchId === historyFetchId.current) setAllRides(enriched);
@@ -1063,9 +1149,11 @@ export default function AnalyticsPage({
     }
   }
 
-  // Period-scoped drilldown -- EVERY card ride that has a settlement_route
-  // (any state, not just the actionable ones), so the rollup tiles above
-  // can be traced back to specific rides/drivers/amounts.
+  // Period-scoped drilldown -- EVERY completed card ride in the period (any
+  // route, not just the actionable ones, and resolved ones included), so every
+  // rollup bucket can be traced back to specific rides/drivers/amounts. Kept
+  // deliberately in lockstep with company_settlement_rollup's WHERE clause;
+  // if the two diverge, a rollup row stops reconciling with its own drilldown.
   async function fetchSettlementRides(silent = false) {
     if (!silent) setSettlementRidesLoading(true);
     try {
@@ -1085,7 +1173,6 @@ export default function AnalyticsPage({
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .eq("status", "completed")
-        .not("settlement_route", "is", null)
         .gte("completed_at", startDate.toISOString())
         .lt("completed_at", now.toISOString())
         .order("completed_at", { ascending: false });
@@ -1107,7 +1194,10 @@ export default function AnalyticsPage({
           created_at: r.created_at,
           fare_final: r.fare_final,
           driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
-          settlement_route: r.settlement_route,
+          // Mirror the RPC's coalesce -- it buckets a null route as
+          // 'unsettled', so the drilldown has to as well or the "Unsettled"
+          // chip would show a count the ride list can never produce.
+          settlement_route: r.settlement_route ?? "unsettled",
           settlement_resolved_at: r.settlement_resolved_at,
           stripe_dispute_id: r.stripe_dispute_id,
         })),
@@ -1162,6 +1252,100 @@ export default function AnalyticsPage({
     } finally {
       setResolvingRideId(null);
     }
+  }
+
+  // ── Settlement derived views ─────────────────────────────────────────
+  // Period rollup aggregates. Gross fares by route, resolved rides included --
+  // this block is "where the card money went this period", nothing here is a
+  // measure of what's still outstanding.
+  const settlementTotals = useMemo(() => {
+    const sumOf = (routes: string[]) =>
+      settlementRollup
+        .filter((r) => routes.includes(r.settlement_route))
+        .reduce((a, r) => a + Number(r.total_fares), 0);
+    const countOf = (routes: string[]) =>
+      settlementRollup
+        .filter((r) => routes.includes(r.settlement_route))
+        .reduce((a, r) => a + r.rides_count, 0);
+
+    const grand = settlementRollup.reduce((a, r) => a + Number(r.total_fares), 0);
+    const rides = settlementRollup.reduce((a, r) => a + r.rides_count, 0);
+    return {
+      grand,
+      rides,
+      settled: sumOf(ROLLUP_SETTLED_ROUTES),
+      settledRides: countOf(ROLLUP_SETTLED_ROUTES),
+      held: sumOf(["platform_invoiced"]),
+      heldRides: countOf(["platform_invoiced"]),
+      problem: sumOf(ROLLUP_PROBLEM_ROUTES),
+      problemRides: countOf(ROLLUP_PROBLEM_ROUTES),
+    };
+  }, [settlementRollup]);
+
+  // Rollup sorted biggest-bucket-first so the composition bar and the table
+  // below it read in the same order.
+  const settlementRollupSorted = useMemo(
+    () => [...settlementRollup].sort((a, b) => Number(b.total_fares) - Number(a.total_fares)),
+    [settlementRollup],
+  );
+
+  // Outstanding work, split by direction of money. All-time and unresolved --
+  // deliberately a different scope from the rollup above it.
+  const attentionSplit = useMemo(() => {
+    const acc = {
+      collect: { count: 0, amount: 0 },
+      payout: { count: 0, amount: 0 },
+    };
+    for (const r of needsAttention) {
+      const dir = SETTLEMENT_DIRECTION[r.settlement_route];
+      if (!dir) continue;
+      acc[dir].count += 1;
+      acc[dir].amount += r.fare_final ?? 0;
+    }
+    return acc;
+  }, [needsAttention]);
+
+  const filteredSettlementRides = useMemo(() => {
+    return settlementRides.filter((r) => {
+      if (settlementRouteFilter !== "all" && r.settlement_route !== settlementRouteFilter)
+        return false;
+      if (settlementStateFilter === "all") return true;
+      const actionable = (SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]).includes(
+        r.settlement_route,
+      );
+      if (settlementStateFilter === "resolved") return !!r.settlement_resolved_at;
+      // "open" = needs a human and hasn't been dealt with yet
+      return actionable && !r.settlement_resolved_at;
+    });
+  }, [settlementRides, settlementRouteFilter, settlementStateFilter]);
+
+  function exportSettlementsCSV() {
+    logDispatchEvent({
+      companyId,
+      dispatcherId,
+      eventType: "export.csv",
+      details: {
+        section: "settlements",
+        period,
+        route: settlementRouteFilter,
+        row_count: filteredSettlementRides.length,
+      },
+    });
+    downloadCSV(
+      `settlements-${period}-${settlementRouteFilter}.csv`,
+      ["Date", "Ride ID", "Driver", "Fare", "Settlement route", "Dispute", "Resolved at"],
+      filteredSettlementRides.map((r) => [
+        new Date(r.completed_at ?? r.created_at).toLocaleDateString("en-CA"),
+        r.id,
+        r.driver_name,
+        r.fare_final != null ? r.fare_final.toFixed(2) : "",
+        SETTLEMENT_ROUTE_SHORT[r.settlement_route] ?? r.settlement_route,
+        r.stripe_dispute_id ?? "",
+        r.settlement_resolved_at
+          ? new Date(r.settlement_resolved_at).toLocaleDateString("en-CA")
+          : "",
+      ]),
+    );
   }
 
   async function fetchReviews(silent = false) {
@@ -2216,6 +2400,31 @@ export default function AnalyticsPage({
         .an-revenue-mini { background: #1E2A3A; border-radius: 10px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.05); }
         .an-revenue-mini-label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 5px; }
         .an-revenue-mini-value { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+        /* ── Settlements ── */
+        .an-attn-badge { font-size: 11px; font-weight: 700; color: #E24B4A; background: rgba(226,75,74,0.14); border-radius: 999px; padding: 2px 9px; line-height: 1.5; }
+        .an-scope-note { font-size: 11px; color: #6B7280; }
+        .an-settle-clear { display: flex; align-items: center; gap: 10px; background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: #9CA3AF; margin-bottom: 4px; }
+        .an-attn-split { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-bottom: 12px; }
+        .an-attn-tile { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 12px 14px; }
+        .an-attn-tile-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+        .an-attn-tile-value { font-size: 20px; font-weight: 700; color: #F1F5F9; line-height: 1; }
+        .an-attn-tile-sub { font-size: 11px; color: #6B7280; margin-top: 5px; }
+        .an-attn-card { display: flex; gap: 12px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.06); border-left: 3px solid #E24B4A; border-radius: 10px; padding: 13px 15px; align-items: flex-start; justify-content: space-between; }
+        .an-attn-meta { font-size: 12px; color: #9CA3AF; margin-top: 4px; }
+        .an-attn-hint { font-size: 12px; color: #94A3B8; margin-top: 7px; max-width: 620px; line-height: 1.45; }
+        .an-attn-id { font-size: 10px; color: #4B5563; margin-top: 6px; font-family: ui-monospace, monospace; }
+        .an-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .an-comp-bar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.04); margin-bottom: 16px; }
+        .an-comp-seg { height: 100%; transition: opacity 0.12s; }
+        .an-share-track { width: 84px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; margin-top: 5px; }
+        .an-share-fill { height: 100%; border-radius: 999px; }
+        .an-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex: none; }
+        .an-settle-row { cursor: pointer; transition: background 0.12s; }
+        .an-settle-row:hover { background: rgba(255,255,255,0.035) !important; }
+        .an-chip { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 5px 13px; font-size: 12px; color: #9CA3AF; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+        .an-chip:hover { color: #E2E8F0; }
+        .an-chip.active { background: #111827; color: #F1F5F9; border-color: rgba(255,255,255,0.18); }
+        .an-chip-count { color: #6B7280; margin-left: 6px; font-size: 11px; }
         .an-chart-card { background: #1E2A3A; border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px; }
         .an-chart-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
         .an-no-data { color: #6B7280; font-size: 13px; text-align: center; padding: 24px 0; }
@@ -3040,11 +3249,153 @@ export default function AnalyticsPage({
           )}
 
           {/* ── SETTLEMENTS ── */}
+          {/* Two deliberately separate scopes on this tab, in priority order:
+              (1) Needs attention -- all-time, unresolved-only, the actual todo
+                  list, so a stranded ride from three months ago can't hide
+                  behind a period selector; and (2) the period rollup +
+                  drilldown -- every completed card ride bucketed by where its
+                  money went, resolved ones included. Numbers never cross
+                  between the two blocks: anything outstanding is counted off
+                  needsAttention, anything historical off the rollup RPC. */}
           {section === "settlements" && (
             <>
+              {/* ═══ 1. Needs attention (all-time, unresolved) ═══ */}
               <div className="an-section-header">
-                <div className="an-section-title">Settlement Rollup</div>
+                <div
+                  className="an-section-title"
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  Needs attention
+                  {needsAttention.length > 0 && (
+                    <span className="an-attn-badge">{needsAttention.length}</span>
+                  )}
+                </div>
                 <div className="an-controls">
+                  <span className="an-scope-note">All time · unresolved only</span>
+                </div>
+              </div>
+
+              {needsAttentionLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : needsAttention.length === 0 ? (
+                <div className="an-settle-clear">
+                  <span style={{ color: "#1D9E75", fontSize: 16 }}>✓</span>
+                  Every card ride settled cleanly — nothing to collect or pay out by hand.
+                </div>
+              ) : (
+                <>
+                  {/* Split by direction of money on purpose -- a combined
+                      "$ outstanding" would net a receivable against a payable. */}
+                  <div className="an-attn-split">
+                    <div
+                      className="an-attn-tile"
+                      style={{ borderLeft: "3px solid #F59E0B" }}
+                    >
+                      <div className="an-attn-tile-label" style={{ color: "#F59E0B" }}>
+                        To collect
+                      </div>
+                      <div className="an-attn-tile-value">
+                        ${attentionSplit.collect.amount.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {attentionSplit.collect.count} ride
+                        {attentionSplit.collect.count === 1 ? "" : "s"} · needs collection
+                      </div>
+                    </div>
+                    <div
+                      className="an-attn-tile"
+                      style={{ borderLeft: "3px solid #E24B4A" }}
+                    >
+                      <div className="an-attn-tile-label" style={{ color: "#E24B4A" }}>
+                        To pay out
+                      </div>
+                      <div className="an-attn-tile-value">
+                        ${attentionSplit.payout.amount.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {attentionSplit.payout.count} ride
+                        {attentionSplit.payout.count === 1 ? "" : "s"} · needs sending
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {needsAttention.map((row) => {
+                      const dir = SETTLEMENT_DIRECTION[row.settlement_route];
+                      const dirColor = dir === "collect" ? "#F59E0B" : "#E24B4A";
+                      const when = new Date(row.completed_at ?? row.created_at);
+                      const days = Math.floor(
+                        (Date.now() - when.getTime()) / 86_400_000,
+                      );
+                      return (
+                        <div
+                          key={row.id}
+                          className="an-attn-card"
+                          style={{ borderLeftColor: dirColor }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9" }}
+                              >
+                                {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
+                                  row.settlement_route}
+                              </span>
+                              <span
+                                className="an-pill"
+                                style={{
+                                  color: dirColor,
+                                  background: `${dirColor}1F`,
+                                }}
+                              >
+                                {dir === "collect" ? "Collect" : "Pay out"}
+                              </span>
+                              {days >= 1 && (
+                                <span style={{ fontSize: 11, color: "#6B7280" }}>
+                                  waiting {days} day{days === 1 ? "" : "s"}
+                                </span>
+                              )}
+                            </div>
+                            <div className="an-attn-meta">
+                              <strong style={{ color: "#E2E8F0", fontWeight: 600 }}>
+                                ${row.fare_final?.toFixed(2) ?? "—"}
+                              </strong>{" "}
+                              · {row.driver_name} · {when.toLocaleDateString("en-CA")}
+                              {row.stripe_dispute_id && ` · dispute ${row.stripe_dispute_id}`}
+                            </div>
+                            <div className="an-attn-hint">
+                              {SETTLEMENT_ACTION_HINTS[row.settlement_route] ?? ""}
+                            </div>
+                            <div className="an-attn-id">Ride {row.id}</div>
+                          </div>
+                          <button
+                            className="an-download-btn"
+                            disabled={resolvingRideId === row.id}
+                            onClick={() => resolveSettlement(row)}
+                          >
+                            {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* ═══ 2. Period rollup ═══ */}
+              <div className="an-section-header" style={{ marginTop: 32 }}>
+                <div className="an-section-title">Where card money went</div>
+                <div className="an-controls">
+                  <span className="an-scope-note">
+                    Gross fares · resolved rides included
+                  </span>
                   <div className="an-period-btns">
                     {(["today", "week", "month", "year"] as const).map((p) => (
                       <button
@@ -3058,16 +3409,284 @@ export default function AnalyticsPage({
                   </div>
                 </div>
               </div>
+
               {settlementRollupLoading ? (
                 <div className="an-loading">Loading…</div>
               ) : settlementRollup.length === 0 ? (
-                <div className="an-no-data">No card settlements for this period</div>
+                <div className="an-no-data">No completed card rides for this period</div>
+              ) : (
+                <>
+                  <div className="an-revenue-strip">
+                    <div className="an-revenue-mini">
+                      <div className="an-revenue-mini-label">Card fares</div>
+                      <div className="an-revenue-mini-value">
+                        ${settlementTotals.grand.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {settlementTotals.rides} ride
+                        {settlementTotals.rides === 1 ? "" : "s"} {periodLabel.toLowerCase()}
+                      </div>
+                    </div>
+                    <div className="an-revenue-mini">
+                      <div className="an-revenue-mini-label">Transferred out</div>
+                      <div className="an-revenue-mini-value" style={{ color: "#1D9E75" }}>
+                        ${settlementTotals.settled.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {settlementTotals.settledRides} to driver / company
+                      </div>
+                    </div>
+                    <div className="an-revenue-mini">
+                      <div className="an-revenue-mini-label">Held by Vellon</div>
+                      <div
+                        className="an-revenue-mini-value"
+                        style={{
+                          color: settlementTotals.held > 0 ? "#F59E0B" : "#F1F5F9",
+                        }}
+                      >
+                        ${settlementTotals.held.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {settlementTotals.heldRides} pending invoice
+                      </div>
+                    </div>
+                    <div className="an-revenue-mini">
+                      <div className="an-revenue-mini-label">Failed or reversed</div>
+                      <div
+                        className="an-revenue-mini-value"
+                        style={{
+                          color: settlementTotals.problem > 0 ? "#E24B4A" : "#F1F5F9",
+                        }}
+                      >
+                        ${settlementTotals.problem.toFixed(2)}
+                      </div>
+                      <div className="an-attn-tile-sub">
+                        {settlementTotals.problemRides} ride
+                        {settlementTotals.problemRides === 1 ? "" : "s"} this period
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="an-chart-card">
+                    <div className="an-chart-title">Composition by route</div>
+                    <div className="an-comp-bar">
+                      {settlementRollupSorted.map((row) => {
+                        const pct =
+                          settlementTotals.grand > 0
+                            ? (Number(row.total_fares) / settlementTotals.grand) * 100
+                            : 0;
+                        return (
+                          <div
+                            key={row.settlement_route}
+                            className="an-comp-seg"
+                            onClick={() => setSettlementRouteFilter(row.settlement_route)}
+                            style={{
+                              width: `${pct}%`,
+                              background: settlementColor(row.settlement_route),
+                              cursor: "pointer",
+                              opacity:
+                                settlementRouteFilter === "all" ||
+                                settlementRouteFilter === row.settlement_route
+                                  ? 1
+                                  : 0.3,
+                            }}
+                            title={`${
+                              SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
+                              row.settlement_route
+                            } — $${Number(row.total_fares).toFixed(2)} (${pct.toFixed(0)}%)`}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    <table className="an-table">
+                      <thead>
+                        <tr>
+                          {["Route", "Rides", "Fares", "Share"].map((h, i) => (
+                            <th
+                              key={h}
+                              className="an-th"
+                              style={{ textAlign: i === 0 ? "left" : "right" }}
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {settlementRollupSorted.map((row) => {
+                          const isProblem = (
+                            SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
+                          ).includes(row.settlement_route);
+                          const color = settlementColor(row.settlement_route);
+                          const pct =
+                            settlementTotals.grand > 0
+                              ? (Number(row.total_fares) / settlementTotals.grand) * 100
+                              : 0;
+                          const active = settlementRouteFilter === row.settlement_route;
+                          return (
+                            <tr
+                              key={row.settlement_route}
+                              className="an-settle-row"
+                              onClick={() =>
+                                setSettlementRouteFilter(active ? "all" : row.settlement_route)
+                              }
+                              style={{
+                                background: active ? "rgba(255,255,255,0.05)" : "transparent",
+                              }}
+                              title={
+                                active
+                                  ? "Click to clear the filter"
+                                  : "Click to filter the ride list below"
+                              }
+                            >
+                              <td className="an-td primary">
+                                <span
+                                  style={{ display: "flex", alignItems: "center" }}
+                                >
+                                  <span
+                                    className="an-dot"
+                                    style={{ background: color }}
+                                  />
+                                  <span style={isProblem ? { color } : {}}>
+                                    {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
+                                      row.settlement_route}
+                                  </span>
+                                </span>
+                              </td>
+                              <td className="an-td" style={{ textAlign: "right" }}>
+                                {row.rides_count}
+                              </td>
+                              <td
+                                className="an-td"
+                                style={{
+                                  textAlign: "right",
+                                  color: "#E2E8F0",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                ${Number(row.total_fares).toFixed(2)}
+                              </td>
+                              <td className="an-td" style={{ textAlign: "right" }}>
+                                {pct.toFixed(0)}%
+                                <div
+                                  className="an-share-track"
+                                  style={{ marginLeft: "auto" }}
+                                >
+                                  <div
+                                    className="an-share-fill"
+                                    style={{ width: `${pct}%`, background: color }}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        <tr>
+                          <td
+                            className="an-td primary"
+                            style={{ fontWeight: 700, borderBottom: "none" }}
+                          >
+                            Total
+                          </td>
+                          <td
+                            className="an-td"
+                            style={{ textAlign: "right", fontWeight: 700, borderBottom: "none" }}
+                          >
+                            {settlementTotals.rides}
+                          </td>
+                          <td
+                            className="an-td"
+                            style={{
+                              textAlign: "right",
+                              fontWeight: 700,
+                              color: "#F1F5F9",
+                              borderBottom: "none",
+                            }}
+                          >
+                            ${settlementTotals.grand.toFixed(2)}
+                          </td>
+                          <td className="an-td" style={{ borderBottom: "none" }} />
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {/* ═══ 3. Per-ride drilldown ═══ */}
+              <div className="an-section-header" style={{ marginTop: 8 }}>
+                <div className="an-section-title">Rides {periodLabel.toLowerCase()}</div>
+                <div className="an-controls">
+                  <div className="an-period-btns">
+                    {(
+                      [
+                        ["all", "All"],
+                        ["open", "Open"],
+                        ["resolved", "Resolved"],
+                      ] as const
+                    ).map(([id, lbl]) => (
+                      <button
+                        key={id}
+                        className={`an-period-btn${settlementStateFilter === id ? " active" : ""}`}
+                        onClick={() => setSettlementStateFilter(id)}
+                      >
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    className="an-csv-btn"
+                    disabled={filteredSettlementRides.length === 0}
+                    onClick={exportSettlementsCSV}
+                  >
+                    ↓ CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Route chips mirror the rollup rows, but carry the "All" reset
+                  the table itself can't -- clearing the filter has to stay
+                  reachable even when a period change empties the rollup. */}
+              <div className="an-filter-row">
+                <button
+                  className={`an-chip${settlementRouteFilter === "all" ? " active" : ""}`}
+                  onClick={() => setSettlementRouteFilter("all")}
+                >
+                  All routes
+                  <span className="an-chip-count">{settlementRides.length}</span>
+                </button>
+                {settlementRollupSorted.map((r) => (
+                  <button
+                    key={r.settlement_route}
+                    className={`an-chip${settlementRouteFilter === r.settlement_route ? " active" : ""}`}
+                    onClick={() => setSettlementRouteFilter(r.settlement_route)}
+                  >
+                    <span
+                      className="an-dot"
+                      style={{ background: settlementColor(r.settlement_route), marginRight: 6 }}
+                    />
+                    {SETTLEMENT_ROUTE_SHORT[r.settlement_route] ?? r.settlement_route}
+                    <span className="an-chip-count">{r.rides_count}</span>
+                  </button>
+                ))}
+                <span className="an-filter-count">
+                  {filteredSettlementRides.length} shown
+                </span>
+              </div>
+
+              {settlementRidesLoading ? (
+                <div className="an-loading">Loading…</div>
+              ) : filteredSettlementRides.length === 0 ? (
+                <div className="an-no-data">
+                  No rides match this filter for the selected period
+                </div>
               ) : (
                 <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
                   <table className="an-table">
                     <thead>
                       <tr>
-                        {["Settlement route", "Rides", "Total fares"].map((h) => (
+                        {["Date", "Ride", "Driver", "Fare", "Route", "Status"].map((h) => (
                           <th key={h} className="an-th" style={{ padding: "12px 14px" }}>
                             {h}
                           </th>
@@ -3075,206 +3694,90 @@ export default function AnalyticsPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {settlementRollup.map((row, i) => {
+                      {filteredSettlementRides.map((row, i) => {
                         const isProblem = (
                           SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
                         ).includes(row.settlement_route);
+                        const color = settlementColor(row.settlement_route);
                         return (
                           <tr
-                            key={row.settlement_route}
-                            onClick={() => setSettlementRouteFilter(row.settlement_route)}
+                            key={row.id}
                             style={{
                               background:
-                                settlementRouteFilter === row.settlement_route
-                                  ? "rgba(29,158,117,0.06)"
-                                  : i % 2 === 0
-                                    ? "transparent"
-                                    : "rgba(255,255,255,0.015)",
-                              cursor: "pointer",
+                                i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
                             }}
-                            title="Click to filter the ride list below"
                           >
-                            <td
-                              className="an-td primary"
-                              style={isProblem ? { color: "#E24B4A", fontWeight: 700 } : {}}
-                            >
-                              {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
+                            <td className="an-td" style={{ whiteSpace: "nowrap" }}>
+                              {new Date(
+                                row.completed_at ?? row.created_at,
+                              ).toLocaleDateString("en-CA")}
                             </td>
-                            <td className="an-td">{row.rides_count}</td>
-                            <td className="an-td green">${row.total_fares.toFixed(2)}</td>
+                            <td
+                              className="an-td"
+                              style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}
+                              title={row.id}
+                            >
+                              {row.id.slice(0, 8)}
+                            </td>
+                            <td className="an-td primary">{row.driver_name}</td>
+                            <td
+                              className="an-td"
+                              style={{ color: "#E2E8F0", fontWeight: 600 }}
+                            >
+                              {row.fare_final != null ? `$${row.fare_final.toFixed(2)}` : "—"}
+                            </td>
+                            <td className="an-td">
+                              <span style={{ display: "flex", alignItems: "center" }}>
+                                <span className="an-dot" style={{ background: color }} />
+                                <span
+                                  style={isProblem ? { color, fontWeight: 600 } : {}}
+                                >
+                                  {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
+                                    row.settlement_route}
+                                </span>
+                              </span>
+                              {row.stripe_dispute_id && (
+                                <div
+                                  style={{ fontSize: 10, color: "#6B7280", marginLeft: 16 }}
+                                >
+                                  {row.stripe_dispute_id}
+                                </div>
+                              )}
+                            </td>
+                            <td className="an-td">
+                              {!isProblem ? (
+                                <span style={{ fontSize: 12, color: "#4B5563" }}>
+                                  No action needed
+                                </span>
+                              ) : row.settlement_resolved_at ? (
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    color: "#1D9E75",
+                                    fontWeight: 600,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={new Date(
+                                    row.settlement_resolved_at,
+                                  ).toLocaleString("en-CA")}
+                                >
+                                  ✓ Resolved
+                                </span>
+                              ) : (
+                                <button
+                                  className="an-download-btn-sm"
+                                  disabled={resolvingRideId === row.id}
+                                  onClick={() => resolveSettlement(row)}
+                                >
+                                  {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
-                </div>
-              )}
-
-              {/* Per-ride drilldown -- click a rollup row above to filter,
-                  or use "All" to see everything for the selected period.
-                  Answers "which ride/driver/amount makes up this bucket." */}
-              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-                {["all", ...settlementRollup.map((r) => r.settlement_route)].map((route) => (
-                  <button
-                    key={route}
-                    className={`an-period-btn${settlementRouteFilter === route ? " active" : ""}`}
-                    onClick={() => setSettlementRouteFilter(route)}
-                  >
-                    {route === "all" ? "All" : SETTLEMENT_ROUTE_LABELS[route] ?? route}
-                  </button>
-                ))}
-              </div>
-              {settlementRidesLoading ? (
-                <div className="an-loading">Loading…</div>
-              ) : (
-                (() => {
-                  const filtered =
-                    settlementRouteFilter === "all"
-                      ? settlementRides
-                      : settlementRides.filter((r) => r.settlement_route === settlementRouteFilter);
-                  return filtered.length === 0 ? (
-                    <div className="an-no-data">No rides match this filter for the selected period</div>
-                  ) : (
-                    <div
-                      className="an-chart-card"
-                      style={{ padding: 0, overflow: "hidden", marginTop: 10 }}
-                    >
-                      <table className="an-table">
-                        <thead>
-                          <tr>
-                            {["Date", "Driver", "Fare", "Settlement", "Status"].map((h) => (
-                              <th key={h} className="an-th" style={{ padding: "12px 14px" }}>
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filtered.map((row, i) => {
-                            const isProblem = (
-                              SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
-                            ).includes(row.settlement_route);
-                            return (
-                              <tr
-                                key={row.id}
-                                style={{
-                                  background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
-                                }}
-                              >
-                                <td className="an-td" style={{ whiteSpace: "nowrap" }}>
-                                  {new Date(row.completed_at ?? row.created_at).toLocaleDateString("en-CA")}
-                                </td>
-                                <td className="an-td primary">{row.driver_name}</td>
-                                <td className="an-td">
-                                  {row.fare_final != null ? `$${row.fare_final.toFixed(2)}` : "—"}
-                                </td>
-                                <td
-                                  className="an-td"
-                                  style={isProblem ? { color: "#E24B4A", fontWeight: 600 } : {}}
-                                >
-                                  {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
-                                  {row.stripe_dispute_id && (
-                                    <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>
-                                      Dispute: {row.stripe_dispute_id}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="an-td">
-                                  {!isProblem ? (
-                                    <span style={{ fontSize: 12, color: "#6B7280" }}>—</span>
-                                  ) : row.settlement_resolved_at ? (
-                                    <span style={{ fontSize: 12, color: "#1D9E75", fontWeight: 600 }}>
-                                      ✓ Resolved
-                                    </span>
-                                  ) : (
-                                    <button
-                                      className="an-download-btn"
-                                      disabled={resolvingRideId === row.id}
-                                      onClick={() => resolveSettlement(row)}
-                                    >
-                                      {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  );
-                })()
-              )}
-
-              <div className="an-section-header" style={{ marginTop: 28 }}>
-                <div className="an-section-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  Needs Attention
-                  {needsAttention.length > 0 && (
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#E24B4A",
-                        background: "rgba(226,75,74,0.12)",
-                        borderRadius: 999,
-                        padding: "2px 9px",
-                      }}
-                    >
-                      {needsAttention.length}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {needsAttentionLoading ? (
-                <div className="an-loading">Loading…</div>
-              ) : needsAttention.length === 0 ? (
-                <div className="an-no-data">Nothing needs attention — all settlements resolved</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {needsAttention.map((row) => (
-                    <div
-                      key={row.id}
-                      style={{
-                        background: "rgba(226,75,74,0.08)",
-                        border: "1px solid rgba(226,75,74,0.25)",
-                        borderRadius: 10,
-                        padding: 14,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          gap: 12,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "#E24B4A" }}>
-                            {SETTLEMENT_ROUTE_LABELS[row.settlement_route] ?? row.settlement_route}
-                          </div>
-                          <div style={{ fontSize: 12, color: "#9CA3AF", marginTop: 2 }}>
-                            {row.driver_name} · ${row.fare_final?.toFixed(2) ?? "—"} ·{" "}
-                            {new Date(row.completed_at ?? row.created_at).toLocaleDateString("en-CA")}
-                            {row.stripe_dispute_id && ` · Dispute: ${row.stripe_dispute_id}`}
-                          </div>
-                          <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2, fontFamily: "monospace" }}>
-                            Ride {row.id}
-                          </div>
-                          <div style={{ fontSize: 12, color: "#D1D5DB", marginTop: 6, maxWidth: 520 }}>
-                            {SETTLEMENT_ACTION_HINTS[row.settlement_route] ?? ""}
-                          </div>
-                        </div>
-                        <button
-                          className="an-download-btn"
-                          disabled={resolvingRideId === row.id}
-                          onClick={() => resolveSettlement(row)}
-                        >
-                          {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               )}
             </>
@@ -4018,6 +4521,27 @@ export default function AnalyticsPage({
                         SETTLEMENT_ROUTE_LABELS[rideDetail.ride.settlement_route] ??
                           rideDetail.ride.settlement_route,
                       ],
+                      ...(rideDetail.ride.refunded_amount_cents &&
+                      rideDetail.ride.refunded_amount_cents > 0
+                        ? ([
+                            [
+                              "Refunded to passenger",
+                              `$${(rideDetail.ride.refunded_amount_cents / 100).toFixed(2)}` +
+                                (rideDetail.ride.refund_reason
+                                  ? ` (${REFUND_REASON_LABELS[rideDetail.ride.refund_reason] ?? rideDetail.ride.refund_reason})`
+                                  : ""),
+                            ],
+                            ...(rideDetail.ride.transfer_reversed_cents &&
+                            rideDetail.ride.transfer_reversed_cents > 0
+                              ? ([
+                                  [
+                                    "Clawed back from payout",
+                                    `$${(rideDetail.ride.transfer_reversed_cents / 100).toFixed(2)}`,
+                                  ],
+                                ] as [string, string][])
+                              : []),
+                          ] as [string, string][])
+                        : []),
                     ] as [string, string][])
                   : []),
                 ...(rideDetail.ride.status === "cancelled" && rideDetail.ride.cancelled_reason
