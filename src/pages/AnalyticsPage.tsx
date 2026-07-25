@@ -712,6 +712,35 @@ export default function AnalyticsPage({
   // The RPC returns BOTH totals in one call, so flipping this is pure client-side
   // (no refetch, no flicker). Gross = what passengers were charged.
   const [settlementBasis, setSettlementBasis] = useState<"net" | "gross">("net");
+  // The company's payout model. The cash strip below only renders for
+  // 'driver_direct' -- its "drivers keep" net framing is only true when the
+  // driver owns the fare. company_settles cash is a different story (the company
+  // owns the fare revenue) and gets its own framing later. Null until fetched.
+  const [payoutModel, setPayoutModel] = useState<string | null>(null);
+  // Cash lane: a single aggregate row (no settlement routes -- cash never touches
+  // Stripe, the driver keeps it at the door). Gross = fares collected, net =
+  // fares - the Vellon fee that accrues on cash and is billed to the company
+  // monthly. Same period window as the card rollup.
+  const [cashSettlement, setCashSettlement] = useState<{
+    cash_rides: number;
+    cash_fares: number;
+    cash_fee_owed: number;
+  } | null>(null);
+  const [cashSettlementLoading, setCashSettlementLoading] = useState(true);
+  // Card fee breakdown (company_settles view). Gross fares decomposed into what
+  // the company kept (net) vs what Vellon and Stripe took, over settled rides.
+  // Reconciles: gross = net + vellon_fee + stripe_fee. Only fetched/used when the
+  // company is company_settles; driver_direct uses the route rollup instead.
+  const [feeBreakdown, setFeeBreakdown] = useState<{
+    paid_rides: number;
+    gross_fares: number;
+    vellon_fee: number;
+    stripe_fee: number;
+    net_total: number;
+  } | null>(null);
+  const [feeBreakdownLoading, setFeeBreakdownLoading] = useState(true);
+  // Donut hover for the fee-composition chart: "net" | "vellon" | "stripe".
+  const [feeHot, setFeeHot] = useState<string | null>(null);
   // Per-day settlement flow for the chart: paid-to-drivers vs held, either basis.
   const [settlementDaily, setSettlementDaily] = useState<
     { day: string; bucket: string; gross: number; net: number }[]
@@ -769,8 +798,30 @@ export default function AnalyticsPage({
       fetchSettlementRollup();
       fetchSettlementDaily();
       fetchSettlementRides();
+      fetchCashSettlement();
+      fetchFeeBreakdown();
     }
   }, [section, period, companyId]);
+
+  // Payout model drives whether the cash strip renders at all. Fetched once per
+  // company, independent of the section/period churn above.
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("companies")
+        .select("payout_model")
+        .eq("id", companyId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) console.error("[payout_model]", error.message);
+      else setPayoutModel(data?.payout_model ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
 
   useEffect(() => {
     if (section === "settlements") fetchNeedsAttention();
@@ -832,6 +883,8 @@ export default function AnalyticsPage({
           fetchSettlementRollup(true);
           fetchSettlementDaily(true);
           fetchSettlementRides(true);
+          fetchCashSettlement(true);
+          fetchFeeBreakdown(true);
           fetchNeedsAttention(true);
         }
       }, 1200);
@@ -1222,6 +1275,83 @@ export default function AnalyticsPage({
     void silent;
   }
 
+  // Cash lane aggregate. Same period window and fetch-id guard as the rollup so
+  // a stale response can't clobber fresh data on a period change. The RPC returns
+  // a single aggregate row (no GROUP BY) -- take the first, or zeros if empty.
+  async function fetchCashSettlement(silent = false) {
+    const fetchId = settlementFetchId.current;
+    if (!silent) setCashSettlementLoading(true);
+    try {
+      const now = new Date();
+      let startDate: Date;
+      if (period === "today")
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      else if (period === "week")
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === "month")
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      else startDate = new Date(now.getFullYear(), 0, 1);
+
+      const { data, error } = await supabase.rpc("company_cash_settlement", {
+        p_from: startDate.toISOString(),
+        p_to: now.toISOString(),
+      });
+      if (fetchId !== settlementFetchId.current) return;
+      if (error) {
+        console.error("[fetchCashSettlement]", error.message);
+        setCashSettlement(null);
+      } else {
+        const row = data?.[0];
+        setCashSettlement({
+          cash_rides: Number(row?.cash_rides ?? 0),
+          cash_fares: Number(row?.cash_fares ?? 0),
+          cash_fee_owed: Number(row?.cash_fee_owed ?? 0),
+        });
+      }
+    } finally {
+      if (fetchId === settlementFetchId.current) setCashSettlementLoading(false);
+    }
+  }
+
+  // Card fee breakdown for the company_settles view. Same period window / fetch-id
+  // guard as the rollup. Single aggregate row -> take the first, or zeros.
+  async function fetchFeeBreakdown(silent = false) {
+    const fetchId = settlementFetchId.current;
+    if (!silent) setFeeBreakdownLoading(true);
+    try {
+      const now = new Date();
+      let startDate: Date;
+      if (period === "today")
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      else if (period === "week")
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === "month")
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      else startDate = new Date(now.getFullYear(), 0, 1);
+
+      const { data, error } = await supabase.rpc("company_settlement_fee_breakdown", {
+        p_from: startDate.toISOString(),
+        p_to: now.toISOString(),
+      });
+      if (fetchId !== settlementFetchId.current) return;
+      if (error) {
+        console.error("[fetchFeeBreakdown]", error.message);
+        setFeeBreakdown(null);
+      } else {
+        const row = data?.[0];
+        setFeeBreakdown({
+          paid_rides: Number(row?.paid_rides ?? 0),
+          gross_fares: Number(row?.gross_fares ?? 0),
+          vellon_fee: Number(row?.vellon_fee ?? 0),
+          stripe_fee: Number(row?.stripe_fee ?? 0),
+          net_total: Number(row?.net_total ?? 0),
+        });
+      }
+    } finally {
+      if (fetchId === settlementFetchId.current) setFeeBreakdownLoading(false);
+    }
+  }
+
   // Deliberately NOT period-scoped -- these are outstanding todos, not
   // historical stats. A platform_invoiced ride from 3 months ago that never
   // got manually paid out shouldn't disappear because "this month" is selected.
@@ -1416,6 +1546,30 @@ export default function AnalyticsPage({
     [settlementRollup, settlementAmt],
   );
 
+  // Payout-model-driven framing for the settlement hero + cash strip. The
+  // underlying numbers are identical across models -- only the words and the
+  // lead accent change. driver_direct: money/fares belong to the DRIVER (green);
+  // company_settles: money/fares belong to the COMPANY's own account (blue).
+  // payoutModel is null until fetched; treat unknown as driver_direct framing
+  // (the card rollup renders before the fetch resolves, so this is just the
+  // brief-flash default, not a real classification).
+  const isCompanySettles = payoutModel === "company_settles";
+  const leadAccent = isCompanySettles
+    ? { main: "#4a9eff", bright: "#6cb2ff", cls: " paid-company" }
+    : { main: "#1D9E75", bright: "#2fce9a", cls: "" };
+  const leadPaidLabel = isCompanySettles
+    ? settlementBasis === "net" ? "Paid to your account" : "Routed to your account"
+    : settlementBasis === "net" ? "Paid to drivers" : "Routed to drivers";
+  const leadPaidSub = isCompanySettles ? "to your Stripe account" : "to drivers / company";
+  // Cash strip labels (the driver-owns vs company-owns distinction).
+  const cashLeadNetLabel = isCompanySettles ? "Your cash, net of fee" : "Drivers keep";
+  const cashLeadGrossLabel = isCompanySettles ? "Cash collected by drivers" : "Cash fares collected";
+  const cashGrossShort = isCompanySettles ? "Cash collected" : "Cash fares";
+  const cashGrossTail = isCompanySettles ? "collected by drivers" : "collected at the door";
+  const cashScopeNote = isCompanySettles
+    ? "Cash is collected by your drivers and reconciled with them directly — only Vellon's fee is invoiced to you monthly"
+    : "Cash is settled driver-to-passenger directly — only Vellon's fee is invoiced to you monthly";
+
   // Flow chart series: paid-to-drivers vs held, in the active basis. The RPC
   // returns sparse per-(day, bucket) rows; we pivot to a dense, ordered series.
   // A year of daily bars would be 365 unreadable slivers, so "year" rolls up to
@@ -1450,7 +1604,9 @@ export default function AnalyticsPage({
       .map(([k, v]) => ({ key: k, label: label(k), ...v }))
       .sort((a, b) => a.key.localeCompare(b.key));
     const max = buckets.reduce((m, b) => Math.max(m, b.paid + b.held), 0);
-    return { buckets, max, niceMax: niceCeil(max) };
+    // Net-only axis for the company_settles daily chart (renders b.paid alone).
+    const maxNet = buckets.reduce((m, b) => Math.max(m, b.paid), 0);
+    return { buckets, max, niceMax: niceCeil(max), niceMaxNet: niceCeil(maxNet) };
   }, [settlementDaily, settlementBasis, period]);
 
   // Donut composition: each route's slice of the period total, in the active
@@ -1478,6 +1634,31 @@ export default function AnalyticsPage({
       });
     return { C, segs, top: segs[0] ?? null };
   }, [settlementRollupSorted, settlementTotals.grand, settlementAmt]);
+
+  // Fee-composition donut for the company_settles view: each dollar of gross
+  // fares split into Net to you / Vellon fee / Stripe fee. Slices sum to gross by
+  // construction (vellon = gross - stripe - net), so the ring is always full.
+  const feeDonut = useMemo(() => {
+    const C = 2 * Math.PI * 46;
+    const gross = feeBreakdown?.gross_fares || 1;
+    const parts = feeBreakdown
+      ? [
+          { key: "net", name: "Net to you", color: "#4a9eff", amt: feeBreakdown.net_total },
+          { key: "vellon", name: "Vellon fee", color: "#E8500A", amt: feeBreakdown.vellon_fee },
+          { key: "stripe", name: "Stripe fee", color: "#8B93A7", amt: feeBreakdown.stripe_fee },
+        ]
+      : [];
+    let acc = 0;
+    const segs = parts
+      .filter((p) => p.amt > 0)
+      .map((p) => {
+        const len = (p.amt / gross) * C;
+        const seg = { ...p, pct: (p.amt / gross) * 100, len, offset: -acc };
+        acc += len;
+        return seg;
+      });
+    return { C, segs, top: segs[0] ?? null };
+  }, [feeBreakdown]);
 
   // Outstanding work, split by direction of money. All-time and unresolved --
   // deliberately a different scope from the rollup above it.
@@ -2625,6 +2806,10 @@ export default function AnalyticsPage({
         .an-hero-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
         .an-hero-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; font-variant-numeric: tabular-nums; }
         .an-hero-card.lead .an-hero-value { font-size: 28px; color: #2fce9a; }
+        /* company_settles: the lead tile is "your account" money, so it reads
+           blue instead of driver-green. Same layout, just re-accented. */
+        .an-hero-card.lead.paid-company { border-color: rgba(74,158,255,0.28); background: linear-gradient(180deg, rgba(74,158,255,0.09), rgba(74,158,255,0.015) 62%, transparent), #1E2A3A; }
+        .an-hero-card.lead.paid-company .an-hero-value { color: #6cb2ff; }
         .an-hero-sub { font-size: 11px; color: #6B7280; margin-top: 6px; }
         .an-hero-sub.up { color: #1D9E75; }
         .an-hero-sub.down { color: #E24B4A; }
@@ -2657,6 +2842,15 @@ export default function AnalyticsPage({
         .an-bar-paid { background: #1D9E75; }
         .an-bar-held { background: #F59E0B; margin-bottom: 1px; }
         .an-bar-col:hover .an-bar-seg { filter: brightness(1.22); }
+        /* company_settles fee waterfall: gross → −fees → net, spelled out. */
+        .an-fee-waterfall { max-width: 440px; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 2px 16px; background: #1E2A3A; }
+        .an-fw-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; font-size: 13px; color: #C7CEDB; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .an-fw-row:last-child { border-bottom: none; }
+        .an-fw-row.minus { color: #9AA3B2; }
+        .an-fw-row.total { font-weight: 700; font-size: 15px; color: #F1F5F9; }
+        .an-fw-label { display: flex; align-items: center; gap: 8px; }
+        .an-fw-amt { font-variant-numeric: tabular-nums; }
+        .an-fw-row.total .an-fw-amt { color: #6cb2ff; }
         .an-bar-lab { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-size: 9px; color: #6B7280; white-space: nowrap; }
         .an-bar-tip { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: 0; background: #0b1119; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px 10px; font-size: 11px; z-index: 5; min-width: 132px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); transition: opacity 0.12s; }
         .an-bar-col:hover .an-bar-tip { opacity: 1; }
@@ -3506,22 +3700,28 @@ export default function AnalyticsPage({
             <>
               {/* ═══ 1. Period rollup — hero + charts (leads the tab) ═══ */}
               <div className="an-section-header">
-                <div className="an-section-title">Where card money went</div>
+                <div className="an-section-title">
+                  {isCompanySettles ? "Card settlement to your account" : "Where card money went"}
+                </div>
                 <div className="an-controls">
                   {/* Net | Gross display lens. Net (default) = what actually
                       reached accounts after fees; gross = what passengers paid.
-                      Both come from one RPC call, so this is instant. */}
-                  <div className="an-period-btns" title="Net = after Vellon + Stripe fees. Gross = what passengers were charged.">
-                    {(["net", "gross"] as const).map((b) => (
-                      <button
-                        key={b}
-                        className={`an-period-btn${settlementBasis === b ? " active" : ""}`}
-                        onClick={() => setSettlementBasis(b)}
-                      >
-                        {b === "net" ? "Net" : "Gross"}
-                      </button>
-                    ))}
-                  </div>
+                      Both come from one RPC call, so this is instant. Hidden for
+                      company_settles — its fee view shows the full gross→net
+                      decomposition at once, so a basis toggle is meaningless. */}
+                  {!isCompanySettles && (
+                    <div className="an-period-btns" title="Net = after Vellon + Stripe fees. Gross = what passengers were charged.">
+                      {(["net", "gross"] as const).map((b) => (
+                        <button
+                          key={b}
+                          className={`an-period-btn${settlementBasis === b ? " active" : ""}`}
+                          onClick={() => setSettlementBasis(b)}
+                        >
+                          {b === "net" ? "Net" : "Gross"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="an-period-btns">
                     {(["today", "week", "month", "year"] as const).map((p) => (
                       <button
@@ -3536,12 +3736,194 @@ export default function AnalyticsPage({
                 </div>
               </div>
               <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
-                {settlementBasis === "net"
-                  ? "Net · amounts after Vellon + Stripe fees"
-                  : "Gross · what passengers were charged"}
+                {isCompanySettles
+                  ? "Card fares settled to your Stripe account — where each dollar goes"
+                  : settlementBasis === "net"
+                    ? "Net · amounts after Vellon + Stripe fees"
+                    : "Gross · what passengers were charged"}
               </div>
 
-              {settlementRollupLoading ? (
+              {isCompanySettles ? (
+                /* ── company_settles: fee-breakdown view ── */
+                feeBreakdownLoading ? (
+                  <div className="an-loading">Loading…</div>
+                ) : !feeBreakdown || feeBreakdown.paid_rides === 0 ? (
+                  <div className="an-no-data">No settled card rides for this period</div>
+                ) : (
+                  <>
+                    {/* Hero: gross fares decomposed. Net = what landed; the two
+                        fees are what was withheld. gross = net + vellon + stripe. */}
+                    <div className="an-set-hero">
+                      <div className="an-hero-card lead paid-company">
+                        <div className="an-hero-label">
+                          <span className="an-dot" style={{ background: "#4a9eff" }} />
+                          Net to your account
+                        </div>
+                        <div className="an-hero-value">${feeBreakdown.net_total.toFixed(2)}</div>
+                        <div className="an-hero-sub">
+                          {feeBreakdown.paid_rides} ride
+                          {feeBreakdown.paid_rides === 1 ? "" : "s"} · settled to Stripe
+                        </div>
+                      </div>
+
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">Gross card fares</div>
+                        <div className="an-hero-value">${feeBreakdown.gross_fares.toFixed(2)}</div>
+                        <div className="an-hero-sub">what passengers paid</div>
+                      </div>
+
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">
+                          <span className="an-dot" style={{ background: "#E8500A" }} />
+                          Vellon fee
+                        </div>
+                        <div className="an-hero-value" style={{ color: "#f0782f" }}>
+                          ${feeBreakdown.vellon_fee.toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">
+                          {feeBreakdown.gross_fares > 0
+                            ? `${((feeBreakdown.vellon_fee / feeBreakdown.gross_fares) * 100).toFixed(1)}% of fares`
+                            : "platform fee"}
+                        </div>
+                      </div>
+
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">
+                          <span className="an-dot" style={{ background: "#8B93A7" }} />
+                          Stripe fee
+                        </div>
+                        <div className="an-hero-value" style={{ color: "#aab2c4" }}>
+                          ${feeBreakdown.stripe_fee.toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">card processing</div>
+                      </div>
+                    </div>
+
+                    {/* Two-up: fee-composition donut + daily net-settled flow */}
+                    <div className="an-two-up">
+                      <div className="an-chart-card">
+                        <div className="an-chart-title">Where each fare dollar goes</div>
+                        {(() => {
+                          const center = feeHot
+                            ? feeDonut.segs.find((s) => s.key === feeHot)
+                            : feeDonut.top;
+                          return (
+                            <div className="an-donut-wrap">
+                              <svg width="118" height="118" viewBox="0 0 118 118" style={{ flex: "none" }}>
+                                <g transform="rotate(-90 59 59)">
+                                  <circle cx="59" cy="59" r="46" fill="none" stroke="#243244" strokeWidth="15" />
+                                  {feeDonut.segs.map((s) => {
+                                    const hot = feeHot === s.key;
+                                    const dimmed = feeHot != null && !hot;
+                                    return (
+                                      <circle
+                                        key={s.key}
+                                        className="an-donut-seg"
+                                        cx="59"
+                                        cy="59"
+                                        r="46"
+                                        fill="none"
+                                        stroke={s.color}
+                                        strokeWidth={hot ? 18 : 15}
+                                        strokeDasharray={
+                                          settleChartsReady
+                                            ? `${s.len.toFixed(2)} ${feeDonut.C.toFixed(2)}`
+                                            : `0 ${feeDonut.C.toFixed(2)}`
+                                        }
+                                        strokeDashoffset={s.offset.toFixed(2)}
+                                        opacity={dimmed ? 0.28 : 1}
+                                        onMouseEnter={() => setFeeHot(s.key)}
+                                        onMouseLeave={() => setFeeHot(null)}
+                                      />
+                                    );
+                                  })}
+                                </g>
+                                {center && (
+                                  <>
+                                    <text x="59" y="55" textAnchor="middle" fill={feeHot ? center.color : "#F1F5F9"} fontSize="19" fontWeight="700">
+                                      {center.pct.toFixed(1)}%
+                                    </text>
+                                    <text x="59" y="71" textAnchor="middle" fill="#6B7280" fontSize="9.5" style={{ letterSpacing: "0.04em" }}>
+                                      {center.name.toUpperCase()}
+                                    </text>
+                                  </>
+                                )}
+                              </svg>
+                              <div className="an-donut-legend">
+                                {feeDonut.segs.map((s) => (
+                                  <div
+                                    className={`an-leg${feeHot === s.key ? " hot" : ""}`}
+                                    key={s.key}
+                                    onMouseEnter={() => setFeeHot(s.key)}
+                                    onMouseLeave={() => setFeeHot(null)}
+                                  >
+                                    <span className="an-dot" style={{ background: s.color }} />
+                                    <span className="an-leg-name">{s.name}</span>
+                                    <span className="an-leg-amt">${s.amt.toFixed(2)}</span>
+                                    <span className="an-leg-pct">{s.pct.toFixed(1)}%</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="an-chart-card">
+                        <div className="an-chart-title">Daily net settled to your account</div>
+                        {settlementDailyChart.buckets.length === 0 ? (
+                          <div className="an-no-data" style={{ padding: "40px 0" }}>
+                            No settled rides to chart
+                          </div>
+                        ) : (
+                          (() => {
+                            const plotH = 146;
+                            const nm = settlementDailyChart.niceMaxNet;
+                            const n = settlementDailyChart.buckets.length;
+                            const labelEvery = Math.ceil(n / 12);
+                            return (
+                              <div className="an-bars-plot">
+                                {[0, 0.5, 1].flatMap((f) => {
+                                  const top = (1 - f) * plotH;
+                                  return [
+                                    <div key={`g${f}`} className={`an-grid-line${f === 0 ? " base" : ""}`} style={{ top }} />,
+                                    <div key={`y${f}`} className="an-ylab" style={{ top }}>
+                                      ${(nm * f).toFixed(0)}
+                                    </div>,
+                                  ];
+                                })}
+                                <div className="an-bars-row">
+                                  {settlementDailyChart.buckets.map((b, i) => {
+                                    const h = (b.paid / nm) * plotH;
+                                    return (
+                                      <div className="an-bar-col" key={b.key}>
+                                        <div className="an-bar-stack">
+                                          <div
+                                            className="an-bar-seg"
+                                            style={{ height: settleChartsReady ? h : 0, background: "#4a9eff", borderRadius: "3px 3px 0 0" }}
+                                          />
+                                        </div>
+                                        {i % labelEvery === 0 && <div className="an-bar-lab">{b.label}</div>}
+                                        <div className="an-bar-tip" style={{ bottom: h + 8 }}>
+                                          <div className="an-tip-day">{b.label}</div>
+                                          <div className="an-tip-row tot">
+                                            <span className="k">Net settled</span>
+                                            <span className="v">${b.paid.toFixed(2)}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )
+              ) : settlementRollupLoading ? (
                 <div className="an-loading">Loading…</div>
               ) : settlementRollup.length === 0 ? (
                 <div className="an-no-data">No completed card rides for this period</div>
@@ -3549,15 +3931,15 @@ export default function AnalyticsPage({
                 <>
                   {/* Hero tiles — all one basis, so nothing needs reconciling. */}
                   <div className="an-set-hero">
-                    <div className="an-hero-card lead">
+                    <div className={`an-hero-card lead${leadAccent.cls}`}>
                       <div className="an-hero-label">
-                        <span className="an-dot" style={{ background: "#1D9E75" }} />
-                        {settlementBasis === "net" ? "Paid to drivers" : "Routed to drivers"}
+                        <span className="an-dot" style={{ background: leadAccent.main }} />
+                        {leadPaidLabel}
                       </div>
                       <div className="an-hero-value">${settlementTotals.settled.toFixed(2)}</div>
                       <div className="an-hero-sub">
                         {settlementTotals.settledRides} ride
-                        {settlementTotals.settledRides === 1 ? "" : "s"} · to drivers / company
+                        {settlementTotals.settledRides === 1 ? "" : "s"} · {leadPaidSub}
                       </div>
                       {settlementDailyChart.buckets.length > 1 &&
                         (() => {
@@ -3576,15 +3958,15 @@ export default function AnalyticsPage({
                               <svg width="100%" height="40" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
                                 <defs>
                                   <linearGradient id="an-spark-grad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0" stopColor="#1D9E75" stopOpacity="0.42" />
-                                    <stop offset="1" stopColor="#1D9E75" stopOpacity="0" />
+                                    <stop offset="0" stopColor={leadAccent.main} stopOpacity="0.42" />
+                                    <stop offset="1" stopColor={leadAccent.main} stopOpacity="0" />
                                   </linearGradient>
                                 </defs>
                                 <path d={area} fill="url(#an-spark-grad)" opacity={settleChartsReady ? 1 : 0} style={{ transition: "opacity 0.5s ease" }} />
                                 <path
                                   d={line}
                                   fill="none"
-                                  stroke="#1D9E75"
+                                  stroke={leadAccent.main}
                                   strokeWidth="2"
                                   strokeLinejoin="round"
                                   strokeLinecap="round"
@@ -3594,7 +3976,7 @@ export default function AnalyticsPage({
                                   strokeDashoffset={settleChartsReady ? 0 : 100}
                                   style={{ transition: "stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)" }}
                                 />
-                                <circle className="an-spark-dot" cx={ex} cy={ey} r="3" fill="#2fce9a" opacity={settleChartsReady ? 1 : 0} />
+                                <circle className="an-spark-dot" cx={ex} cy={ey} r="3" fill={leadAccent.bright} opacity={settleChartsReady ? 1 : 0} />
                               </svg>
                             </div>
                           );
@@ -3885,6 +4267,79 @@ export default function AnalyticsPage({
                       </tbody>
                     </table>
                   </div>
+                </>
+              )}
+
+              {/* ═══ 1b. Cash lane ═══
+                  Cash never touches Stripe -- the driver collects the fare at the
+                  door -- so it has no settlement routes to show. The only money
+                  Vellon touches is its fee, which accrues here and is billed to
+                  the company monthly (same rate as card). Honors the Net | Gross
+                  toggle. Renders for both payout models; the driver-owns vs
+                  company-owns framing (labels + lead accent) is set above. */}
+              {(payoutModel === "driver_direct" || isCompanySettles) && (
+                <>
+                  <div className="an-section-header" style={{ marginTop: 32 }}>
+                    <div className="an-section-title">Cash fares</div>
+                  </div>
+                  <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
+                    {cashScopeNote}
+                  </div>
+                  {cashSettlementLoading ? (
+                    <div className="an-loading">Loading…</div>
+                  ) : !cashSettlement || cashSettlement.cash_rides === 0 ? (
+                    <div className="an-no-data">No completed cash rides for this period</div>
+                  ) : (
+                    <div className="an-set-hero" style={{ gridTemplateColumns: "1.5fr 1fr 1fr" }}>
+                      <div className={`an-hero-card lead${leadAccent.cls}`}>
+                        <div className="an-hero-label">
+                          {settlementBasis === "net" ? cashLeadNetLabel : cashLeadGrossLabel}
+                        </div>
+                        <div className="an-hero-value">
+                          $
+                          {(settlementBasis === "net"
+                            ? cashSettlement.cash_fares - cashSettlement.cash_fee_owed
+                            : cashSettlement.cash_fares
+                          ).toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">
+                          {cashSettlement.cash_rides} ride
+                          {cashSettlement.cash_rides === 1 ? "" : "s"}
+                          {settlementBasis === "net" ? " · after Vellon fee" : ` · ${cashGrossTail}`}
+                        </div>
+                      </div>
+
+                      {/* Complement of the lead tile, so net and gross each show
+                          three distinct numbers (fares = net + fee). */}
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">
+                          {settlementBasis === "net" ? cashGrossShort : cashLeadNetLabel}
+                        </div>
+                        <div className="an-hero-value">
+                          $
+                          {(settlementBasis === "net"
+                            ? cashSettlement.cash_fares
+                            : cashSettlement.cash_fares - cashSettlement.cash_fee_owed
+                          ).toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">
+                          {settlementBasis === "net"
+                            ? `${cashSettlement.cash_rides} ride${cashSettlement.cash_rides === 1 ? "" : "s"} ${periodLabel.toLowerCase()}`
+                            : "after Vellon fee"}
+                        </div>
+                      </div>
+
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">Vellon fee accruing</div>
+                        <div className="an-hero-value" style={{ color: "#F59E0B" }}>
+                          ${cashSettlement.cash_fee_owed.toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">
+                          {periodLabel.toLowerCase()} · invoiced monthly
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
