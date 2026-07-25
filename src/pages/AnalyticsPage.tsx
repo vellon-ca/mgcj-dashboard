@@ -23,15 +23,18 @@ interface HourRevenue {
 interface DriverStat {
   id: string;
   name: string;
+  avatarUrl: string | null;
   rides: number;
   ridesTotal: number;
   earnings: number;
   cashEarnings: number;
   cardEarnings: number;
   cancelRate: number;
+  cancelled: number;
   avgFare: number;
   avgRating: number | null;
   ratingCount: number;
+  recentReviews: { rating: number; comment: string; created_at: string }[];
 }
 interface HourStat {
   hour: number;
@@ -664,6 +667,7 @@ export default function AnalyticsPage({
     new Date().getFullYear(),
   );
   const [rideDetail, setRideDetail] = useState<RideDetailModal | null>(null);
+  const [driverDetail, setDriverDetail] = useState<DriverStat | null>(null);
   const [printingRide, setPrintingRide] = useState(false);
 
   // Reviews
@@ -993,7 +997,7 @@ export default function AnalyticsPage({
           .select("*")
           .gte("created_at", startDate.toISOString())
           .order("created_at", { ascending: true }),
-        supabase.from("ride_reviews").select("driver_id, rating"),
+        supabase.from("ride_reviews").select("driver_id, rating, comment, created_at"),
         supabase.from("drivers").select("id"),
       ]);
 
@@ -1092,7 +1096,14 @@ export default function AnalyticsPage({
 
       if (drivers) {
         const driverIds = drivers.map((d: any) => d.id);
-        const profileMap = await batchProfiles(driverIds);
+        const [profileMap, { data: avatarRows }] = await Promise.all([
+          batchProfiles(driverIds),
+          supabase.from("profiles").select("id, avatar_url").in("id", driverIds),
+        ]);
+        const avatarMap = new Map<string, string>();
+        avatarRows?.forEach((p: any) => {
+          if (p.avatar_url) avatarMap.set(p.id, p.avatar_url);
+        });
         if (fetchId !== revenueFetchId.current) return;
 
         const stats: DriverStat[] = drivers.map((d: any) => {
@@ -1130,15 +1141,29 @@ export default function AnalyticsPage({
           return {
             id: d.id,
             name: profileMap.get(d.id) ?? "Unknown",
+            avatarUrl: avatarMap.get(d.id) ?? null,
             rides: comp.length,
             ridesTotal: dr.length,
             earnings: earn,
             cashEarnings: cashEarn,
             cardEarnings: cardEarn,
             cancelRate: dr.length ? (canc.length / dr.length) * 100 : 0,
+            cancelled: canc.length,
             avgFare: comp.length ? earn / comp.length : 0,
             avgRating,
             ratingCount: driverReviews.length,
+            recentReviews: driverReviews
+              .filter((rv: any) => rv.comment && rv.comment.trim())
+              .sort(
+                (a: any, b: any) =>
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+              )
+              .slice(0, 5)
+              .map((rv: any) => ({
+                rating: rv.rating,
+                comment: rv.comment,
+                created_at: rv.created_at,
+              })),
           };
         });
         if (fetchId === revenueFetchId.current)
@@ -2877,6 +2902,47 @@ export default function AnalyticsPage({
         .an-td.green { color: #1D9E75; font-weight: 600; }
         .an-td.red { color: #E24B4A; }
         .an-td.amber { color: #F59E0B; }
+        /* ── Driver leaderboard ── */
+        .an-dl-head, .an-dl-row { display: grid; grid-template-columns: 30px 40px minmax(0,1fr) 196px 96px 74px; gap: 14px; align-items: center; }
+        .an-dl-head { padding: 10px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+        .an-dl-hcell { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; }
+        .an-dl-row { padding: 13px 18px; border-bottom: 1px solid rgba(255,255,255,0.035); transition: background 0.12s; cursor: pointer; }
+        .an-dl-row:last-child { border-bottom: none; }
+        .an-dl-row:hover { background: rgba(255,255,255,0.022); }
+        .an-dl-rank { font-size: 13px; font-weight: 700; color: #4B5563; text-align: center; font-variant-numeric: tabular-nums; }
+        .an-dl-rank.medal { font-size: 18px; line-height: 1; }
+        .an-dl-av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #E2E8F0; background: linear-gradient(135deg, #2c3d51, #1f2c3b); border: 1px solid rgba(255,255,255,0.06); overflow: hidden; flex: none; }
+        .an-dl-av img { width: 100%; height: 100%; object-fit: cover; }
+        .an-dl-name { font-size: 14px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .an-dl-meta { font-size: 11px; color: #6B7280; margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .an-dl-meta .warn { color: #E24B4A; font-weight: 600; }
+        .an-dl-earn-val { font-size: 14px; font-weight: 700; color: #1D9E75; font-variant-numeric: tabular-nums; text-align: right; margin-bottom: 6px; }
+        .an-dl-earn-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.05); overflow: hidden; }
+        .an-dl-earn-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #157355, #22c993); transition: width 0.6s cubic-bezier(.4,0,.2,1); }
+        .an-dl-split-track { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.05); }
+        .an-dl-split-cash { background: #F59E0B; }
+        .an-dl-split-card { background: #1D9E75; }
+        .an-dl-split-legend { display: flex; justify-content: space-between; gap: 6px; font-size: 9px; color: #6B7280; margin-top: 5px; font-variant-numeric: tabular-nums; }
+        .an-dl-rating { text-align: right; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .an-dl-rating .cnt { display: block; font-size: 10px; color: #6B7280; font-weight: 400; margin-top: 1px; }
+        .an-dl-rating .none { color: #4B5563; font-weight: 400; }
+        /* ── Driver detail modal ── */
+        .an-dm-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+        .an-dm-av { width: 56px; height: 56px; border-radius: 50%; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; color: #E2E8F0; background: linear-gradient(135deg, #2c3d51, #1f2c3b); border: 1px solid rgba(255,255,255,0.08); }
+        .an-dm-av img { width: 100%; height: 100%; object-fit: cover; }
+        .an-dm-name { font-size: 18px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .an-dm-sub { font-size: 12px; color: #6B7280; margin-top: 3px; }
+        .an-dm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+        .an-dm-stat { background: #18222F; border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 12px 13px; }
+        .an-dm-stat-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+        .an-dm-stat-value { font-size: 18px; font-weight: 700; color: #F1F5F9; font-variant-numeric: tabular-nums; }
+        .an-dm-stat-sub { font-size: 10px; color: #6B7280; margin-top: 3px; font-variant-numeric: tabular-nums; }
+        .an-dm-section-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin: 4px 0 10px; }
+        .an-dm-review { background: #18222F; border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 11px 13px; margin-bottom: 8px; }
+        .an-dm-review-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .an-dm-review-stars { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+        .an-dm-review-date { font-size: 10px; color: #6B7280; }
+        .an-dm-review-text { font-size: 12px; color: #C7CEDB; line-height: 1.45; }
         .an-status { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
         .an-filter-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
         .an-filter-btn { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 12px; font-size: 12px; color: #6B7280; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
@@ -4879,97 +4945,303 @@ export default function AnalyticsPage({
                 <div className="an-loading">Loading…</div>
               ) : driverStats.length === 0 ? (
                 <div className="an-no-data">No driver data for this period</div>
-              ) : (
-                <div
-                  className="an-chart-card"
-                  style={{ padding: 0, overflow: "hidden" }}
-                >
-                  <table className="an-table">
-                    <thead>
-                      <tr>
-                        {[
-                          "Driver",
-                          "Rides",
-                          "Earnings",
-                          "Cash",
-                          "Card",
-                          "Avg Fare",
-                          "Cancel %",
-                          "Avg Rating",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            className="an-th"
-                            style={{ padding: "12px 14px" }}
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {driverStats.map((d, i) => (
-                        <tr
-                          key={d.id}
-                          style={{
-                            background:
-                              i % 2 === 0
-                                ? "transparent"
-                                : "rgba(255,255,255,0.015)",
-                          }}
+              ) : (() => {
+                const totalRides = driverStats.reduce((s, d) => s + d.rides, 0);
+                const totalEarnings = driverStats.reduce((s, d) => s + d.earnings, 0);
+                const maxEarnings = Math.max(...driverStats.map((d) => d.earnings), 1);
+                const rated = driverStats.filter((d) => d.avgRating !== null);
+                const fleetRating = rated.length
+                  ? rated.reduce((s, d) => s + (d.avgRating ?? 0) * d.ratingCount, 0) /
+                    rated.reduce((s, d) => s + d.ratingCount, 0)
+                  : null;
+                const medals = ["🥇", "🥈", "🥉"];
+                const initials = (name: string) =>
+                  name
+                    .split(" ")
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((w) => w[0]?.toUpperCase() ?? "")
+                    .join("") || "?";
+                const ratingColor = (r: number) =>
+                  r >= 4 ? "#1D9E75" : r <= 2 ? "#E24B4A" : "#F59E0B";
+                return (
+                  <>
+                    <div className="an-kpi-grid">
+                      <div className="an-kpi-card">
+                        <div className="an-kpi-label">Active drivers</div>
+                        <div className="an-kpi-value">{driverStats.length}</div>
+                        <div className="an-kpi-sub">with rides this period</div>
+                      </div>
+                      <div className="an-kpi-card">
+                        <div className="an-kpi-label">Completed rides</div>
+                        <div className="an-kpi-value">{totalRides}</div>
+                        <div className="an-kpi-sub">
+                          {(totalRides / driverStats.length).toFixed(1)} avg / driver
+                        </div>
+                      </div>
+                      <div className="an-kpi-card">
+                        <div className="an-kpi-label">Total earnings</div>
+                        <div className="an-kpi-value" style={{ color: "#1D9E75" }}>
+                          ${totalEarnings.toFixed(2)}
+                        </div>
+                        <div className="an-kpi-sub">fares collected by drivers</div>
+                      </div>
+                      <div className="an-kpi-card">
+                        <div className="an-kpi-label">Fleet rating</div>
+                        <div
+                          className="an-kpi-value"
+                          style={{ color: fleetRating !== null ? ratingColor(fleetRating) : "#6B7280" }}
                         >
-                          <td className="an-td primary">{d.name}</td>
-                          <td className="an-td">{d.rides}</td>
-                          <td className="an-td green">
-                            ${d.earnings.toFixed(2)}
-                          </td>
-                          <td className="an-td amber">
-                            ${d.cashEarnings.toFixed(2)}
-                          </td>
-                          <td className="an-td" style={{ color: "#1D9E75" }}>
-                            ${d.cardEarnings.toFixed(2)}
-                          </td>
-                          <td className="an-td">${d.avgFare.toFixed(2)}</td>
-                          <td
-                            className={`an-td${d.cancelRate > 20 ? " red" : ""}`}
+                          {fleetRating !== null ? `${fleetRating.toFixed(1)} ★` : "—"}
+                        </div>
+                        <div className="an-kpi-sub">
+                          {fleetRating !== null
+                            ? `across ${rated.reduce((s, d) => s + d.ratingCount, 0)} reviews`
+                            : "no reviews yet"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
+                      <div className="an-dl-head">
+                        <div className="an-dl-hcell" style={{ textAlign: "center" }}>#</div>
+                        <div className="an-dl-hcell" />
+                        <div className="an-dl-hcell">Driver</div>
+                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>Earnings</div>
+                        <div className="an-dl-hcell">Cash / Card</div>
+                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>Rating</div>
+                      </div>
+                      {driverStats.map((d, i) => {
+                        const paidTotal = d.cashEarnings + d.cardEarnings;
+                        const cashPct = paidTotal ? (d.cashEarnings / paidTotal) * 100 : 0;
+                        const cardPct = paidTotal ? 100 - cashPct : 0;
+                        return (
+                          <div
+                            className="an-dl-row"
+                            key={d.id}
+                            onClick={() => setDriverDetail(d)}
                           >
-                            {d.cancelRate.toFixed(1)}%
-                          </td>
-                          <td className="an-td">
-                            {d.avgRating !== null ? (
-                              <span
-                                style={{
-                                  color:
-                                    d.avgRating >= 4
-                                      ? "#1D9E75"
-                                      : d.avgRating <= 2
-                                        ? "#E24B4A"
-                                        : "#F59E0B",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {d.avgRating.toFixed(1)} ★
-                                <span
+                            <div className={`an-dl-rank${i < 3 ? " medal" : ""}`}>
+                              {i < 3 ? medals[i] : i + 1}
+                            </div>
+                            <div className="an-dl-av">
+                              {d.avatarUrl ? (
+                                <img
+                                  src={d.avatarUrl}
+                                  alt=""
+                                  onError={(e) => {
+                                    // fall back to initials if the image 404s
+                                    const el = e.currentTarget;
+                                    el.style.display = "none";
+                                    el.parentElement!.textContent = initials(d.name);
+                                  }}
+                                />
+                              ) : (
+                                initials(d.name)
+                              )}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="an-dl-name">{d.name}</div>
+                              <div className="an-dl-meta">
+                                {d.rides} {d.rides === 1 ? "ride" : "rides"} · $
+                                {d.avgFare.toFixed(2)} avg
+                                {d.cancelRate > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span className={d.cancelRate > 20 ? "warn" : undefined}>
+                                      {d.cancelRate.toFixed(0)}% cancelled
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="an-dl-earn-val">${d.earnings.toFixed(2)}</div>
+                              <div className="an-dl-earn-track">
+                                <div
+                                  className="an-dl-earn-fill"
+                                  style={{ width: `${(d.earnings / maxEarnings) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <div className="an-dl-split-track">
+                                <div className="an-dl-split-cash" style={{ width: `${cashPct}%` }} />
+                                <div className="an-dl-split-card" style={{ width: `${cardPct}%` }} />
+                              </div>
+                              <div className="an-dl-split-legend">
+                                <span style={{ color: "#F59E0B" }}>${d.cashEarnings.toFixed(0)}</span>
+                                <span style={{ color: "#1D9E75" }}>${d.cardEarnings.toFixed(0)}</span>
+                              </div>
+                            </div>
+                            <div className="an-dl-rating">
+                              {d.avgRating !== null ? (
+                                <>
+                                  <span style={{ color: ratingColor(d.avgRating) }}>
+                                    {d.avgRating.toFixed(1)} ★
+                                  </span>
+                                  <span className="cnt">
+                                    {d.ratingCount} {d.ratingCount === 1 ? "review" : "reviews"}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="none">—</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {driverDetail && (() => {
+                      const d = driverDetail;
+                      const rank = driverStats.findIndex((x) => x.id === d.id) + 1;
+                      const fleetAvgFare = totalRides ? totalEarnings / totalRides : 0;
+                      const fleetAvgEarn = driverStats.length
+                        ? totalEarnings / driverStats.length
+                        : 0;
+                      const paidTotal = d.cashEarnings + d.cardEarnings;
+                      const diffPct = fleetAvgEarn
+                        ? ((d.earnings - fleetAvgEarn) / fleetAvgEarn) * 100
+                        : 0;
+                      const fmtDate = (s: string) =>
+                        new Date(s).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        });
+                      return (
+                        <div
+                          className="an-modal-overlay"
+                          onClick={() => setDriverDetail(null)}
+                        >
+                          <div className="an-modal" onClick={(e) => e.stopPropagation()}>
+                            <div className="an-dm-head">
+                              <div className="an-dm-av">
+                                {d.avatarUrl ? (
+                                  <img src={d.avatarUrl} alt="" />
+                                ) : (
+                                  initials(d.name)
+                                )}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div className="an-dm-name">{d.name}</div>
+                                <div className="an-dm-sub">
+                                  {rank <= 3 ? `${medals[rank - 1]} ` : ""}
+                                  Rank #{rank} by earnings
+                                  {d.avgRating !== null && (
+                                    <>
+                                      {" · "}
+                                      <span
+                                        style={{
+                                          color: ratingColor(d.avgRating),
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {d.avgRating.toFixed(1)} ★
+                                      </span>{" "}
+                                      ({d.ratingCount})
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="an-dm-grid">
+                              <div className="an-dm-stat">
+                                <div className="an-dm-stat-label">Total earnings</div>
+                                <div
+                                  className="an-dm-stat-value"
+                                  style={{ color: "#1D9E75" }}
+                                >
+                                  ${d.earnings.toFixed(2)}
+                                </div>
+                                <div className="an-dm-stat-sub">
+                                  {diffPct >= 0 ? "▲" : "▼"} {Math.abs(diffPct).toFixed(0)}%
+                                  vs fleet avg
+                                </div>
+                              </div>
+                              <div className="an-dm-stat">
+                                <div className="an-dm-stat-label">Completed rides</div>
+                                <div className="an-dm-stat-value">{d.rides}</div>
+                                <div className="an-dm-stat-sub">
+                                  ${d.avgFare.toFixed(2)} avg · fleet ${fleetAvgFare.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="an-dm-stat">
+                                <div className="an-dm-stat-label">Cash / Card</div>
+                                <div
+                                  className="an-dm-stat-value"
+                                  style={{ fontSize: 15 }}
+                                >
+                                  <span style={{ color: "#F59E0B" }}>
+                                    ${d.cashEarnings.toFixed(0)}
+                                  </span>
+                                  <span style={{ color: "#4B5563" }}> / </span>
+                                  <span style={{ color: "#1D9E75" }}>
+                                    ${d.cardEarnings.toFixed(0)}
+                                  </span>
+                                </div>
+                                <div className="an-dm-stat-sub">
+                                  {paidTotal
+                                    ? Math.round((d.cashEarnings / paidTotal) * 100)
+                                    : 0}
+                                  % cash
+                                </div>
+                              </div>
+                              <div className="an-dm-stat">
+                                <div className="an-dm-stat-label">Cancellations</div>
+                                <div
+                                  className="an-dm-stat-value"
                                   style={{
-                                    fontSize: 10,
-                                    color: "#6B7280",
-                                    fontWeight: 400,
-                                    marginLeft: 4,
+                                    color: d.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
                                   }}
                                 >
-                                  ({d.ratingCount})
-                                </span>
-                              </span>
+                                  {d.cancelled}
+                                </div>
+                                <div className="an-dm-stat-sub">
+                                  {d.cancelRate.toFixed(1)}% of assigned rides
+                                </div>
+                              </div>
+                            </div>
+                            <div className="an-dm-section-title">
+                              Recent review comments
+                            </div>
+                            {d.recentReviews.length === 0 ? (
+                              <div className="an-no-data" style={{ padding: "16px 0" }}>
+                                No written reviews yet
+                              </div>
                             ) : (
-                              <span style={{ color: "#6B7280" }}>—</span>
+                              d.recentReviews.map((rv, i) => (
+                                <div className="an-dm-review" key={i}>
+                                  <div className="an-dm-review-top">
+                                    <span
+                                      className="an-dm-review-stars"
+                                      style={{ color: ratingColor(rv.rating) }}
+                                    >
+                                      {"★".repeat(rv.rating)}
+                                      <span style={{ color: "#374151" }}>
+                                        {"★".repeat(5 - rv.rating)}
+                                      </span>
+                                    </span>
+                                    <span className="an-dm-review-date">
+                                      {fmtDate(rv.created_at)}
+                                    </span>
+                                  </div>
+                                  <div className="an-dm-review-text">{rv.comment}</div>
+                                </div>
+                              ))
                             )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                            <button
+                              className="an-modal-close"
+                              onClick={() => setDriverDetail(null)}
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
             </>
           )}
           {/* ── ACTIVITY LOG ── */}
