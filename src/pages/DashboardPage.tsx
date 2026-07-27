@@ -1119,24 +1119,42 @@ export default function DashboardPage({
   const coverageToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
     const tryInit = () => {
-      if (mapInitialized.current) return;
+      if (cancelled || mapInitialized.current) return;
       if (!mapRef.current || mapRef.current.offsetHeight === 0) {
         setTimeout(tryInit, 150);
         return;
       }
-      if (!(window as any).google?.maps) {
-        if (!document.getElementById("gmaps")) {
-          const s = document.createElement("script");
-          s.id = "gmaps";
-          s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
-          s.async = true;
-          s.onload = () => initMap();
-          document.head.appendChild(s);
-        }
+      if ((window as any).google?.maps) {
+        initMap();
         return;
       }
-      initMap();
+      // A script tag already exists — it's still loading. Poll for google to appear
+      // rather than giving up forever (the old code returned and never retried).
+      if (document.getElementById("gmaps")) {
+        setTimeout(tryInit, 300);
+        return;
+      }
+      attempts += 1;
+      const s = document.createElement("script");
+      s.id = "gmaps";
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+      s.async = true;
+      s.onload = () => {
+        if (!cancelled) initMap();
+      };
+      // Without this, any transient failure (network blip, quota, CSP) leaves a dead
+      // <script id="gmaps"> in the DOM and the map is stranded until a full page reload.
+      // Drop the dead tag and retry with backoff so it self-heals.
+      s.onerror = () => {
+        s.remove();
+        if (!cancelled && attempts < 8) {
+          setTimeout(tryInit, Math.min(1000 * attempts, 8000));
+        }
+      };
+      document.head.appendChild(s);
     };
     function initMap() {
       if (mapInitialized.current || !mapRef.current) return;
@@ -1150,6 +1168,9 @@ export default function DashboardPage({
       });
     }
     tryInit();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
