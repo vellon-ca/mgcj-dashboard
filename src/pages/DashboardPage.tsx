@@ -32,6 +32,14 @@ const STATUS_LABELS: Record<string, string> = {
   scheduled: "Scheduled",
 };
 const NON_EDITABLE_STATUSES = new Set(["in_progress", "completed", "cancelled"]);
+// Live/active rides: clicking one opens the docked live panel (not the modal).
+const LIVE_STATUSES = new Set([
+  "pending",
+  "offered",
+  "assigned",
+  "driver_arriving",
+  "in_progress",
+]);
 
 // Distinguishes system-driven cancellations from a plain passenger cancel —
 // surfaced as a dedicated section in the ride-detail modal (not baked into
@@ -1027,6 +1035,8 @@ export default function DashboardPage({
   const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
   const mapInitialized = useRef(false);
+  // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
+  const routePolylineRef = useRef<google.maps.Polyline | null>(null);
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -1056,6 +1066,8 @@ export default function DashboardPage({
   const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
+  // Which phone number was just copied from the live-ride card (for feedback).
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [detailOverlayActive, setDetailOverlayActive] = useState(false);
   const [driverSearch, setDriverSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1709,12 +1721,121 @@ export default function DashboardPage({
       });
   }
 
+  function clearRouteOverlay() {
+    if (routePolylineRef.current) {
+      routePolylineRef.current.setMap(null);
+      routePolylineRef.current = null;
+    }
+  }
+
+  function drawRouteOverlay(path: google.maps.LatLng[] | google.maps.LatLngLiteral[]) {
+    if (!googleMapRef.current) return;
+    clearRouteOverlay();
+    routePolylineRef.current = new google.maps.Polyline({
+      path,
+      map: googleMapRef.current,
+      strokeColor: "#E8500A",
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
+    });
+  }
+
+  function copyPhone(phone: string) {
+    navigator.clipboard?.writeText(phone).then(() => {
+      setCopiedPhone(phone);
+      setTimeout(
+        () => setCopiedPhone((p) => (p === phone ? null : p)),
+        1500,
+      );
+    });
+  }
+
   function focusRideOnMap(ride: Ride) {
     if (!googleMapRef.current) return;
     setSelectedRide(ride.id);
-    googleMapRef.current.panTo({ lat: ride.pickup_lat, lng: ride.pickup_lng });
-    googleMapRef.current.setZoom(14);
+    setRideDetail(ride);
+
+    const map = googleMapRef.current;
+    const pickup = { lat: ride.pickup_lat, lng: ride.pickup_lng };
+    const dropoff = { lat: ride.dropoff_lat, lng: ride.dropoff_lng };
+    // Live driver position (if this ride has an assigned, located driver).
+    const drv = ride.driver_id
+      ? drivers.find((d) => d.id === ride.driver_id)
+      : null;
+    const driverPos =
+      drv && (drv as any).current_lat && (drv as any).current_lng
+        ? { lat: (drv as any).current_lat, lng: (drv as any).current_lng }
+        : null;
+
+    // Phase-aware geometry: for a ride in progress the pickup is history — the
+    // relevant leg is the car's live position → drop-off. Before pickup, show
+    // driver → pickup → drop-off (or just pickup → drop-off if no driver yet).
+    const inProgress = ride.status === "in_progress";
+    const origin = driverPos ?? pickup;
+    const dest = dropoff;
+    // Waypoints for the new Routes API: driver → pickup → drop-off before pickup.
+    const intermediates = !inProgress && driverPos ? [pickup] : [];
+
+    // Frame the relevant points.
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend(origin);
+    bounds.extend(dest);
+    if (!inProgress) bounds.extend(pickup);
+    if (driverPos) bounds.extend(driverPos);
+    map.fitBounds(bounds, 80);
+
+    // Road-snapped snapshot via the Routes API (computeRoutes); straight-line
+    // fallback if the key isn't authorized for Routes or the request fails.
+    const fallbackPath = inProgress
+      ? [origin, dest]
+      : driverPos
+        ? [origin, pickup, dest]
+        : [pickup, dest];
+    void computeRouteSnapshot(origin, dest, intermediates, fallbackPath);
   }
+
+  async function computeRouteSnapshot(
+    origin: google.maps.LatLngLiteral,
+    destination: google.maps.LatLngLiteral,
+    intermediates: google.maps.LatLngLiteral[],
+    fallbackPath: google.maps.LatLngLiteral[],
+  ) {
+    try {
+      const { Route } = (await google.maps.importLibrary("routes")) as any;
+      const { routes } = await Route.computeRoutes({
+        origin,
+        destination,
+        intermediates,
+        travelMode: "DRIVING",
+        fields: ["path"],
+      });
+      const path = routes?.[0]?.path;
+      if (Array.isArray(path) && path.length > 0) {
+        drawRouteOverlay(path.map((p: any) => ({ lat: p.lat, lng: p.lng })));
+      } else {
+        drawRouteOverlay(fallbackPath);
+      }
+    } catch (e) {
+      // A REQUEST_DENIED here means the dashboard's Maps key isn't authorized
+      // for the Routes API — enable "Routes API" and add it to the key.
+      console.warn("[route] Routes API failed; drawing straight line", e);
+      drawRouteOverlay(fallbackPath);
+    }
+  }
+
+  // The route overlay only belongs to an open *active*-ride detail. Drop it when
+  // the panel closes or switches to a Recent (completed/cancelled) ride.
+  useEffect(() => {
+    const active =
+      rideDetail &&
+      ["pending", "offered", "assigned", "driver_arriving", "in_progress"].includes(
+        rideDetail.status,
+      );
+    if (!active) {
+      clearRouteOverlay();
+      if (!rideDetail) setSelectedRide(null);
+    }
+  }, [rideDetail]);
 
   async function createInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -2723,6 +2844,34 @@ export default function DashboardPage({
         .db-modal-submit-btn { flex: 2; background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-modal-submit-btn:hover { opacity: 0.88; }
         .db-modal-submit-btn:disabled { opacity: 0.5; }
+        /* Floating live-ride card — sits over the bottom-left of the map, list + map stay visible */
+        .db-ride-float { position: absolute; left: 16px; top: 72px; z-index: 60; width: 300px; max-height: calc(100% - 88px); overflow-y: auto; background: rgba(22,31,46,0.97); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; }
+        @keyframes dbFloatIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .db-ride-float-head { display: flex; align-items: center; gap: 8px; }
+        .db-ride-float-time { font-size: 12px; color: #6B7280; }
+        .db-ride-float-close { margin-left: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; border-radius: 7px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background 0.12s; }
+        .db-ride-float-close:hover { background: rgba(255,255,255,0.12); color: #E2E8F0; }
+        .db-ride-float-pax { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-top: -2px; }
+        .db-ride-float-contacts { display: flex; flex-direction: column; gap: 8px; }
+        .db-phone-row { display: flex; align-items: center; gap: 8px; }
+        .db-phone-role { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; flex-shrink: 0; }
+        .db-phone-num { font-size: 13px; color: #E2E8F0; font-weight: 500; font-variant-numeric: tabular-nums; flex: 1; }
+        .db-phone-copy { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #E2E8F0; border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; transition: background 0.12s; font-family: system-ui, -apple-system, sans-serif; }
+        .db-phone-copy:hover { background: rgba(255,255,255,0.12); }
+        .db-live-driver { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 12px 14px; }
+        .db-live-driver-name { font-size: 14px; font-weight: 600; color: #E2E8F0; }
+        .db-live-driver-veh { font-size: 12px; color: #94A3B8; margin-top: 2px; }
+        .db-live-track { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .db-live-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+        .db-live-route { display: flex; flex-direction: column; gap: 12px; position: relative; }
+        .db-live-route::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 14px; width: 2px; background: rgba(255,255,255,0.12); }
+        .db-live-stop { display: flex; gap: 12px; align-items: flex-start; position: relative; }
+        .db-live-stop-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 2px; flex-shrink: 0; border: 2px solid #161F2E; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); z-index: 1; }
+        .db-live-stop-label { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+        .db-live-stop-addr { font-size: 13px; color: #E2E8F0; margin-top: 2px; line-height: 1.35; }
+        .db-live-chips { display: flex; gap: 8px; }
+        .db-live-chip { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .db-live-contact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
         .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
         .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; font-family: system-ui, -apple-system, sans-serif; }
         .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; font-family: system-ui, -apple-system, sans-serif; }
@@ -3103,6 +3252,7 @@ export default function DashboardPage({
             {detailOverlayActive && (
               <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)", zIndex: 40, pointerEvents: "none" }} />
             )}
+
             <div className="db-panel">
               {tab === "rides" && (
                 <>
@@ -3118,7 +3268,11 @@ export default function DashboardPage({
                       <div
                         key={ride.id}
                         className={`db-ride-card${selectedRide === ride.id ? " selected" : ""}`}
-                        onClick={() => focusRideOnMap(ride)}
+                        onClick={() =>
+                          rideDetail?.id === ride.id
+                            ? setRideDetail(null)
+                            : focusRideOnMap(ride)
+                        }
                       >
                         <div className="db-ride-card-top">
                           <span
@@ -3635,6 +3789,113 @@ export default function DashboardPage({
                 className="db-map"
                 style={{ visibility: selectedDriver ? "hidden" : "visible" }}
               />
+
+              {rideDetail && !editingRide && !selectedDriver && LIVE_STATUSES.has(rideDetail.status) && (() => {
+                const rd = rideDetail;
+                const pax = (rd as any).passenger;
+                const drvProfile = (rd as any).driver?.profile;
+                const drvRow = rd.driver_id ? drivers.find((d) => d.id === rd.driver_id) : null;
+                const tracking = !!(drvRow && (drvRow as any).current_lat && (drvRow as any).current_lng);
+                const vehicle = drvRow
+                  ? [drvRow.vehicle_make, drvRow.vehicle_model].filter(Boolean).join(" ")
+                  : "";
+                const color = rideStatusColor(rd);
+                return (
+                  <div className="db-ride-float">
+                    <div className="db-ride-float-head">
+                      <span
+                        className="db-status-badge"
+                        style={{ background: color + "18", color, border: `1px solid ${color}30` }}
+                      >
+                        {rideStatusLabel(rd)}
+                      </span>
+                      <span className="db-ride-float-time">
+                        {new Date(rd.created_at).toLocaleTimeString("en-CA", {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      <button
+                        className="db-ride-float-close"
+                        onClick={() => setRideDetail(null)}
+                        title="Close"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="db-ride-float-pax">{pax?.name ?? "Unknown passenger"}</div>
+
+                    {/* Driver */}
+                    <div className="db-live-driver">
+                      <div>
+                        <div className="db-live-driver-name">
+                          {rd.driver_id ? (drvProfile?.name ?? "Driver") : "Unassigned"}
+                        </div>
+                        {vehicle && <div className="db-live-driver-veh">{vehicle}</div>}
+                      </div>
+                      {rd.driver_id && (
+                        <span className="db-live-track" style={{ color: tracking ? "#1D9E75" : "#6B7280" }}>
+                          <span className="db-live-dot" style={{ background: tracking ? "#1D9E75" : "#6B7280" }} />
+                          {tracking ? "Live" : "No signal"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Route */}
+                    <div className="db-live-route">
+                      <div className="db-live-stop">
+                        <span className="db-live-stop-dot" style={{ background: "#4a9eff" }} />
+                        <div>
+                          <div className="db-live-stop-label">Pickup</div>
+                          <div className="db-live-stop-addr">{rd.pickup_address}</div>
+                        </div>
+                      </div>
+                      <div className="db-live-stop">
+                        <span className="db-live-stop-dot" style={{ background: "#E8500A" }} />
+                        <div>
+                          <div className="db-live-stop-label">Drop-off</div>
+                          <div className="db-live-stop-addr">{rd.dropoff_address}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fare / payment */}
+                    <div className="db-live-chips">
+                      <span className="db-live-chip">
+                        {rd.fare_estimate ? `$${rd.fare_estimate.toFixed(2)}` : "—"}
+                      </span>
+                      <span className="db-live-chip" style={{ textTransform: "capitalize" }}>
+                        {rd.payment_method}
+                      </span>
+                    </div>
+
+                    {/* Contact — copy number, no link launch */}
+                    {(pax?.phone || drvProfile?.phone) && (
+                      <div className="db-ride-float-contacts">
+                        {pax?.phone && (
+                          <div className="db-phone-row">
+                            <span className="db-phone-role">Passenger</span>
+                            <span className="db-phone-num">{pax.phone}</span>
+                            <button className="db-phone-copy" onClick={() => copyPhone(pax.phone)}>
+                              {copiedPhone === pax.phone ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        )}
+                        {drvProfile?.phone && (
+                          <div className="db-phone-row">
+                            <span className="db-phone-role">Driver</span>
+                            <span className="db-phone-num">{drvProfile.phone}</span>
+                            <button className="db-phone-copy" onClick={() => copyPhone(drvProfile.phone)}>
+                              {copiedPhone === drvProfile.phone ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -4006,7 +4267,7 @@ export default function DashboardPage({
         </div>
       )}
 
-      {rideDetail && (
+      {rideDetail && (editingRide || !LIVE_STATUSES.has(rideDetail.status)) && (
         <div
           className="db-modal-overlay"
           onClick={() => {
