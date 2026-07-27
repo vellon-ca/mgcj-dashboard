@@ -71,6 +71,31 @@ function rideStatusLabel(ride: { status: string }): string {
 
 type Tab = "rides" | "drivers";
 
+// URL-path-backed navigation: the section you're on is mirrored to the pathname
+// (e.g. /analytics) via the History API so a browser refresh (or back/forward)
+// restores it instead of dumping you on Rides. The `tab`/`show*` state below stays
+// the render truth; the path is the source of truth on load and on popstate.
+// Keep this list in sync with the nav sections. (Refresh on a deep path relies on
+// the SPA rewrite in vercel.json so /analytics serves the app instead of 404ing.)
+const VIEW_PATHS = [
+  "rides",
+  "drivers",
+  "analytics",
+  "reports",
+  "discounts",
+  "settings",
+  "announcements",
+  "messages",
+] as const;
+type View = (typeof VIEW_PATHS)[number];
+function readViewPath(): View {
+  const p =
+    typeof window !== "undefined"
+      ? window.location.pathname.replace(/^\/+/, "").replace(/\/+$/, "")
+      : "";
+  return (VIEW_PATHS as readonly string[]).includes(p) ? (p as View) : "rides";
+}
+
 const NAV_ITEMS: { tab: Tab; label: string }[] = [
   { tab: "rides", label: "Rides" },
   { tab: "drivers", label: "Drivers" },
@@ -990,6 +1015,14 @@ export default function DashboardPage({
 }) {
   const isAdmin = profile.role === "admin";
 
+  // Section to open on first paint, read from the URL path so a refresh keeps
+  // you where you were. Discounts is admin-only, so fall back for non-admins.
+  const initialView: View = (() => {
+    const v = readViewPath();
+    return v === "discounts" && !isAdmin ? "rides" : v;
+  })();
+  const urlSynced = useRef(false);
+
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
@@ -1008,13 +1041,17 @@ export default function DashboardPage({
     avgFare: 0,
     cancelRate: 0,
   });
-  const [tab, setTab] = useState<Tab>("rides");
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showReports, setShowReports] = useState(false);
-  const [showDiscounts, setShowDiscounts] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showAnnouncements, setShowAnnouncements] = useState(false);
-  const [showMessages, setShowMessages] = useState(false);
+  const [tab, setTab] = useState<Tab>(
+    initialView === "drivers" ? "drivers" : "rides",
+  );
+  const [showAnalytics, setShowAnalytics] = useState(initialView === "analytics");
+  const [showReports, setShowReports] = useState(initialView === "reports");
+  const [showDiscounts, setShowDiscounts] = useState(initialView === "discounts");
+  const [showSettings, setShowSettings] = useState(initialView === "settings");
+  const [showAnnouncements, setShowAnnouncements] = useState(
+    initialView === "announcements",
+  );
+  const [showMessages, setShowMessages] = useState(initialView === "messages");
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
   const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
@@ -1190,6 +1227,36 @@ export default function DashboardPage({
       }, 50);
     }
   }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, selectedDriver]);
+
+  // Mirror the active view into the URL path so a refresh restores it. The first
+  // sync (normalizing e.g. "/" to "/rides", or a no-op on a matching deep link)
+  // uses replaceState; genuine navigations pushState so back/forward get entries.
+  useEffect(() => {
+    const path = `/${viewFromState()}`;
+    if (window.location.pathname !== path) {
+      if (urlSynced.current) {
+        window.history.pushState(null, "", path);
+      } else {
+        window.history.replaceState(null, "", path);
+      }
+    }
+    urlSynced.current = true;
+  }, [
+    tab,
+    showAnalytics,
+    showReports,
+    showDiscounts,
+    showSettings,
+    showAnnouncements,
+    showMessages,
+  ]);
+
+  // Browser back/forward: apply whatever view the path now points at.
+  useEffect(() => {
+    const onPop = () => applyView(readViewPath());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [isAdmin]);
 
   useEffect(() => {
     fetchAll();
@@ -2363,6 +2430,32 @@ export default function DashboardPage({
     setShowSettings(dest === "settings");
     setShowAnnouncements(dest === "announcements");
     setShowMessages(dest === "messages");
+  }
+
+  // Collapse the current tab/overlay state into the single active view. Overlay
+  // priority mirrors `topbarTitle` below so the hash round-trips consistently.
+  function viewFromState(): View {
+    if (showAnalytics) return "analytics";
+    if (showReports) return "reports";
+    if (showDiscounts) return "discounts";
+    if (showSettings) return "settings";
+    if (showAnnouncements) return "announcements";
+    if (showMessages) return "messages";
+    return tab;
+  }
+
+  // Drive the tab/overlay state from a view id (used by the hashchange listener
+  // for browser back/forward). Runs unconditionally — React bails on identical
+  // setter values, so re-applying the current view is a no-op and can't loop.
+  function applyView(v: View) {
+    if (v === "discounts" && !isAdmin) v = "rides";
+    if (v === "rides" || v === "drivers") {
+      setTab(v);
+      navigateTo("main");
+    } else {
+      navigateTo(v);
+    }
+    setSelectedDriver(null);
   }
 
   const activeRides = rides.filter(
