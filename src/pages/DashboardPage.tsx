@@ -1034,6 +1034,23 @@ export default function DashboardPage({
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
+  // Per-driver-marker glide state: interpolates old→new position over the
+  // measured update interval (Realtime on `drivers` fires per location write,
+  // ~5s active / ~10s idle) so dots slide instead of teleporting.
+  const driverAnimRef = useRef<
+    Map<
+      string,
+      {
+        from: google.maps.LatLngLiteral;
+        to: google.maps.LatLngLiteral;
+        render: google.maps.LatLngLiteral;
+        startT: number;
+        dur: number;
+        lastT: number;
+      }
+    >
+  >(new Map());
+  const driverRafRef = useRef<number | null>(null);
   const mapInitialized = useRef(false);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
@@ -1219,6 +1236,10 @@ export default function DashboardPage({
     tryInit();
     return () => {
       cancelled = true;
+      if (driverRafRef.current != null) {
+        cancelAnimationFrame(driverRafRef.current);
+        driverRafRef.current = null;
+      }
     };
   }, []);
 
@@ -1623,9 +1644,7 @@ export default function DashboardPage({
       .forEach((d: any) => {
         const key = `driver-${d.id}`;
         const pos = { lat: d.current_lat!, lng: d.current_lng! };
-        if (markersRef.current.has(key)) {
-          markersRef.current.get(key)!.setPosition(pos);
-        } else {
+        if (!markersRef.current.has(key)) {
           const m = new google.maps.Marker({
             position: pos,
             map: googleMapRef.current!,
@@ -1634,6 +1653,7 @@ export default function DashboardPage({
           });
           markersRef.current.set(key, m);
         }
+        animateDriverTo(key, pos);
       });
   }
 
@@ -1669,6 +1689,76 @@ export default function DashboardPage({
       ["pending", "offered", "assigned", "driver_arriving", "in_progress"].includes(r.status),
     );
     setStats((prev) => ({ ...prev, activeRides: active.length }));
+  }
+
+  // --- Smooth driver-marker gliding (rAF lerp) -----------------------------
+  const ANIM_MIN_MS = 1500;
+  const ANIM_MAX_MS = 12000;
+  const ANIM_SNAP_M = 1000; // teleport / GPS spike → snap, don't glide across it
+
+  function metersBetween(
+    a: google.maps.LatLngLiteral,
+    b: google.maps.LatLngLiteral,
+  ): number {
+    const R = 6371000;
+    const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+    const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+    const lat = (((a.lat + b.lat) / 2) * Math.PI) / 180;
+    const x = dLng * Math.cos(lat);
+    return Math.sqrt(dLat * dLat + x * x) * R;
+  }
+
+  function tickDriverAnims() {
+    const now = performance.now();
+    let active = false;
+    driverAnimRef.current.forEach((a, key) => {
+      const marker = markersRef.current.get(key);
+      if (!marker) return;
+      const t = a.dur <= 0 ? 1 : Math.min(1, (now - a.startT) / a.dur);
+      const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+      a.render = {
+        lat: a.from.lat + (a.to.lat - a.from.lat) * e,
+        lng: a.from.lng + (a.to.lng - a.from.lng) * e,
+      };
+      marker.setPosition(a.render);
+      if (t < 1) active = true;
+    });
+    driverRafRef.current = active
+      ? requestAnimationFrame(tickDriverAnims)
+      : null;
+  }
+
+  // Move a driver marker to `pos`, gliding from its current on-screen position.
+  function animateDriverTo(key: string, pos: google.maps.LatLngLiteral) {
+    const now = performance.now();
+    const a = driverAnimRef.current.get(key);
+    if (!a) {
+      driverAnimRef.current.set(key, {
+        from: pos,
+        to: pos,
+        render: pos,
+        startT: now,
+        dur: 0,
+        lastT: now,
+      });
+      return;
+    }
+    if (metersBetween(a.render, pos) > ANIM_SNAP_M) {
+      a.from = pos;
+      a.to = pos;
+      a.render = pos;
+      a.startT = now;
+      a.dur = 0;
+    } else {
+      a.from = { ...a.render }; // restart from where it visibly is right now
+      a.to = pos;
+      a.startT = now;
+      a.dur = Math.min(ANIM_MAX_MS, Math.max(ANIM_MIN_MS, now - a.lastT));
+    }
+    a.lastT = now;
+    if (driverRafRef.current == null) {
+      driverRafRef.current = requestAnimationFrame(tickDriverAnims);
+    }
   }
 
   function updateMapMarkers(rideData: Ride[]) {
