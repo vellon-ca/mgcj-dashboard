@@ -4,7 +4,17 @@ html { height: 100%; }
 body { height: 100%; overflow: hidden; }
 #root { height: 100%; display: flex; flex-direction: column; }
 
-::-webkit-scrollbar { width: 4px; }
+/* Firefox ignores every ::-webkit-scrollbar rule below and falls back to the fat
+   native bar. These standard props are its only hook. Guarded so Chrome never
+   sees them — in Chromium, setting scrollbar-width/color disables the
+   ::-webkit- styling for that element, which would coarsen the 4px bar.
+   Gated on -moz-appearance (Gecko-only, and not aliased by Chromium) rather
+   than a selector() support query — Firefox skipped that form entirely. */
+@supports (-moz-appearance: none) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
