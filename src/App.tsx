@@ -7,9 +7,9 @@ export default function App() {
 
   if (loading) return (
     <div style={{
-      minHeight: '100vh', background: '#111827',
+      minHeight: '100vh', background: '#0A1628',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'system-ui, sans-serif', color: '#E8500A', fontSize: 16,
+      fontFamily: "'Inter', system-ui, sans-serif", color: '#E8500A', fontSize: 16,
     }}>
       Loading…
     </div>

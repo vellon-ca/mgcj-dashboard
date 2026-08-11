@@ -1052,6 +1052,7 @@ export default function DashboardPage({
   >(new Map());
   const driverRafRef = useRef<number | null>(null);
   const mapInitialized = useRef(false);
+  const latestDriversForMapRef = useRef<any[] | null>(null);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
 
@@ -1232,6 +1233,12 @@ export default function DashboardPage({
         disableDefaultUI: true,
         zoomControl: true,
       });
+      // fetchDrivers() commonly resolves before the Maps script/map finish loading,
+      // so it has nowhere to draw markers. Flush whatever it last computed now that
+      // the map exists, instead of waiting for the next poll/Realtime tick.
+      if (latestDriversForMapRef.current) {
+        renderDriverMarkers(latestDriversForMapRef.current);
+      }
     }
     tryInit();
     return () => {
@@ -1638,6 +1645,11 @@ export default function DashboardPage({
       }
       return next;
     });
+    latestDriversForMapRef.current = enriched;
+    renderDriverMarkers(enriched);
+  }
+
+  function renderDriverMarkers(enriched: any[]) {
     if (!googleMapRef.current) return;
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)

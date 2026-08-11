@@ -4,7 +4,33 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Paints the browser's own canvas, scrollbars and form controls dark
+         before a single byte of CSS is parsed. Without it the first frame is
+         the default white page, which read as a flash on the way in from
+         vellon.ca. -->
+    <meta name="color-scheme" content="dark" />
+
     <title>Vellon Dispatch</title>
+
+    <!-- Fonts load from the document head, not from a <style> tag rendered by
+         LoginPage. That path serialised badly: JS had to download, mount React
+         and render the page before the font request even started, so the type
+         visibly re-flowed after everything else had settled. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"
+    />
+
+    <!-- Inline so it applies on the first paint, with no extra request. #0A1628
+         is the sign-in background: an unauthenticated visitor sees one
+         continuous colour from first paint through to the rendered form. -->
+    <style>
+      html, body { background: #0A1628; }
+      body { font-family: 'Inter', system-ui, sans-serif; color: #E5E7EB; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
