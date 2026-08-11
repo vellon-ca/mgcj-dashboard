@@ -1,17 +1,42 @@
+import { useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
   const { session, profile, companyName, loading } = useAuth()
+  const [stuck, setStuck] = useState(false)
+
+  useEffect(() => {
+    if (!loading) {
+      setStuck(false)
+      return
+    }
+    const t = setTimeout(() => setStuck(true), 8000)
+    return () => clearTimeout(t)
+  }, [loading])
 
   if (loading) return (
     <div style={{
       minHeight: '100vh', background: '#0A1628',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: "'Inter', system-ui, sans-serif", color: '#E8500A', fontSize: 16,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Inter', system-ui, sans-serif", color: '#E8500A', fontSize: 16, gap: 14,
     }}>
-      Loading…
+      <div>Loading…</div>
+      {stuck && (
+        <>
+          <div style={{ color: '#6B7280', fontSize: 13 }}>Taking longer than usual.</div>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              background: '#E8500A', color: '#fff', border: 'none', borderRadius: 8,
+              padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Reload
+          </button>
+        </>
+      )}
     </div>
   )
 

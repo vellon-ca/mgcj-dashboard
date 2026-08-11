@@ -13,15 +13,18 @@ export function useAuth() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       // Ignore anonymous sessions — they're created transiently for guest bookings
-      if (session?.user?.is_anonymous) return;
+      if (session?.user?.is_anonymous) {
+        setLoading(false);
+        return;
+      }
       setSession(session);
       if (session) fetchProfile(session.user.id);
       else setLoading(false);
-    });
+    }).catch(() => setLoading(false));
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       // Ignore anonymous users entirely — guest booking creates these transiently
       // and we don't want them to replace the dispatcher's session/profile
       if (session?.user?.is_anonymous) {
@@ -32,7 +35,10 @@ export function useAuth() {
       setSession(session);
       if (session) {
         if (fetchingForRef.current === session.user.id) return;
-        await fetchProfile(session.user.id);
+        // Supabase docs: don't call other supabase.auth/db functions synchronously
+        // inside this callback — it runs while the auth lock is held, and fetchProfile
+        // needs that same lock to attach the access token, which can deadlock.
+        setTimeout(() => fetchProfile(session.user.id), 0);
       } else {
         fetchingForRef.current = null;
         setProfile(null);
@@ -68,30 +74,36 @@ export function useAuth() {
     if (fetchingForRef.current === userId) return;
     fetchingForRef.current = userId;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
+    try {
+      let data: any = null;
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const res = await supabase.from("profiles").select("*").eq("id", userId).single();
+          if (!res.error && res.data) {
+            data = res.data;
+            break;
+          }
+        } catch {
+          // network-level failure (e.g. dead socket after long idle) — treat like a
+          // missing row and retry rather than leaving the promise to hang forever.
+        }
+        if (attempt < retries) await new Promise((r) => setTimeout(r, 500));
+      }
 
-    if ((error || !data) && retries > 0) {
-      await new Promise((r) => setTimeout(r, 500));
+      setProfile(data ?? null);
+
+      if (data?.company_id) {
+        const { data: company } = await supabase
+          .from("companies")
+          .select("name")
+          .eq("id", data.company_id)
+          .maybeSingle();
+        setCompanyName(company?.name ?? null);
+      }
+    } finally {
       fetchingForRef.current = null;
-      return fetchProfile(userId, retries - 1);
+      setLoading(false);
     }
-
-    setProfile(data ?? null);
-
-    if (data?.company_id) {
-      const { data: company } = await supabase
-        .from("companies")
-        .select("name")
-        .eq("id", data.company_id)
-        .maybeSingle();
-      setCompanyName(company?.name ?? null);
-    }
-
-    setLoading(false);
   }
 
   async function signOut() {
