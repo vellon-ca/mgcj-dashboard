@@ -2469,10 +2469,20 @@ export default function DashboardPage({
 
   async function cancelRide(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
-    await supabase
-      .from("rides")
-      .update({ status: "cancelled", cancelled_reason: "dispatch_cancelled" })
-      .eq("id", rideId);
+    // settle-ride, not a direct .update(): a card ride carries a live Stripe
+    // authorization, and a bare status write left the passenger's money held
+    // until Stripe expired it ~7 days later.
+    const { data, error } = await supabase.functions.invoke("settle-ride", {
+      body: { ride_id: rideId, action: "cancel" },
+    });
+    if (error || data?.error) {
+      alert(
+        data?.error ??
+          error?.message ??
+          "Couldn't cancel this ride — the payment hold could not be released.",
+      );
+      return;
+    }
     fetchRides();
     logDispatchEvent({
       companyId: profile.company_id!,
