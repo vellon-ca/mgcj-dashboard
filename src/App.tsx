@@ -4,7 +4,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
-  const { session, profile, companyName, loading } = useAuth()
+  const { session, profile, companyName, loading, signOut } = useAuth()
   const [stuck, setStuck] = useState(false)
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export default function App() {
         <div style={{ color: '#F87171', marginBottom: 16 }}>Access denied. Staff only.</div>
         <button
           style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
-          onClick={() => import('./lib/supabase').then(({ supabase }) => supabase.auth.signOut())}
+          onClick={() => signOut()}
         >
           Sign out
         </button>
@@ -79,7 +79,7 @@ export default function App() {
         <div style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Contact an admin at your company to restore access.</div>
         <button
           style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
-          onClick={() => import('./lib/supabase').then(({ supabase }) => supabase.auth.signOut())}
+          onClick={() => signOut()}
         >
           Sign out
         </button>
@@ -91,7 +91,7 @@ export default function App() {
     <DashboardPage
       profile={profile}
       companyName={companyName}
-      onSignOut={() => import('./lib/supabase').then(({ supabase }) => supabase.auth.signOut())}
+      onSignOut={() => signOut()}
     />
   )
 }

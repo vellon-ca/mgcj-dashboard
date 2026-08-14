@@ -108,7 +108,17 @@ export function useAuth() {
 
   async function signOut() {
     fetchingForRef.current = null;
-    await supabase.auth.signOut();
+    // scope:'local' — supabase-js defaults to 'global', which deletes EVERY
+    // auth.sessions row for this user, on every device and in every tab. A
+    // dispatcher signing out on the office desktop would silently revoke their
+    // own session on the laptop and on any other open tab. Worse, nothing
+    // there would LOOK signed out: PostgREST validates a JWT locally
+    // (signature + exp only, never auth.sessions), so the board keeps loading
+    // rides for up to an hour while every Edge Function that calls getUser()
+    // — settle-ride, create-staff-account, delete-driver — 401s with an error
+    // that reads like the action failed rather than the session being gone.
+    // Signing out means signing out THIS browser.
+    await supabase.auth.signOut({ scope: 'local' });
     setProfile(null);
     setCompanyName(null);
   }
