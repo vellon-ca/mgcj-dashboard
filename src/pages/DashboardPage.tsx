@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import type { Ride, Driver, Profile, DriverInvite } from "../types";
 import AnalyticsPage from "./AnalyticsPage";
@@ -2472,15 +2473,13 @@ export default function DashboardPage({
     // settle-ride, not a direct .update(): a card ride carries a live Stripe
     // authorization, and a bare status write left the passenger's money held
     // until Stripe expired it ~7 days later.
-    const { data, error } = await supabase.functions.invoke("settle-ride", {
-      body: { ride_id: rideId, action: "cancel" },
-    });
-    if (error || data?.error) {
-      alert(
-        data?.error ??
-          error?.message ??
-          "Couldn't cancel this ride — the payment hold could not be released.",
-      );
+    const { error } = await invokeFunction(
+      "settle-ride",
+      { ride_id: rideId, action: "cancel" },
+      "Couldn't cancel this ride — the payment hold could not be released.",
+    );
+    if (error) {
+      alert(error);
       return;
     }
     fetchRides();
