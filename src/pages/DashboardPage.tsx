@@ -1056,6 +1056,9 @@ export default function DashboardPage({
   const latestDriversForMapRef = useRef<any[] | null>(null);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
+  // While an active ride with an assigned driver is open, the map shows only
+  // that driver's car. Null = show every online driver.
+  const focusedDriverIdRef = useRef<string | null>(null);
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -1652,6 +1655,7 @@ export default function DashboardPage({
 
   function renderDriverMarkers(enriched: any[]) {
     if (!googleMapRef.current) return;
+    const focus = focusedDriverIdRef.current;
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
       .forEach((d: any) => {
@@ -1660,7 +1664,8 @@ export default function DashboardPage({
         if (!markersRef.current.has(key)) {
           const m = new google.maps.Marker({
             position: pos,
-            map: googleMapRef.current!,
+            // Don't flash a car onto the map if a different driver is focused.
+            map: !focus || focus === d.id ? googleMapRef.current! : null,
             title: d.profile?.name ?? "Driver",
             label: { text: "🚗", fontSize: "18px" },
           });
@@ -1668,6 +1673,30 @@ export default function DashboardPage({
         }
         animateDriverTo(key, pos);
       });
+    applyDriverVisibility();
+  }
+
+  // Single place that decides which driver cars are on the map: drops markers
+  // for drivers who went offline/lost their fix, and hides everyone but the
+  // focused driver while an active ride is open.
+  function applyDriverVisibility() {
+    const focus = focusedDriverIdRef.current;
+    const live = new Set(
+      (latestDriversForMapRef.current ?? [])
+        .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
+        .map((d: any) => `driver-${d.id}`),
+    );
+    markersRef.current.forEach((m, k) => {
+      if (!k.startsWith("driver-")) return;
+      if (!live.has(k)) {
+        m.setMap(null);
+        markersRef.current.delete(k);
+        driverAnimRef.current.delete(k);
+        return;
+      }
+      const visible = !focus || k === `driver-${focus}`;
+      m.setMap(visible ? googleMapRef.current : null);
+    });
   }
 
   async function fetchInvites() {
@@ -1938,6 +1967,10 @@ export default function DashboardPage({
       clearRouteOverlay();
       if (!rideDetail) setSelectedRide(null);
     }
+    // Solo the assigned driver while an active ride is open. A ride with no
+    // driver yet keeps every car visible — dispatch is about to pick one.
+    focusedDriverIdRef.current = active ? (rideDetail!.driver_id ?? null) : null;
+    applyDriverVisibility();
   }, [rideDetail]);
 
   async function createInvite(e: React.FormEvent) {
