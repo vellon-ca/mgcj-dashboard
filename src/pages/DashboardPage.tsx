@@ -2454,24 +2454,34 @@ export default function DashboardPage({
 
   async function assignDriver(rideId: string, driverId: string) {
     const ride = rides.find((r) => r.id === rideId);
-    const isFutureScheduled =
-      (ride as any)?.scheduled_at &&
-      new Date((ride as any).scheduled_at) > new Date();
+    // (the scheduled-vs-immediate branch now lives in dispatch-assign-ride)
     const prevDriverId = ride?.driver_id ?? null;
     const prevDriver = prevDriverId ? drivers.find((d) => d.id === prevDriverId) : null;
     const newDriver = drivers.find((d) => d.id === driverId);
-    await supabase
-      .from("rides")
-      .update(
-        isFutureScheduled
-          ? {
-              driver_id: driverId,
-              status: "scheduled",
-              confirmed_by_driver: false,
-            }
-          : { driver_id: driverId, status: "offered", confirmed_by_driver: false },
-      )
-      .eq("id", rideId);
+    // Server-side since 2026-08-15: a driver can soft-claim a scheduled ride
+    // (preferred_driver_id + claimed_at, driver_id still null). A direct write
+    // here set driver_id but left the claim behind, and scheduled-release would
+    // then hand the ride back to the old claimant on its next tick, silently
+    // undoing this assignment. dispatch-assign-ride clears the claim in the same
+    // write and pushes the displaced driver.
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dispatch-assign-ride`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ ride_id: rideId, driver_id: driverId }),
+      },
+    );
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: res.statusText }));
+      alert(`Failed to assign driver: ${error}`);
+      setAssigningRide(null);
+      return;
+    }
     setAssigningRide(null);
     fetchRides();
     if (prevDriverId) {
