@@ -2723,6 +2723,17 @@ export default function DashboardPage({
     setSelectedDriver(null);
   }
 
+  // A scheduled ride is "live" once the driver is actually working it, which
+  // can be well before its scheduled_at — they head out early, or dispatch
+  // released it ahead of time. Keying purely off `scheduled_at > now` used to
+  // drop a driver_arriving/in_progress scheduled ride out of Active *and* out
+  // of Scheduled, so it vanished from the dashboard entirely.
+  const isLiveNow = (r: any) => {
+    if (["driver_arriving", "in_progress"].includes(r.status)) return true;
+    if (r.en_route_at) return true; // driver tapped "On my way"
+    return !(r.scheduled_at && new Date(r.scheduled_at) > new Date());
+  };
+
   const activeRides = rides.filter(
     (r) =>
       [
@@ -2731,20 +2742,15 @@ export default function DashboardPage({
         "assigned",
         "driver_arriving",
         "in_progress",
-      ].includes(r.status) &&
-      !(
-        (r as any).scheduled_at &&
-        new Date((r as any).scheduled_at) > new Date()
-      ),
+      ].includes(r.status) && isLiveNow(r),
   );
   const scheduledRides = rides
     .filter(
       (r) =>
         (r as any).scheduled_at &&
         new Date((r as any).scheduled_at) > new Date() &&
-        !["completed", "cancelled", "in_progress", "driver_arriving"].includes(
-          r.status,
-        ),
+        !["completed", "cancelled"].includes(r.status) &&
+        !isLiveNow(r),
     )
     .sort(
       (a, b) =>
