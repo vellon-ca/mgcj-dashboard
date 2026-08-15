@@ -1048,6 +1048,7 @@ export default function DashboardPage({
         startT: number;
         dur: number;
         lastT: number;
+        bearing: number | null;
       }
     >
   >(new Map());
@@ -1059,6 +1060,12 @@ export default function DashboardPage({
   // While an active ride with an assigned driver is open, the map shows only
   // that driver's car. Null = show every online driver.
   const focusedDriverIdRef = useRef<string | null>(null);
+  // Driver ids currently on a live ride — drives the busy (amber) car colour.
+  const busyDriverIdsRef = useRef<Set<string>>(new Set());
+  // Rendered-icon signature per marker, so we only rebuild/setIcon on a real
+  // change (colour, heading bucket or focus) instead of every poll tick.
+  const driverIconSigRef = useRef<Map<string, string>>(new Map());
+  const driverIconCacheRef = useRef<Map<string, google.maps.Icon>>(new Map());
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -1653,6 +1660,82 @@ export default function DashboardPage({
     renderDriverMarkers(enriched);
   }
 
+  // --- Driver car icons ----------------------------------------------------
+  // Cars are drawn as an SVG puck (data-URI icon rather than a Symbol path so
+  // the ring/shadow/glyph can each carry their own colour). Green = free,
+  // amber = on a live ride; deliberately outside the pickup-blue/dropoff-orange
+  // ride-endpoint palette so a car never reads as a ride marker.
+  const DRIVER_COLOR_FREE = "#1D9E75";
+  const DRIVER_COLOR_BUSY = "#F59E0B";
+
+  // Material "directions_car", 24x24 viewBox — centred by the wrapping
+  // transform below.
+  const CAR_GLYPH_PATH =
+    "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z";
+
+  function buildCarIcon(
+    color: string,
+    bearing: number | null,
+    focused: boolean,
+  ): google.maps.Icon {
+    const size = focused ? 52 : 42;
+    const cacheKey = `${color}|${bearing ?? "x"}|${size}`;
+    const hit = driverIconCacheRef.current.get(cacheKey);
+    if (hit) return hit;
+
+    // Heading wedge rides on the outside of the ring; omitted entirely until
+    // the driver has moved far enough for a bearing to mean anything.
+    const pointer =
+      bearing == null
+        ? ""
+        : `<g transform="rotate(${bearing} 24 24)"><path d="M24 1.2 L29 8.8 L19 8.8 Z" fill="#fff"/></g>`;
+
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 48 48">` +
+      `<defs><filter id="ds" x="-50%" y="-50%" width="200%" height="200%">` +
+      `<feDropShadow dx="0" dy="1.5" stdDeviation="1.7" flood-color="#000" flood-opacity="0.45"/>` +
+      `</filter></defs>` +
+      `<g filter="url(#ds)">` +
+      pointer +
+      `<circle cx="24" cy="24" r="12.6" fill="${color}" stroke="#fff" stroke-width="2.4"/>` +
+      `</g>` +
+      `<g transform="translate(24 24) scale(0.74) translate(-12 -12)" fill="#fff">` +
+      `<path d="${CAR_GLYPH_PATH}"/>` +
+      `</g>` +
+      `</svg>`;
+
+    const icon: google.maps.Icon = {
+      url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(size, size),
+      anchor: new google.maps.Point(size / 2, size / 2),
+    };
+    driverIconCacheRef.current.set(cacheKey, icon);
+    return icon;
+  }
+
+  // Repaint one car if (and only if) its colour/heading/focus actually changed.
+  function applyDriverIcon(key: string) {
+    const m = markersRef.current.get(key);
+    if (!m) return;
+    const id = key.slice("driver-".length);
+    const busy = busyDriverIdsRef.current.has(id);
+    const focused = focusedDriverIdRef.current === id;
+    const bearing = driverAnimRef.current.get(key)?.bearing ?? null;
+    const sig = `${busy}|${focused}|${bearing ?? "x"}`;
+    if (driverIconSigRef.current.get(key) === sig) return;
+    driverIconSigRef.current.set(key, sig);
+    m.setIcon(
+      buildCarIcon(busy ? DRIVER_COLOR_BUSY : DRIVER_COLOR_FREE, bearing, focused),
+    );
+    m.setZIndex(focused ? 300 : busy ? 200 : 100);
+  }
+
+  function refreshDriverIcons() {
+    markersRef.current.forEach((_m, k) => {
+      if (k.startsWith("driver-")) applyDriverIcon(k);
+    });
+  }
+
   function renderDriverMarkers(enriched: any[]) {
     if (!googleMapRef.current) return;
     const focus = focusedDriverIdRef.current;
@@ -1667,11 +1750,14 @@ export default function DashboardPage({
             // Don't flash a car onto the map if a different driver is focused.
             map: !focus || focus === d.id ? googleMapRef.current! : null,
             title: d.profile?.name ?? "Driver",
-            label: { text: "🚗", fontSize: "18px" },
+            // Recolouring/rotating icons repaint poorly in the shared optimized
+            // canvas; each car gets its own element instead.
+            optimized: false,
           });
           markersRef.current.set(key, m);
         }
         animateDriverTo(key, pos);
+        applyDriverIcon(key);
       });
     applyDriverVisibility();
   }
@@ -1692,10 +1778,12 @@ export default function DashboardPage({
         m.setMap(null);
         markersRef.current.delete(k);
         driverAnimRef.current.delete(k);
+        driverIconSigRef.current.delete(k);
         return;
       }
       const visible = !focus || k === `driver-${focus}`;
       m.setMap(visible ? googleMapRef.current : null);
+      applyDriverIcon(k);
     });
   }
 
@@ -1737,6 +1825,7 @@ export default function DashboardPage({
   const ANIM_MIN_MS = 1500;
   const ANIM_MAX_MS = 12000;
   const ANIM_SNAP_M = 1000; // teleport / GPS spike → snap, don't glide across it
+  const BEARING_MIN_M = 12; // below this a "move" is just GPS jitter
 
   function metersBetween(
     a: google.maps.LatLngLiteral,
@@ -1748,6 +1837,23 @@ export default function DashboardPage({
     const lat = (((a.lat + b.lat) / 2) * Math.PI) / 180;
     const x = dLng * Math.cos(lat);
     return Math.sqrt(dLat * dLat + x * x) * R;
+  }
+
+  // Compass bearing a→b, bucketed to 15° so a turning car doesn't churn
+  // through icon swaps (each one is a real DOM image change).
+  function bearingBetween(
+    a: google.maps.LatLngLiteral,
+    b: google.maps.LatLngLiteral,
+  ): number {
+    const rad = Math.PI / 180;
+    const p1 = a.lat * rad;
+    const p2 = b.lat * rad;
+    const dl = (b.lng - a.lng) * rad;
+    const y = Math.sin(dl) * Math.cos(p2);
+    const x =
+      Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    const deg = (Math.atan2(y, x) / rad + 360) % 360;
+    return (Math.round(deg / 15) * 15) % 360;
   }
 
   function tickDriverAnims() {
@@ -1782,8 +1888,16 @@ export default function DashboardPage({
         startT: now,
         dur: 0,
         lastT: now,
+        bearing: null,
       });
       return;
+    }
+    // A parked car's GPS wanders a few metres every tick — only re-aim the
+    // heading wedge on real movement, and keep the last heading otherwise
+    // (including across a snap, where the direction is meaningless).
+    const moved = metersBetween(a.to, pos);
+    if (moved > BEARING_MIN_M && moved < ANIM_SNAP_M) {
+      a.bearing = bearingBetween(a.to, pos);
     }
     if (metersBetween(a.render, pos) > ANIM_SNAP_M) {
       a.from = pos;
@@ -1798,13 +1912,27 @@ export default function DashboardPage({
       a.dur = Math.min(ANIM_MAX_MS, Math.max(ANIM_MIN_MS, now - a.lastT));
     }
     a.lastT = now;
+    applyDriverIcon(key);
     if (driverRafRef.current == null) {
       driverRafRef.current = requestAnimationFrame(tickDriverAnims);
     }
   }
 
   function updateMapMarkers(rideData: Ride[]) {
+    // Computed above the map guard: rides commonly load before the map does,
+    // and the map-init flush of renderDriverMarkers needs this to already be
+    // right or every car paints green until the next rides tick.
+    busyDriverIdsRef.current = new Set(
+      rideData
+        .filter(
+          (r) =>
+            r.driver_id &&
+            ["assigned", "driver_arriving", "in_progress"].includes(r.status),
+        )
+        .map((r) => r.driver_id as string),
+    );
     if (!googleMapRef.current) return;
+    refreshDriverIcons();
     markersRef.current.forEach((m, k) => {
       if (!k.startsWith("driver-")) {
         m.setMap(null);
