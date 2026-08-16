@@ -847,6 +847,65 @@ function DriverDetailPanel({
   );
 }
 
+// Why auto-dispatch placed nobody. assign-ride used to give up silently on all
+// of these — the ride just sat `pending` until it expired, and dispatch's only
+// clue was noticing a card that never moved. `driver_committed` is the one that
+// needs a human: somebody IS free, they're just confirmed for a scheduled
+// pickup they'd miss, and only a dispatcher knows whether this trip is a
+// two-minute hop worth the risk. The assign-driver override below is the
+// escape hatch.
+function AssignmentHold({ ride }: { ride: any }) {
+  const reason = ride.assignment_hold_reason;
+  // Only meaningful while nobody holds the ride — a manual override clears it
+  // server-side, but don't render a stale pill in the gap either way.
+  if (!reason || (ride.status !== "pending" && ride.status !== "offered")) return null;
+
+  // driver_committed deliberately renders NOTHING here. Committed drivers are a
+  // permanent background condition of a company that takes bookings, so a card
+  // banner for it is noise on every ride. The signal moved to where it's
+  // actionable: committed drivers sink to the bottom of the "Assign driver"
+  // list, amber, labelled with the pickup they're due at, behind a
+  // confirmation. no_drivers/all_declined stay — those are genuinely abnormal.
+  let title = "";
+  let body: string | null = null;
+  if (reason === "no_drivers") {
+    title = "No drivers online";
+    body = "Nobody is on shift for this vehicle class.";
+  } else if (reason === "all_declined") {
+    title = "Every driver declined";
+    body = "No one left to offer this to automatically.";
+  }
+  // driver_committed lands here with no title — render nothing at all rather
+  // than an empty amber box.
+  if (!title) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: "7px 9px",
+        borderRadius: 8,
+        background: "rgba(245,158,11,0.10)",
+        border: "1px solid rgba(245,158,11,0.35)",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B" }}>
+        {title}
+      </div>
+      {body && (
+        <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>{body}</div>
+      )}
+    </div>
+  );
+}
+
+function shortTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-CA", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function coverageDisplay(ride: any): { label: string; color: string; bg: string } {
   const minsUntil = ride.scheduled_at
     ? (new Date(ride.scheduled_at).getTime() - Date.now()) / 60_000
@@ -1069,6 +1128,20 @@ export default function DashboardPage({
 
   const [rides, setRides] = useState<Ride[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  // Real per-driver verdicts for the ride whose assign picker is open, from
+  // check-ride-conflicts. Keyed by driver id. Empty until the call returns —
+  // the picker is usable immediately and the warnings arrive a beat later.
+  const [conflicts, setConflicts] = useState<
+    Map<string, { misses: boolean; commitment_at: string; minutes_short: number | null; free_at: string | null }>
+  >(new Map());
+  const [conflictsLoading, setConflictsLoading] = useState(false);
+  const [confirmHoldAssign, setConfirmHoldAssign] = useState<{
+    rideId: string;
+    driverId: string;
+    name: string;
+    scheduledAt: string;
+    minutesShort: number | null;
+  } | null>(null);
   const [pendingInvites, setPendingInvites] = useState<DriverInvite[]>([]);
   const [stats, setStats] = useState<Stats>({
     activeRides: 0,
@@ -2882,6 +2955,35 @@ export default function DashboardPage({
         "in_progress",
       ].includes(r.status) && isLiveNow(r),
   );
+  // Asked once per picker-open, not per render: the answer needs live drive
+  // times, so it costs Distance Matrix elements. It's a human-initiated action,
+  // so once each time dispatch looks is the right cadence.
+  useEffect(() => {
+    if (!assigningRide) {
+      setConflicts(new Map());
+      return;
+    }
+    let cancelled = false;
+    setConflictsLoading(true);
+    (async () => {
+      const { data, error } = await invokeFunction("check-ride-conflicts", {
+        ride_id: assigningRide,
+      });
+      if (cancelled) return;
+      setConflictsLoading(false);
+      if (error) {
+        console.error("[conflicts]", error);
+        return;
+      }
+      const m = new Map<string, any>();
+      for (const c of data?.conflicts ?? []) m.set(c.driver_id, c);
+      setConflicts(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assigningRide]);
+
   const scheduledRides = rides
     .filter(
       (r) =>
@@ -3529,6 +3631,36 @@ export default function DashboardPage({
             </div>
           )}
 
+          {confirmHoldAssign && (
+            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setConfirmHoldAssign(null)}>
+              <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
+                <div className="dd-confirm-title">Assign anyway?</div>
+                <div className="dd-confirm-body">
+                  {confirmHoldAssign.name} is due at a scheduled pickup at{" "}
+                  {shortTime(confirmHoldAssign.scheduledAt)}.
+                  {confirmHoldAssign.minutesShort != null
+                    ? ` Taking this ride would put them there about ${confirmHoldAssign.minutesShort} minutes late.`
+                    : " Drive times were unavailable, so this can't be checked."}{" "}
+                  Assign anyway only if you know something the estimate doesn't.
+                </div>
+                <div className="dd-confirm-actions">
+                  <button className="dd-confirm-cancel" onClick={() => setConfirmHoldAssign(null)}>
+                    Keep held
+                  </button>
+                  <button
+                    className="dd-confirm-ok danger"
+                    onClick={() => {
+                      assignDriver(confirmHoldAssign.rideId, confirmHoldAssign.driverId);
+                      setConfirmHoldAssign(null);
+                    }}
+                  >
+                    Assign anyway
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div
             className="db-body"
             style={{
@@ -3594,6 +3726,7 @@ export default function DashboardPage({
                             ${ride.fare_estimate.toFixed(2)}
                           </div>
                         )}
+                        <AssignmentHold ride={ride} />
                         {(ride.status === "pending" ||
                           ride.status === "offered" ||
                           ride.status === "assigned") && (
@@ -3602,20 +3735,60 @@ export default function DashboardPage({
                               <>
                                 <div className="db-assign-label">
                                   Assign driver:
+                                  {conflictsLoading ? " checking conflicts…" : ""}
                                 </div>
-                                {onlineDrivers.map((d) => (
-                                  <button
-                                    key={d.id}
-                                    className="db-assign-driver-btn"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      assignDriver(ride.id, d.id);
-                                    }}
-                                  >
-                                    {(d as any).profile?.name ?? "Driver"}
-                                    {((ride as any).declined_by ?? []).includes(d.id) ? " (declined)" : ""}
-                                  </button>
-                                ))}
+                                {[...onlineDrivers]
+                                  .sort(
+                                    (a, b) =>
+                                      // Free drivers first, committed ones last.
+                                      // Stable within each group, so the roster
+                                      // order dispatch already knows survives.
+                                      Number(!!conflicts.get(a.id)?.misses) -
+                                      Number(!!conflicts.get(b.id)?.misses),
+                                  )
+                                  .map((d) => {
+                                  const conflict = conflicts.get(d.id);
+                                  const heldFor = conflict?.misses ? conflict : null;
+                                  const dName = (d as any).profile?.name ?? "Driver";
+                                  return (
+                                    <button
+                                      key={d.id}
+                                      className="db-assign-driver-btn"
+                                      style={
+                                        heldFor
+                                          ? {
+                                              background: "rgba(245,158,11,0.07)",
+                                              color: "#F59E0B",
+                                              borderColor: "rgba(245,158,11,0.3)",
+                                            }
+                                          : undefined
+                                      }
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // Overriding the guard is the one assign
+                                        // that can strand a passenger who booked
+                                        // days ago. It gets a confirmation.
+                                        if (heldFor) {
+                                          setConfirmHoldAssign({
+                                            rideId: ride.id,
+                                            driverId: d.id,
+                                            name: dName,
+                                            scheduledAt: heldFor.commitment_at,
+                                            minutesShort: heldFor.minutes_short,
+                                          });
+                                          return;
+                                        }
+                                        assignDriver(ride.id, d.id);
+                                      }}
+                                    >
+                                      {dName}
+                                      {((ride as any).declined_by ?? []).includes(d.id) ? " (declined)" : ""}
+                                      {heldFor
+                                        ? ` · ${heldFor.minutes_short != null ? `${heldFor.minutes_short}m late for` : "due at"} ${shortTime(heldFor.commitment_at)}`
+                                        : ""}
+                                    </button>
+                                  );
+                                })}
                                 <button
                                   className="db-cancel-assign-btn"
                                   onClick={(e) => {
