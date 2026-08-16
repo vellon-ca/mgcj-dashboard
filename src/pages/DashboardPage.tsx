@@ -331,12 +331,16 @@ interface Stats {
 function fareForDistance(
   metres: number,
   surchargePercent: number,
-  _paymentMethod: string,
+  paymentMethod: string,
   baseFare = 4,
   ratePerKm = 1.8,
 ): number {
   const raw = (baseFare + (metres / 1000) * ratePerKm) * (1 + surchargePercent / 100);
-  return Math.ceil(raw);
+  // Cash rounds up to the whole dollar so nobody needs change; card doesn't.
+  // This used to ceil unconditionally with the payment argument unread, which
+  // made every card preview up to a dollar higher than what edit-ride and
+  // create-payment-intent actually charge.
+  return paymentMethod === "cash" ? Math.ceil(raw) : Math.round(raw * 100) / 100;
 }
 
 // Client-side preview of `compute_discount_for_booking` (percent/fixed code
@@ -1250,6 +1254,9 @@ export default function DashboardPage({
   const [editFare, setEditFare] = useState("");
   const [editFareLoading, setEditFareLoading] = useState(false);
   const [editAddressChanged, setEditAddressChanged] = useState(false);
+  // Whether the dispatcher typed the fare themselves. Only a typed fare is sent
+  // as an override; otherwise the box is a preview and the server prices.
+  const [editFareTouched, setEditFareTouched] = useState(false);
   const [editVehicleClassId, setEditVehicleClassId] = useState("");
   const [editVehicleClassTouched, setEditVehicleClassTouched] = useState(false);
   const [editDistanceMetres, setEditDistanceMetres] = useState<number | null>(null);
@@ -2441,6 +2448,9 @@ export default function DashboardPage({
         companyRatePerKm ?? 1.8,
       ).toFixed(2),
     );
+    // This just overwrote whatever was in the box, so it is a preview again —
+    // not a dispatcher's chosen price.
+    setEditFareTouched(false);
   }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment, companyBaseFare, companyRatePerKm]);
 
   async function createManualBooking(e: React.FormEvent) {
@@ -2746,7 +2756,14 @@ export default function DashboardPage({
     setEditPickupCoords({ lat: ride.pickup_lat, lng: ride.pickup_lng });
     setEditDropoff(ride.dropoff_address);
     setEditDropoffCoords({ lat: ride.dropoff_lat, lng: ride.dropoff_lng });
-    setEditFare(ride.fare_estimate != null ? String(ride.fare_estimate) : "");
+    // Pre-discount, deliberately. The auto-recalc effect below writes a
+    // pre-discount `fareForDistance` value into this same box, and edit-ride
+    // treats `fare_override` as pre-discount and applies the discount itself.
+    // Seeding it from the post-discount `fare_estimate` would make the field
+    // mean two different things depending on whether an address was touched,
+    // and would subtract the discount a second time on save.
+    const prefillFare = ride.pre_discount_fare ?? ride.fare_estimate;
+    setEditFare(prefillFare != null ? String(prefillFare) : "");
     setEditPayment(ride.payment_method);
     setEditVehicleClassId(ride.vehicle_class_id ?? "");
     setEditVehicleClassTouched(false);
@@ -2762,63 +2779,185 @@ export default function DashboardPage({
         : "",
     );
     setEditAddressChanged(false);
+    setEditFareTouched(false);
     setEditPreferredDriver(ride.preferred_driver_id ?? "");
     setEditPreferredExclusive(ride.preferred_driver_exclusive ?? false);
     setEditError(null);
     setEditingRide(true);
   }
 
-  async function saveRideEdits(rideId: string) {
-    setEditSaving(true);
-    setEditError(null);
-    const originalRide = rideDetail;
-    const updates: any = {
-      pickup_address: editPickup.trim(),
-      pickup_lat: editPickupCoords?.lat,
-      pickup_lng: editPickupCoords?.lng,
-      dropoff_address: editDropoff.trim(),
-      dropoff_lat: editDropoffCoords?.lat,
-      dropoff_lng: editDropoffCoords?.lng,
-      fare_estimate: editFare ? Math.ceil(parseFloat(editFare)) : null,
-      // payment_method is intentionally NOT editable here: cash->card would
-      // strand the ride with no PaymentIntent (dispatch-booked passengers have
-      // no card on file), and card->cash risks a lingering hold / double charge.
-      // The field is shown read-only in the modal; the guard_ride_payment_method
-      // trigger backstops this against any direct client write.
-      scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
-      vehicle_class_id: editVehicleClassId || null,
-    };
-    if (rideDetail?.status === "scheduled" && !rideDetail?.driver_id) {
-      updates.preferred_driver_id = editPreferredDriver || null;
-      updates.preferred_driver_exclusive = editPreferredDriver ? editPreferredExclusive : false;
-    }
-    const { error } = await supabase
-      .from("rides")
-      .update(updates)
-      .eq("id", rideId);
-    setEditSaving(false);
-    if (error) {
-      setEditError(error.message);
+  // Dispatch edits go through edit-ride, not a direct `.update()`.
+  //
+  // The direct write was legal — both freeze triggers exempt is_staff() — and
+  // it did re-price client-side, so the fare was never stale. What it could not
+  // do is move the Stripe authorization. capture-payment captures the
+  // PaymentIntent's authorized amount and writes THAT back over the fare, so a
+  // dispatcher changing a destination produced a charge and a receipt that
+  // agreed with each other and disagreed with the ride. It also skipped the
+  // soft-claim release, the notified_*/leave_by resets on a time change, and
+  // the commitment guard.
+  //
+  // Only the preferred-driver fields still go direct: they aren't frozen, they
+  // don't move money, and edit-ride has no opinion about them.
+  async function saveRideEdits(rideId: string, confirmConflict = false) {
+    const ride = rideDetail;
+    if (!ride) return;
+
+    // The address inputs null their coords on any keystroke, so text that
+    // wasn't picked from the autocomplete leaves them null. Writing that would
+    // send a new address string with stale coordinates — the exact fare/route
+    // mismatch this whole path exists to prevent.
+    if (!editPickupCoords || !editDropoffCoords) {
+      setEditError(
+        "Pick both addresses from the suggestions list so the fare can be recalculated.",
+      );
       return;
     }
+
+    const moved = (
+      coords: { lat: number; lng: number },
+      address: string,
+      oldLat: number,
+      oldLng: number,
+      oldAddress: string,
+    ) =>
+      coords.lat !== oldLat ||
+      coords.lng !== oldLng ||
+      address.trim() !== (oldAddress ?? "").trim();
+
+    const pickupMoved = moved(
+      editPickupCoords, editPickup, ride.pickup_lat, ride.pickup_lng, ride.pickup_address,
+    );
+    const dropoffMoved = moved(
+      editDropoffCoords, editDropoff, ride.dropoff_lat, ride.dropoff_lng, ride.dropoff_address,
+    );
+
+    const newScheduledISO = editScheduled
+      ? new Date(editScheduled).toISOString()
+      : null;
+    const scheduledMoved =
+      !!newScheduledISO &&
+      !!ride.scheduled_at &&
+      new Date(ride.scheduled_at).getTime() !== new Date(newScheduledISO).getTime();
+
+    const classMoved = (editVehicleClassId || null) !== (ride.vehicle_class_id ?? null);
+
+    const preferredEditable = ride.status === "scheduled" && !ride.driver_id;
+    const preferredMoved =
+      preferredEditable &&
+      ((editPreferredDriver || null) !== (ride.preferred_driver_id ?? null) ||
+        (editPreferredDriver ? editPreferredExclusive : false) !==
+          (ride.preferred_driver_exclusive ?? false));
+
+    // Only send a typed fare. An untouched box holds the client-side preview,
+    // and forwarding that as an override would defeat the server pricing —
+    // mid-ride especially, where the preview is a naive pickup -> dropoff
+    // figure and the server charges driven + remaining.
+    const fareOverride =
+      editFareTouched && editFare !== "" ? parseFloat(editFare) : null;
+
+    if (
+      !pickupMoved && !dropoffMoved && !scheduledMoved &&
+      !classMoved && !preferredMoved && fareOverride == null
+    ) {
+      setEditingRide(false);
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+
+    if (pickupMoved || dropoffMoved || scheduledMoved || classMoved || fareOverride != null) {
+      const body: Record<string, unknown> = { ride_id: rideId, action: "relocate" };
+      if (pickupMoved)
+        body.pickup = { ...editPickupCoords, address: editPickup.trim() };
+      if (dropoffMoved)
+        body.dropoff = { ...editDropoffCoords, address: editDropoff.trim() };
+      if (scheduledMoved) body.scheduled_at = newScheduledISO;
+      if (classMoved) body.vehicle_class_id = editVehicleClassId || null;
+      if (fareOverride != null) body.fare_override = fareOverride;
+      if (confirmConflict) body.confirm_conflict = true;
+
+      const { data, error } = await invokeFunction(
+        "edit-ride",
+        body,
+        "Couldn't save these changes.",
+      );
+
+      if (error) {
+        setEditSaving(false);
+        // A commitment clash is a warning for dispatch, not a refusal — they
+        // are the escape hatch the passenger-facing version points at. Confirm
+        // and re-send. (assignDriver / check-ride-conflicts behave the same.)
+        if ((data as any)?.requires_confirmation) {
+          const short = (data as any)?.conflict?.minutes_short;
+          if (
+            window.confirm(
+              `${error}` +
+                (short ? ` They'd be about ${Math.round(short)} min short.` : "") +
+                "\n\nSave anyway?",
+            )
+          ) {
+            saveRideEdits(rideId, true);
+          }
+          return;
+        }
+        setEditError(error);
+        return;
+      }
+
+      // Report the change against the fare the ride actually HAD, not against
+      // the box. The box holds a pre-discount preview and the server returns a
+      // post-discount figure, so comparing those two would fire on almost every
+      // edit and train dispatch to dismiss it.
+      const serverFare = (data as any)?.fare_estimate;
+      const previousFare = (data as any)?.previous_fare ?? ride.fare_estimate;
+      if (
+        serverFare != null &&
+        previousFare != null &&
+        Math.abs(Number(serverFare) - Number(previousFare)) >= 0.01
+      ) {
+        alert(
+          `Fare changed from $${Number(previousFare).toFixed(2)} to ` +
+            `$${Number(serverFare).toFixed(2)}.`,
+        );
+      }
+    }
+
+    if (preferredMoved) {
+      // Not frozen and not money — a plain write is right here.
+      const { error: prefError } = await supabase
+        .from("rides")
+        .update({
+          preferred_driver_id: editPreferredDriver || null,
+          preferred_driver_exclusive: editPreferredDriver ? editPreferredExclusive : false,
+        })
+        .eq("id", rideId);
+      if (prefError) {
+        setEditSaving(false);
+        setEditError(prefError.message);
+        return;
+      }
+      // edit-ride writes its own dispatch_events row for everything it handles,
+      // so this is logged here only when the preference was the change.
+      if (!pickupMoved && !dropoffMoved && !scheduledMoved && !classMoved && fareOverride == null) {
+        logDispatchEvent({
+          companyId: profile.company_id!,
+          dispatcherId: profile.id,
+          eventType: "ride.scheduled_modified",
+          rideId,
+          details: {
+            preferred_driver_id: editPreferredDriver || null,
+            preferred_driver_exclusive: editPreferredDriver ? editPreferredExclusive : false,
+          },
+        });
+      }
+    }
+
+    setEditSaving(false);
     setEditingRide(false);
     setRideDetail(null);
     fetchRides();
-    const newFare = editFare ? Math.ceil(parseFloat(editFare)) : null;
-    logDispatchEvent({
-      companyId: profile.company_id!,
-      dispatcherId: profile.id,
-      eventType: "ride.scheduled_modified",
-      rideId,
-      details: {
-        pickup_address: editPickup.trim(),
-        dropoff_address: editDropoff.trim(),
-        fare: newFare,
-        scheduled_at: editScheduled ? new Date(editScheduled).toISOString() : null,
-        payment_method: editPayment,
-        original_fare: originalRide?.fare_estimate ?? null,
-      },
-    });
   }
 
   function patchDriverProfile(driverId: string, patch: Record<string, unknown>) {
@@ -4865,7 +5004,7 @@ export default function DashboardPage({
                         Calculating…
                       </span>
                     )}
-                    {!editFareLoading && editAddressChanged && (
+                    {!editFareLoading && editAddressChanged && !editFareTouched && (
                       <span
                         style={{
                           fontSize: 10,
@@ -4874,7 +5013,19 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        Auto-recalculated
+                        Preview — confirmed on save
+                      </span>
+                    )}
+                    {editFareTouched && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: "#E8500A",
+                          fontWeight: 400,
+                          marginLeft: 6,
+                        }}
+                      >
+                        Manual — overrides the calculated fare
                       </span>
                     )}
                   </label>
@@ -4884,8 +5035,18 @@ export default function DashboardPage({
                     step="0.01"
                     placeholder="0.00"
                     value={editFare}
-                    onChange={(e) => setEditFare(e.target.value)}
+                    onChange={(e) => {
+                      setEditFare(e.target.value);
+                      setEditFareTouched(true);
+                    }}
                   />
+                  {rideDetail.status === "in_progress" && !editFareTouched && (
+                    <div className="db-modal-hint">
+                      Ride under way — the fare is recalculated on save as the
+                      distance already driven plus the distance still to drive,
+                      so it won't match this preview.
+                    </div>
+                  )}
                 </div>
                 {vehicleClasses.length > 1 && (
                   <div>
@@ -4922,7 +5083,14 @@ export default function DashboardPage({
                   </select>
                   <div className="db-modal-hint">Set at booking — can't be changed here.</div>
                 </div>
-                {rideDetail.status === "scheduled" && (
+                {/* A booked time can move until the pickup actually happens —
+                    edit-ride allows it through `assigned`, and dispatch moving
+                    a confirmed driver's ride is a real job. Doing so clears the
+                    driver's confirmation and asks them to re-accept. */}
+                {!!rideDetail.scheduled_at &&
+                  ["scheduled", "pending", "offered", "assigned"].includes(
+                    rideDetail.status,
+                  ) && (
                   <div>
                     <label className="db-modal-label">Scheduled for</label>
                     <input
