@@ -56,7 +56,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const [baseFare, setBaseFare] = useState("");
   const [ratePerKm, setRatePerKm] = useState("");
   const [dispatchPhone, setDispatchPhone] = useState("");
-  const [savedDispatchPhone, setSavedDispatchPhone] = useState("");
   const [savedBaseFare, setSavedBaseFare] = useState("");
   const [savedRatePerKm, setSavedRatePerKm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -252,7 +251,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           setSavedBaseFare(String(data.base_fare ?? 4));
           setSavedRatePerKm(String(data.rate_per_km ?? 1.8));
           setDispatchPhone(data.phone ?? "");
-          setSavedDispatchPhone(data.phone ?? "");
         }
         setLoading(false);
       });
@@ -388,7 +386,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     });
     setSavedBaseFare(String(base));
     setSavedRatePerKm(String(rate));
-    setSavedDispatchPhone(dispatchPhone.trim());
   }
 
   return (

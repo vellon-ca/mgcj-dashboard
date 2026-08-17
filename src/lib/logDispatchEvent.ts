@@ -23,6 +23,7 @@ export type DispatchEventType =
   | "announcement.drivers"
   | "announcement.passengers"
   | "escalation.acknowledged"
+  | "ride.flag_resolved"
   | "export.csv"
   | "export.pdf"
   | "invoice.printed"

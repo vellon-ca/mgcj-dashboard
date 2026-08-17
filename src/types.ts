@@ -44,6 +44,9 @@ export interface Ride {
   dropoff_lng: number;
   fare_estimate: number | null;
   fare_final: number | null;
+  // Pre-discount fare. Written at booking and read back to seed the edit form,
+  // which is why the box means the same thing whether or not an address moved.
+  pre_discount_fare: number | null;
   payment_method: string;
   scheduled_at: string | null;
   cancelled_reason: string | null;
