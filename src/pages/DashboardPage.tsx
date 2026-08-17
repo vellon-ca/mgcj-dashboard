@@ -50,6 +50,140 @@ const LIVE_STATUSES = new Set([
   "in_progress",
 ]);
 
+// ── Attention panel ────────────────────────────────────────────────────────
+// An aggregate "is anything wrong right now" view. Every item here ALSO has a
+// surface on its own ride card (the flag badge, AssignmentHold) — that overlap
+// is deliberate, not an oversight to clean up: a card badge only helps a
+// dispatcher already looking at that card, and this answers the question
+// without scanning the board.
+//
+// Sources are pure functions from state to AlertItem[], so adding one later is
+// an entry in buildAlerts() rather than a rendering change. Clicking a row
+// opens the ride — the panel is a way INTO the board, never a place to action
+// things in isolation.
+type AlertItem = {
+  key: string;
+  tier: "act_now" | "watch";
+  source: "passenger_flag" | "assignment_hold";
+  rideId: string;
+  title: string;
+  detail?: string;
+  at: string;
+};
+
+// A flag needs dispatch only while the ride is still happening. The flag ROW is
+// kept on a finished ride — it is the record of what happened, and Reports →
+// Ride escalations reads it — but a completed trip is not something dispatch
+// can act on, so it must leave the attention surfaces.
+const TERMINAL_RIDE = new Set(["completed", "cancelled"]);
+
+function isOpenFlag(r: any): boolean {
+  return (
+    !!r.passenger_flagged_at &&
+    !r.passenger_flag_resolved_at &&
+    !TERMINAL_RIDE.has(r.status)
+  );
+}
+
+function buildAlerts(rides: any[]): AlertItem[] {
+  const items: AlertItem[] = [];
+
+  for (const r of rides) {
+    // Stored, so it has history and an archive. Only dispatch clears it.
+    if (isOpenFlag(r)) {
+      const codes: string[] = [...(r.passenger_flag_reasons ?? [])].sort(
+        (a, b) => FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
+      );
+      items.push({
+        key: `flag:${r.id}`,
+        tier: "act_now",
+        source: "passenger_flag",
+        rideId: r.id,
+        title: FLAG_REASON_LABELS[codes[0]] ?? "Passenger reported a problem",
+        detail:
+          codes.length > 1
+            ? codes.slice(1).map((c) => FLAG_REASON_LABELS[c] ?? c).join(" · ")
+            : (r.passenger_flag_note ?? undefined),
+        at: r.passenger_flag_updated_at ?? r.passenger_flagged_at,
+      });
+    }
+
+    // Derived, so it clears itself when the ride gets a driver or
+    // expire-pending-rides cancels it at the 5-minute mark. No dismissal state
+    // to keep, and deliberately no history.
+    if (
+      (r.status === "pending" || r.status === "offered") &&
+      (r.assignment_hold_reason === "no_drivers" ||
+        r.assignment_hold_reason === "all_declined")
+    ) {
+      items.push({
+        key: `hold:${r.id}`,
+        tier: "act_now",
+        source: "assignment_hold",
+        rideId: r.id,
+        title:
+          r.assignment_hold_reason === "no_drivers"
+            ? "No drivers online for this ride"
+            : "Every driver declined this ride",
+        detail: r.pickup_address ?? undefined,
+        at: r.created_at,
+      });
+    }
+  }
+
+  // Tier first, then newest — a flag raised a minute ago outranks a hold from
+  // five minutes ago, but neither outranks the tier above it.
+  const rank = { act_now: 0, watch: 1 };
+  return items.sort(
+    (a, b) =>
+      rank[a.tier] - rank[b.tier] ||
+      new Date(b.at).getTime() - new Date(a.at).getTime(),
+  );
+}
+
+// Synthesised, not an audio file: no asset to bundle, nothing for the CSP to
+// block, and no network fetch at the moment it matters. Two short tones — a
+// rising interval reads as "look up", where a single beep reads as a UI click.
+//
+// The AudioContext is created lazily on first play and resumed, because a
+// context built before any user gesture starts suspended. By the time a flag
+// arrives the dispatcher has logged in and clicked, so resume() succeeds; if it
+// somehow does not, this fails silently rather than throwing into the effect.
+let alertAudioCtx: AudioContext | null = null;
+
+function playAlertChime() {
+  try {
+    if (!alertAudioCtx) {
+      const Ctor =
+        window.AudioContext ?? (window as any).webkitAudioContext;
+      if (!Ctor) return;
+      alertAudioCtx = new Ctor();
+    }
+    const ctx = alertAudioCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+
+    const now = ctx.currentTime;
+    [
+      { freq: 880, at: 0 },      // A5
+      { freq: 1174.7, at: 0.13 } // D6
+    ].forEach(({ freq, at }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      // Ramped, never stepped — a square-edged gain change is an audible click.
+      gain.gain.setValueAtTime(0.0001, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.16, now + at + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.16);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + 0.18);
+    });
+  } catch {
+    // Audio is a nicety; never let it break the alert itself.
+  }
+}
+
 // Passenger escalations raised from the app during a live ride (flag_ride).
 // A minimal surface for now: a badge on the active card and a resolve action.
 // The dismissible home panel + archive is the next phase.
@@ -1298,6 +1432,10 @@ export default function DashboardPage({
   const editDropoffAutocompleteRef = useRef<any>(null);
   const [flaggedReviews, setFlaggedReviews] = useState(0);
   const [openReports, setOpenReports] = useState(0);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [alertSound, setAlertSound] = useState(
+    () => localStorage.getItem("db-alert-sound") !== "off",
+  );
   const [navExpanded, setNavExpanded] = useState(false);
   const [coverageToast, setCoverageToast] = useState<string | null>(null);
   const coverageToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1442,42 +1580,6 @@ export default function DashboardPage({
               const driverChanged =
                 existing && existing.driver_id !== (payload.new as any).driver_id;
               if (!existing || driverChanged) fetchRides();
-
-              // A passenger escalation toasts on the transition into flagged.
-              // The card badge alone is not enough: a dispatcher watching the
-              // map would never see it, and "nobody noticed in time" is the
-              // failure this feature exists to fix. Uses the same transient
-              // alert strip as coverage — the dismissible home panel that
-              // replaces this is the next phase.
-              const wasFlagged = (existing as any)?.passenger_flagged_at ?? null;
-              const nowFlagged = (payload.new as any).passenger_flagged_at ?? null;
-              if (nowFlagged && nowFlagged !== wasFlagged) {
-                // With one outstanding flag, name it — the reason is the whole
-                // point ("not in the car" is not "going the wrong way"). With
-                // several, naming only the newest is worse than useless: it
-                // overwrites the previous toast and implies the earlier ride
-                // was handled. So switch to a count and send dispatch to the
-                // board, where every flagged card is badged.
-                const outstanding = next.filter(
-                  (r: any) => r.passenger_flagged_at && !r.passenger_flag_resolved_at,
-                ).length;
-                const codes: string[] =
-                  (payload.new as any).passenger_flag_reasons ?? [];
-                const worst = [...codes].sort(
-                  (a, b) =>
-                    FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
-                )[0];
-                const label =
-                  (FLAG_REASON_LABELS[worst] ?? "Passenger reported a problem") +
-                  (codes.length > 1 ? ` (+${codes.length - 1} more)` : "");
-                setCoverageToast(
-                  outstanding > 1
-                    ? `${outstanding} rides flagged by passengers — check the board`
-                    : `${label} — check the ride`,
-                );
-                if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
-                coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 12000);
-              }
 
               // Coverage degradation toast — only for rides within 24 h
               const COV_SEV: Record<string, number> = { covered: 0, at_risk: 1, uncovered: 2 };
@@ -3163,6 +3265,71 @@ export default function DashboardPage({
     return !(r.scheduled_at && new Date(r.scheduled_at) > new Date());
   };
 
+  const alerts = buildAlerts(rides);
+
+  // Toast + auto-open live here, NOT inside the setRides updater where they
+  // started. React invokes an updater during render and may discard or
+  // double-run side effects in it, so the auto-open silently never fired. The
+  // coverage toast below still uses that pattern and is likely just as
+  // unreliable — worth moving next time it is touched.
+  const seenFlagsRef = useRef<Map<string, string>>(new Map());
+  const flagsSeededRef = useRef(false);
+
+  useEffect(() => {
+    const current = new Map<string, string>();
+    for (const r of rides as any[]) {
+      if (isOpenFlag(r)) {
+        current.set(r.id, r.passenger_flag_updated_at ?? r.passenger_flagged_at);
+      }
+    }
+
+    // First pass seeds silently, same discipline as the driver digest's NULL
+    // watermark: otherwise every page load pops the panel for escalations
+    // dispatch has already dealt with.
+    if (!flagsSeededRef.current) {
+      // Wait for rides to actually load. The effect's first run happens with an
+      // empty array — before fetchRides resolves — and seeding THAT made every
+      // existing flag look new a moment later, so a refresh re-announced
+      // escalations dispatch had already seen.
+      if (rides.length === 0) return;
+      seenFlagsRef.current = current;
+      flagsSeededRef.current = true;
+      // Open on load if anything is already outstanding — but silently. The
+      // panel is the DURABLE state ("these things are unresolved"), so it
+      // should be visible after a refresh; the toast and chime are the EVENT
+      // signal ("this just happened") and would be lying if they repeated for
+      // an escalation dispatch has already seen.
+      if (current.size > 0) setAlertsOpen(true);
+      return;
+    }
+
+    // A changed stamp counts as new — that is how an added reason on a ride
+    // already flagged re-announces itself.
+    const fresh = [...current].filter(
+      ([id, stamp]) => seenFlagsRef.current.get(id) !== stamp,
+    );
+    seenFlagsRef.current = current;
+    if (fresh.length === 0) return;
+
+    setAlertsOpen(true);
+    if (alertSound) playAlertChime();
+
+    const ride = (rides as any[]).find((r) => r.id === fresh[0][0]);
+    const codes: string[] = [...(ride?.passenger_flag_reasons ?? [])].sort(
+      (a, b) => FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
+    );
+    const label =
+      (FLAG_REASON_LABELS[codes[0]] ?? "Passenger reported a problem") +
+      (codes.length > 1 ? ` (+${codes.length - 1} more)` : "");
+    setCoverageToast(
+      current.size > 1
+        ? `${current.size} rides flagged by passengers — check the board`
+        : `${label} — check the ride`,
+    );
+    if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
+    coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 12000);
+  }, [rides, alertSound]);
+
   const activeRides = rides.filter(
     (r) =>
       [
@@ -3464,6 +3631,33 @@ export default function DashboardPage({
         .db-phone-row { display: flex; align-items: center; gap: 8px; }
         .db-phone-role { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; flex-shrink: 0; }
         .db-phone-num { font-size: 13px; color: #E2E8F0; font-weight: 500; font-variant-numeric: tabular-nums; flex: 1; }
+        /* Attention panel — an OVERLAY, not a layout column. A column would
+           resize db-map-wrap, and the live-ride map.fitBounds framing was
+           computed at the old width. Sits right; db-ride-float is left:16px so
+           they never collide. */
+        .db-alerts { position: absolute; right: 16px; top: 72px; z-index: 62; width: 312px; max-height: calc(100% - 88px); display: flex; flex-direction: column; background: rgba(22,31,46,0.97); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; overflow: hidden; }
+        .db-alerts-head { display: flex; align-items: center; gap: 8px; padding: 13px 14px 11px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .db-alerts-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; }
+        .db-alerts-count { font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 7px; }
+        .db-alerts-close { margin-left: auto; background: none; border: none; color: #6B7280; font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 4px; }
+        .db-alerts-close:hover { color: #E2E8F0; }
+        .db-alerts-scroll { overflow-y: auto; padding: 8px; }
+        .db-alerts-scroll::-webkit-scrollbar { width: 3px; }
+        .db-alerts-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .db-alert-row { width: 100%; text-align: left; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border-radius: 9px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); cursor: pointer; margin-bottom: 6px; font-family: inherit; transition: background 0.12s, border-color 0.12s; }
+        .db-alert-row:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+        .db-alert-row.flag { border-color: rgba(248,113,113,0.32); background: rgba(248,113,113,0.08); }
+        .db-alert-row.flag:hover { background: rgba(248,113,113,0.13); }
+        .db-alert-glyph { font-size: 13px; line-height: 16px; flex-shrink: 0; }
+        .db-alert-body { display: block; flex: 1; min-width: 0; }
+        .db-alert-title { display: block; font-size: 12px; font-weight: 700; color: #F1F5F9; line-height: 16px; }
+        .db-alert-row.flag .db-alert-title { color: #F87171; }
+        .db-alert-detail { display: block; font-size: 11px; color: #9CA3AF; line-height: 15px; margin-top: 2px; overflow-wrap: anywhere; }
+        .db-alert-meta { display: block; font-size: 10px; color: #6B7280; margin-top: 3px; }
+        .db-alerts-empty { padding: 22px 16px; text-align: center; color: #6B7280; font-size: 12px; }
+        .db-alert-btn { position: relative; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; padding: 6px 11px; font-size: 13px; font-weight: 600; color: #9CA3AF; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
+        .db-alert-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
+        .db-alert-btn.hot { color: #F87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
         .db-flag-box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.35); display: flex; gap: 8px; align-items: flex-start; }
         .db-flag-glyph { color: #F87171; font-size: 13px; line-height: 16px; flex-shrink: 0; }
         .db-flag-body { flex: 1; min-width: 0; }
@@ -3762,12 +3956,26 @@ export default function DashboardPage({
               </div>
             )}
             {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver ? (
-              <button
-                className="db-new-ride-btn"
-                onClick={() => setBookingOpen(true)}
-              >
-                + New ride
-              </button>
+              <>
+                {/* Always present, so "nothing needs me" is a readable state
+                    rather than an absence. Turns red only for act_now. */}
+                <button
+                  className={
+                    "db-alert-btn" +
+                    (alerts.some((a) => a.tier === "act_now") ? " hot" : "")
+                  }
+                  onClick={() => setAlertsOpen((v) => !v)}
+                  title="Needs attention"
+                >
+                  ⚑ {alerts.length}
+                </button>
+                <button
+                  className="db-new-ride-btn"
+                  onClick={() => setBookingOpen(true)}
+                >
+                  + New ride
+                </button>
+              </>
             ) : (
               <button
                 className="db-back-btn"
@@ -3794,7 +4002,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showReports ? "flex" : "none" }}
           >
-            <ReportsPage onBadgeChange={setOpenReports} companyId={profile.company_id!} adminId={profile.id} companyName={companyName} />
+            <ReportsPage onBadgeChange={setOpenReports} isActive={showReports} companyId={profile.company_id!} adminId={profile.id} companyName={companyName} />
           </div>
 
           <div
@@ -4563,6 +4771,88 @@ export default function DashboardPage({
             </div>
 
             <div className="db-map-wrap">
+              {alertsOpen && (
+                <div className="db-alerts">
+                  <div className="db-alerts-head">
+                    <span className="db-alerts-title">Needs attention</span>
+                    {alerts.length > 0 && (
+                      <span className="db-alerts-count">{alerts.length}</span>
+                    )}
+                    <button
+                      className="db-alerts-close"
+                      style={{ marginLeft: "auto" }}
+                      onClick={() => {
+                        const next = !alertSound;
+                        setAlertSound(next);
+                        localStorage.setItem(
+                          "db-alert-sound",
+                          next ? "on" : "off",
+                        );
+                        if (next) playAlertChime(); // confirm what you enabled
+                      }}
+                      title={
+                        alertSound
+                          ? "Sound on — click to mute"
+                          : "Sound muted — click to unmute"
+                      }
+                    >
+                      {alertSound ? "🔔" : "🔕"}
+                    </button>
+                    <button
+                      className="db-alerts-close"
+                      style={{ marginLeft: 0 }}
+                      onClick={() => setAlertsOpen(false)}
+                      title="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {alerts.length === 0 ? (
+                    <div className="db-alerts-empty">Nothing needs attention.</div>
+                  ) : (
+                    <div className="db-alerts-scroll">
+                      {alerts.map((a) => {
+                        const ride = rides.find((r) => r.id === a.rideId);
+                        return (
+                          <button
+                            key={a.key}
+                            className={
+                              "db-alert-row" +
+                              (a.source === "passenger_flag" ? " flag" : "")
+                            }
+                            onClick={() => {
+                              // Into the board, not an action in isolation.
+                              // focusRideOnMap, not a bare setRideDetail: it
+                              // also sets selectedRide and frames the map with
+                              // the route, which is what the ride card does and
+                              // what makes the click land somewhere useful.
+                              if (ride) focusRideOnMap(ride);
+                            }}
+                          >
+                            <span className="db-alert-glyph">
+                              {a.source === "passenger_flag" ? "⚑" : "⌛"}
+                            </span>
+                            <span className="db-alert-body">
+                              <span className="db-alert-title">{a.title}</span>
+                              {a.detail && (
+                                <span className="db-alert-detail">{a.detail}</span>
+                              )}
+                              <span className="db-alert-meta">
+                                {(ride as any)?.passenger?.name ?? "Passenger"}
+                                {" · "}
+                                {new Date(a.at).toLocaleTimeString("en-CA", {
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               {selectedDriver && (
                 <DriverDetailPanel
                   driver={selectedDriver}

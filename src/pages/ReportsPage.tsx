@@ -50,12 +50,40 @@ const STATUS_COLORS: Record<string, string> = {
 
 interface Props {
   onBadgeChange: (count: number) => void;
+  /**
+   * The page lives in an always-mounted overlay toggled with display, so a
+   * fetch-on-mount runs once per session. Escalations arrive continuously, so
+   * dispatch could flag a ride, open this page, and not see it.
+   */
+  isActive: boolean;
   companyId: string;
   adminId: string;
   companyName: string | null;
 }
 
-export default function ReportsPage({ onBadgeChange, companyId, adminId, companyName }: Props) {
+const ESC_REASON_LABELS: Record<string, string> = {
+  not_in_car: "Not in the car",
+  felt_unsafe: "Felt unsafe",
+  driver_never_came: "Driver never arrived",
+  wrong_destination: "Going the wrong way",
+  other: "Something else",
+};
+const ESC_REASON_ORDER = [
+  "not_in_car",
+  "felt_unsafe",
+  "driver_never_came",
+  "wrong_destination",
+  "other",
+];
+
+export default function ReportsPage({ onBadgeChange, isActive, companyId, adminId, companyName }: Props) {
+  // Source-level split, NOT a merged list. Everything on this page is
+  // driver-centric — driverFilter, per-driver counts, a PDF titled "Driver
+  // Report", HIGH_SEVERITY keyed to driver reason codes — and none of it
+  // transfers to a ride escalation. They share the shell, nothing else.
+  const [source, setSource] = useState<"drivers" | "escalations">("drivers");
+  const [escalations, setEscalations] = useState<any[]>([]);
+  const [escLoading, setEscLoading] = useState(true);
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("open");
@@ -66,6 +94,67 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { fetchReports(); }, []);
+  useEffect(() => { if (isActive) fetchEscalations(); }, [isActive]);
+
+  // A flag on a finished ride cannot be resolved from the dashboard card — that
+  // badge lives on the active-rides list — so without this it would sit
+  // unresolved forever. Stamps rather than clears, same as the card action.
+  async function resolveEscalation(rideId: string) {
+    const { error } = await supabase
+      .from("rides")
+      .update({ passenger_flag_resolved_at: new Date().toISOString() })
+      .eq("id", rideId);
+    if (error) { alert(error.message); return; }
+    setEscalations((prev) =>
+      prev.map((e) =>
+        e.id === rideId
+          ? { ...e, passenger_flag_resolved_at: new Date().toISOString() }
+          : e,
+      ),
+    );
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "ride.flag_resolved",
+      rideId,
+    });
+  }
+
+  // Flags only. Assignment holds and the rest of the attention panel are
+  // DERIVED from live state — the condition simply ends, so there is no history
+  // to archive. Don't add them here expecting rows.
+  async function fetchEscalations() {
+    setEscLoading(true);
+    try {
+      const { data: rows } = await supabase
+        .from("rides")
+        .select(
+          "id, passenger_id, pickup_address, dropoff_address, status, created_at, " +
+          "passenger_flagged_at, passenger_flag_updated_at, passenger_flag_reasons, " +
+          "passenger_flag_note, passenger_flag_resolved_at",
+        )
+        .eq("company_id", companyId)
+        .not("passenger_flagged_at", "is", null)
+        .order("passenger_flagged_at", { ascending: false })
+        .limit(200);
+      if (!rows) return;
+
+      const ids = [...new Set(rows.map((r: any) => r.passenger_id).filter(Boolean))];
+      const nameMap = new Map<string, string>();
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from("profiles").select("id, name").in("id", ids);
+        (profs ?? []).forEach((p: any) => nameMap.set(p.id, p.name));
+      }
+      setEscalations(
+        rows.map((r: any) => ({ ...r, passenger_name: nameMap.get(r.passenger_id) ?? null })),
+      );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setEscLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (selected) setNotes(selected.resolution_notes ?? "");
@@ -320,6 +409,11 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
   });
 
   const openCount = reports.filter((r) => r.status === "open").length;
+  // "Open" for an escalation means dispatch hasn't resolved it — the same
+  // predicate the attention panel and the ride card use.
+  const escOpenCount = escalations.filter(
+    (e) => !e.passenger_flag_resolved_at,
+  ).length;
   const highOpen = reports.filter((r) => r.status === "open" && HIGH_SEVERITY.has(r.reason)).length;
   const reviewedCount = reports.filter((r) => r.status === "reviewed").length;
   const dismissedCount = reports.filter((r) => r.status === "dismissed").length;
@@ -443,6 +537,29 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
       <div className="rp-wrap">
         {/* LEFT PANEL */}
         <div className="rp-panel">
+          <div className="rp-panel-title">Source</div>
+          <button
+            className={`rp-filter-btn${source === "drivers" ? " active" : ""}`}
+            onClick={() => setSource("drivers")}
+          >
+            <span>Driver reports</span>
+            <span className={`rp-filter-count${openCount > 0 ? " urgent" : ""}`}>
+              {openCount}
+            </span>
+          </button>
+          <button
+            className={`rp-filter-btn${source === "escalations" ? " active" : ""}`}
+            onClick={() => setSource("escalations")}
+          >
+            <span>Ride escalations</span>
+            <span className={`rp-filter-count${escOpenCount > 0 ? " urgent" : ""}`}>
+              {escOpenCount}
+            </span>
+          </button>
+          <div className="rp-panel-divider" />
+
+          {source === "drivers" && (
+          <>
           <div className="rp-panel-title">Filter</div>
 
           {(["all", "open", "reviewed", "dismissed"] as const).map((s) => {
@@ -489,9 +606,128 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
               })}
             </>
           )}
+          </>
+          )}
         </div>
 
         {/* CONTENT */}
+        {source === "escalations" ? (
+        <div className="rp-content">
+          <div className="rp-header">
+            <div>
+              <div className="rp-title">Ride Escalations</div>
+              <div className="rp-subtitle-text">
+                Raised by passengers during a live ride · {escalations.length} total
+              </div>
+            </div>
+          </div>
+          {escLoading ? (
+            <div className="rp-empty">Loading…</div>
+          ) : escalations.length === 0 ? (
+            <div className="rp-empty">No passenger has flagged a ride yet.</div>
+          ) : (
+            <>
+              {escalations.map((e) => {
+                const open = !e.passenger_flag_resolved_at;
+                const codes: string[] = [...(e.passenger_flag_reasons ?? [])].sort(
+                  (a, b) =>
+                    ESC_REASON_ORDER.indexOf(a) - ESC_REASON_ORDER.indexOf(b),
+                );
+                return (
+                  <div
+                    key={e.id}
+                    className="rp-card"
+                    style={{
+                      cursor: "default",
+                      ...(open ? { borderColor: "rgba(248,113,113,0.35)" } : {}),
+                    }}
+                  >
+                    <div
+                      className="rp-card-accent"
+                      style={{ background: open ? "#F8717160" : "#6B728040" }}
+                    />
+                    <div className="rp-card-body">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: open ? "#F87171" : "#6B7280",
+                        }}
+                      >
+                        {open ? "Unresolved" : "Resolved"}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#6B7280" }}>
+                        {new Date(e.passenger_flagged_at).toLocaleString("en-CA", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#F1F5F9",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {codes
+                        .map((c) => ESC_REASON_LABELS[c] ?? c)
+                        .join(" · ") || "Problem reported"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#9CA3AF" }}>
+                      {e.passenger_name ?? "Passenger"} · {e.pickup_address}
+                      {e.dropoff_address ? ` → ${e.dropoff_address}` : ""}
+                    </div>
+                    {e.passenger_flag_note && (
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "#CBD5E1",
+                          marginTop: 6,
+                          fontStyle: "italic",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        “{e.passenger_flag_note}”
+                      </div>
+                    )}
+                    {open && (
+                      <button
+                        className="rp-btn-close"
+                        style={{ marginTop: 10 }}
+                        onClick={() => resolveEscalation(e.id)}
+                      >
+                        Mark resolved
+                      </button>
+                    )}
+                    {!open && (
+                      <div style={{ fontSize: 11, color: "#6B7280", marginTop: 6 }}>
+                        Resolved{" "}
+                        {new Date(e.passenger_flag_resolved_at).toLocaleString(
+                          "en-CA",
+                          { dateStyle: "medium", timeStyle: "short" },
+                        )}
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+        ) : (
         <div className="rp-content">
           <div className="rp-header">
             <div>
@@ -604,6 +840,7 @@ export default function ReportsPage({ onBadgeChange, companyId, adminId, company
             })
           )}
         </div>
+        )}
       </div>
 
       {/* DETAIL MODAL */}
