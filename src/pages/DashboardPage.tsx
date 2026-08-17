@@ -32,7 +32,15 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
   scheduled: "Scheduled",
 };
-const NON_EDITABLE_STATUSES = new Set(["in_progress", "completed", "cancelled"]);
+// Gates the Edit button in the ride-DETAIL modal, which only renders for a
+// ride that is not in LIVE_STATUSES — so in practice this set decides for
+// completed/cancelled only. in_progress was listed here but never reached it;
+// it is dropped so the set doesn't imply a mid-ride ride is uneditable. It is
+// not: edit-ride's DROPOFF_EDITABLE accepts in_progress, and dispatch enters
+// that edit from the live-panel card below, not from here. The fields the
+// server does refuse mid-ride (pickup, scheduled_at, and vehicle class by our
+// own choice) are locked individually in the form.
+const NON_EDITABLE_STATUSES = new Set(["completed", "cancelled"]);
 // Live/active rides: clicking one opens the docked live panel (not the modal).
 const LIVE_STATUSES = new Set([
   "pending",
@@ -41,6 +49,24 @@ const LIVE_STATUSES = new Set([
   "driver_arriving",
   "in_progress",
 ]);
+
+// Passenger escalations raised from the app during a live ride (flag_ride).
+// A minimal surface for now: a badge on the active card and a resolve action.
+// The dismissible home panel + archive is the next phase.
+const FLAG_REASON_ORDER = [
+  "not_in_car",
+  "felt_unsafe",
+  "driver_never_came",
+  "wrong_destination",
+  "other",
+];
+const FLAG_REASON_LABELS: Record<string, string> = {
+  not_in_car: "Passenger says they're NOT in the car",
+  driver_never_came: "Driver never arrived",
+  wrong_destination: "Going the wrong way",
+  felt_unsafe: "Passenger feels unsafe",
+  other: "Problem reported",
+};
 
 // Distinguishes system-driven cancellations from a plain passenger cancel —
 // surfaced as a dedicated section in the ride-detail modal (not baked into
@@ -1417,6 +1443,42 @@ export default function DashboardPage({
                 existing && existing.driver_id !== (payload.new as any).driver_id;
               if (!existing || driverChanged) fetchRides();
 
+              // A passenger escalation toasts on the transition into flagged.
+              // The card badge alone is not enough: a dispatcher watching the
+              // map would never see it, and "nobody noticed in time" is the
+              // failure this feature exists to fix. Uses the same transient
+              // alert strip as coverage — the dismissible home panel that
+              // replaces this is the next phase.
+              const wasFlagged = (existing as any)?.passenger_flagged_at ?? null;
+              const nowFlagged = (payload.new as any).passenger_flagged_at ?? null;
+              if (nowFlagged && nowFlagged !== wasFlagged) {
+                // With one outstanding flag, name it — the reason is the whole
+                // point ("not in the car" is not "going the wrong way"). With
+                // several, naming only the newest is worse than useless: it
+                // overwrites the previous toast and implies the earlier ride
+                // was handled. So switch to a count and send dispatch to the
+                // board, where every flagged card is badged.
+                const outstanding = next.filter(
+                  (r: any) => r.passenger_flagged_at && !r.passenger_flag_resolved_at,
+                ).length;
+                const codes: string[] =
+                  (payload.new as any).passenger_flag_reasons ?? [];
+                const worst = [...codes].sort(
+                  (a, b) =>
+                    FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
+                )[0];
+                const label =
+                  (FLAG_REASON_LABELS[worst] ?? "Passenger reported a problem") +
+                  (codes.length > 1 ? ` (+${codes.length - 1} more)` : "");
+                setCoverageToast(
+                  outstanding > 1
+                    ? `${outstanding} rides flagged by passengers — check the board`
+                    : `${label} — check the ride`,
+                );
+                if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
+                coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 12000);
+              }
+
               // Coverage degradation toast — only for rides within 24 h
               const COV_SEV: Record<string, number> = { covered: 0, at_risk: 1, uncovered: 2 };
               const prevCov    = (existing as any)?.coverage_status ?? "covered";
@@ -2751,6 +2813,23 @@ export default function DashboardPage({
     });
   }
 
+  // Resolving keeps the flag and stamps it, rather than clearing it: an
+  // escalation that can be erased is one dispatch can lose track of mid-triage.
+  async function resolveFlag(rideId: string) {
+    const { error } = await supabase
+      .from("rides")
+      .update({ passenger_flag_resolved_at: new Date().toISOString() })
+      .eq("id", rideId);
+    if (error) { alert(error.message); return; }
+    fetchRides();
+    logDispatchEvent({
+      companyId: profile.company_id!,
+      dispatcherId: profile.id,
+      eventType: "ride.flag_resolved",
+      rideId,
+    });
+  }
+
   function startEditRide(ride: Ride) {
     setEditPickup(ride.pickup_address);
     setEditPickupCoords({ lat: ride.pickup_lat, lng: ride.pickup_lng });
@@ -3385,6 +3464,18 @@ export default function DashboardPage({
         .db-phone-row { display: flex; align-items: center; gap: 8px; }
         .db-phone-role { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; flex-shrink: 0; }
         .db-phone-num { font-size: 13px; color: #E2E8F0; font-weight: 500; font-variant-numeric: tabular-nums; flex: 1; }
+        .db-flag-box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.35); display: flex; gap: 8px; align-items: flex-start; }
+        .db-flag-glyph { color: #F87171; font-size: 13px; line-height: 16px; flex-shrink: 0; }
+        .db-flag-body { flex: 1; min-width: 0; }
+        .db-flag-head { color: #F87171; font-size: 12px; font-weight: 700; line-height: 16px; }
+        /* Reasons hang off the same left edge as the heading — the icon lives in
+           its own column, so nothing is faked with padding or spaces. */
+        .db-flag-list { list-style: none; margin: 3px 0 0; padding: 0; }
+        .db-flag-item { color: #FCA5A5; font-size: 11.5px; font-weight: 600; line-height: 16px; display: flex; gap: 6px; }
+        .db-flag-item::before { content: "•"; color: rgba(248,113,113,0.65); flex-shrink: 0; }
+        .db-flag-note { color: #FCA5A5; font-size: 11px; line-height: 15px; margin-top: 4px; opacity: 0.9; overflow-wrap: anywhere; }
+        .db-flag-resolve { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #E2E8F0; border-radius: 7px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-flag-resolve:hover { background: rgba(255,255,255,0.12); }
         .db-phone-copy { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #E2E8F0; border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; transition: background 0.12s; font-family: system-ui, -apple-system, sans-serif; }
         .db-phone-copy:hover { background: rgba(255,255,255,0.12); }
         .db-live-driver { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 12px 14px; }
@@ -3754,7 +3845,24 @@ export default function DashboardPage({
                 <div className="dd-confirm-body">
                   {(() => {
                     const r = rides.find((x) => x.id === cancelPendingId);
-                    return r ? `${(r as any).passenger?.name ?? "Passenger"} · ${r.pickup_address}` : "This action cannot be undone.";
+                    if (!r) return "This action cannot be undone.";
+                    const who = `${(r as any).passenger?.name ?? "Passenger"} · ${r.pickup_address}`;
+                    // Mid-ride is a different act from cancelling a ride that
+                    // hasn't started: the trip is under way and the driver is
+                    // paid nothing for the distance already driven.
+                    if (r.status === "in_progress") {
+                      return (
+                        <>
+                          {who}
+                          <div style={{ marginTop: 8, color: "#F59E0B" }}>
+                            This ride is under way. Any card hold is released and
+                            the driver is not paid for the distance already
+                            driven. Their screen will end the trip.
+                          </div>
+                        </>
+                      );
+                    }
+                    return who;
                   })()}
                 </div>
                 <div className="dd-confirm-actions">
@@ -3866,6 +3974,61 @@ export default function DashboardPage({
                           </div>
                         )}
                         <AssignmentHold ride={ride} />
+                        {(ride as any).passenger_flagged_at &&
+                          !(ride as any).passenger_flag_resolved_at &&
+                          (() => {
+                            // Most urgent first — array_agg returns the reasons
+                            // alphabetically, which would bury "not in the car"
+                            // under "wrong destination".
+                            const codes: string[] = [
+                              ...((ride as any).passenger_flag_reasons ?? []),
+                            ].sort(
+                              (a, b) =>
+                                FLAG_REASON_ORDER.indexOf(a) -
+                                FLAG_REASON_ORDER.indexOf(b),
+                            );
+                            const note = (ride as any).passenger_flag_note;
+                            // One reason reads as a sentence; several need a
+                            // heading, or the list has nothing to hang off.
+                            const single = codes.length <= 1;
+                            return (
+                              <div className="db-flag-box">
+                                <span className="db-flag-glyph">⚑</span>
+                                <div className="db-flag-body">
+                                  <div className="db-flag-head">
+                                    {single
+                                      ? (FLAG_REASON_LABELS[codes[0]] ??
+                                         "Problem reported")
+                                      : `Passenger flagged ${codes.length} issues`}
+                                  </div>
+                                  {!single && (
+                                    <ul className="db-flag-list">
+                                      {codes.map((code) => (
+                                        <li key={code} className="db-flag-item">
+                                          <span>
+                                            {FLAG_REASON_LABELS[code] ?? code}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                  {note && (
+                                    <div className="db-flag-note">“{note}”</div>
+                                  )}
+                                  <button
+                                    className="db-flag-resolve"
+                                    style={{ marginTop: 6 }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      resolveFlag(ride.id);
+                                    }}
+                                  >
+                                    Mark resolved
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         {(ride.status === "pending" ||
                           ride.status === "offered" ||
                           ride.status === "assigned") && (
@@ -3977,6 +4140,36 @@ export default function DashboardPage({
                           </div>
                         )}
                         {ride.status === "driver_arriving" && (
+                          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                            <button
+                              className="db-assign-btn"
+                              style={{ flex: 1, marginTop: 0 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRideDetail(ride);
+                                startEditRide(ride);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="db-cancel-ride-btn"
+                              style={{ flex: 1 }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCancelPendingId(ride.id);
+                              }}
+                            >
+                              Cancel ride
+                            </button>
+                          </div>
+                        )}
+                        {/* A ride in progress still needs dispatch controls:
+                            a driver who mis-marks pickup traps the passenger,
+                            who has no cancel and can't rebook. This is the only
+                            way out. Both actions are already permitted
+                            server-side for an admin actor. */}
+                        {ride.status === "in_progress" && (
                           <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
                             <button
                               className="db-assign-btn"
@@ -4935,6 +5128,10 @@ export default function DashboardPage({
 
             {editingRide ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {/* Pickup is history once the passenger is aboard, and
+                    edit-ride's PICKUP_EDITABLE_ADMIN stops before in_progress —
+                    so lock the field rather than let dispatch type an edit the
+                    server will reject. */}
                 <div style={{ position: "relative" }}>
                   <label className="db-modal-label">Pickup address</label>
                   <input
@@ -4942,12 +5139,23 @@ export default function DashboardPage({
                     className="db-modal-input"
                     placeholder="Start typing an address…"
                     value={editPickup}
+                    disabled={rideDetail.status === "in_progress"}
+                    title={
+                      rideDetail.status === "in_progress"
+                        ? "The passenger is already aboard — pickup can't be changed."
+                        : undefined
+                    }
                     onChange={(e) => {
                       setEditPickup(e.target.value);
                       setEditPickupCoords(null);
                     }}
                     required
                   />
+                  {rideDetail.status === "in_progress" && (
+                    <div className="db-modal-hint">
+                      Passenger is aboard — pickup can't be changed.
+                    </div>
+                  )}
                   {editPickupCoords && (
                     <span
                       style={{
@@ -5048,7 +5256,10 @@ export default function DashboardPage({
                     </div>
                   )}
                 </div>
-                {vehicleClasses.length > 1 && (
+                {/* Hidden mid-ride: the passenger is in whatever car turned
+                    up, so a class change here would only move the surcharge.
+                    Dispatch corrects the money with the fare box instead. */}
+                {vehicleClasses.length > 1 && rideDetail.status !== "in_progress" && (
                   <div>
                     <label className="db-modal-label">Vehicle class</label>
                     <select

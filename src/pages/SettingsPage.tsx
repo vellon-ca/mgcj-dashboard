@@ -55,6 +55,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   // Pricing state
   const [baseFare, setBaseFare] = useState("");
   const [ratePerKm, setRatePerKm] = useState("");
+  const [dispatchPhone, setDispatchPhone] = useState("");
+  const [savedDispatchPhone, setSavedDispatchPhone] = useState("");
   const [savedBaseFare, setSavedBaseFare] = useState("");
   const [savedRatePerKm, setSavedRatePerKm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -240,7 +242,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("base_fare, rate_per_km")
+      .select("base_fare, rate_per_km, phone")
       .eq("id", companyId)
       .maybeSingle()
       .then(({ data }) => {
@@ -249,6 +251,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           setRatePerKm(String(data.rate_per_km ?? 1.8));
           setSavedBaseFare(String(data.base_fare ?? 4));
           setSavedRatePerKm(String(data.rate_per_km ?? 1.8));
+          setDispatchPhone(data.phone ?? "");
+          setSavedDispatchPhone(data.phone ?? "");
         }
         setLoading(false);
       });
@@ -362,7 +366,11 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     setSaving(true);
     const { error: err } = await supabase
       .from("companies")
-      .update({ base_fare: base, rate_per_km: rate })
+      .update({
+        base_fare: base,
+        rate_per_km: rate,
+        phone: dispatchPhone.trim() || null,
+      })
       .eq("id", companyId);
     setSaving(false);
     if (err) { setError(err.message); return; }
@@ -380,6 +388,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     });
     setSavedBaseFare(String(base));
     setSavedRatePerKm(String(rate));
+    setSavedDispatchPhone(dispatchPhone.trim());
   }
 
   return (
@@ -678,6 +687,35 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   </div>
 
                   {error && <p className="st-error">{error}</p>}
+                </div>
+              )}
+
+              {/* Reached by a passenger escalating a live ride ("Something's
+                  wrong with this ride" → "Call dispatch"). Left blank, the app
+                  shows the flag on its own with no call option, which is a
+                  working but weaker experience — so this is worth filling in
+                  at onboarding. */}
+              {!loading && (
+                <div className="st-card">
+                  <p className="st-card-label">Dispatch contact</p>
+                  <div className="st-field-row">
+                    <div className="st-field-text">
+                      <span className="st-field-label">Phone number</span>
+                      <span className="st-field-hint">
+                        Shown to passengers who flag a problem during a ride
+                      </span>
+                    </div>
+                    <div className="st-input-wrap">
+                      <input
+                        className="st-input"
+                        style={{ width: 150, textAlign: "left" }}
+                        type="tel"
+                        placeholder="902-555-0100"
+                        value={dispatchPhone}
+                        onChange={e => { setDispatchPhone(e.target.value); setSaved(false); }}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </>
