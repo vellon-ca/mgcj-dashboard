@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 
 interface DriverRow {
@@ -208,6 +208,47 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
     }
   }
 
+  // Set when a thread is opened; updated live by the subscription below.
+  const [driverLastReadAt, setDriverLastReadAt] = useState<string | null>(null);
+
+  // Last message dispatch sent that this driver has read. One marker under
+  // that message rather than a tick on every bubble — in a two-sided thread
+  // everything above it is read by definition.
+  const lastSeenIndex = useMemo(() => {
+    if (!driverLastReadAt) return -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].sender_role !== "admin") continue;
+      return messages[i].created_at <= driverLastReadAt ? i : -1;
+    }
+    return -1;
+  }, [messages, driverLastReadAt]);
+
+  // Keep the marker live while the thread is open. driver_chat_state is
+  // already in the supabase_realtime publication, so postgres_changes is the
+  // natural transport — no new plumbing.
+  useEffect(() => {
+    if (!selectedId) return;
+    const channel = supabase
+      .channel("dispatch-chat-seen-" + selectedId)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "driver_chat_state",
+          filter: `driver_id=eq.${selectedId}`,
+        },
+        (payload) => {
+          const next = (payload.new as any)?.last_read_by_driver_at;
+          if (next) setDriverLastReadAt(next);
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedId]);
+
   async function openThread(driverId: string) {
     setSelectedId(driverId);
     setThreadLoading(true);
@@ -221,6 +262,15 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
         .order("created_at", { ascending: true })
         .limit(300);
       setMessages(data ?? []);
+      // How far the driver has read, for the "Seen" marker. Fetched per thread
+      // rather than in the list query: the list only needs unread counts, and
+      // this is one row.
+      const { data: state } = await supabase
+        .from("driver_chat_state")
+        .select("last_read_by_driver_at")
+        .eq("driver_id", driverId)
+        .maybeSingle();
+      setDriverLastReadAt(state?.last_read_by_driver_at ?? null);
       await markRead(driverId);
     } finally {
       setThreadLoading(false);
@@ -394,6 +444,7 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
                                 hour: "numeric",
                                 minute: "2-digit",
                               })}
+                              {i === lastSeenIndex ? " · Seen" : ""}
                             </div>
                           </div>
                         </div>
