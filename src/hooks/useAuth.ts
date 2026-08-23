@@ -16,12 +16,15 @@ import type { Session } from "@supabase/supabase-js";
  * reroutes their readers through the definer RPC.
  */
 const PROFILE_COLUMNS =
-  // Withheld at the revoke and rerouted through the definer RPC:
-  // phone, email, student_email, stripe_customer_id, guest_phone.
+  // phone, email, student_email, stripe_customer_id and guest_phone are
+  // deliberately ABSENT — 20260765 withholds them, so naming one fails the
+  // whole query. Nothing on the dashboard reads the signed-in dispatcher's own
+  // number, so there is no bundle to merge back in here; the numbers dispatch
+  // DOES need (drivers, passengers, staff) come from profile_phones().
   // Kept on ONE literal line: supabase-js infers the row type from the literal
   // type of this string, and any concatenation or .join() widens it to `string`,
   // which degrades every field to GenericStringError.
-  "id, name, role, company_id, avatar_url, created_at, is_active, deactivation_pending, deleted_at, notification_prefs, push_token, is_guest, student_verified, student_institution_id, student_verified_at, phone, email, student_email, stripe_customer_id, guest_phone";
+  "id, name, role, company_id, avatar_url, created_at, is_active, deactivation_pending, deleted_at, notification_prefs, push_token, is_guest, student_verified, student_institution_id, student_verified_at";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);

@@ -1789,18 +1789,35 @@ export default function DashboardPage({
   > {
     const unique = [...new Set(ids.filter(Boolean))];
     if (!unique.length) return new Map();
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, name, phone, avatar_url")
-      .in("id", unique);
+
+    // Two calls, not one: 20260765 withholds `phone` from the client roles
+    // entirely, so naming it in the select would fail the whole query rather
+    // than omit the column. Numbers come from profile_phones(), a definer
+    // function that re-checks entitlement per id — dispatch reading a
+    // passenger's number is real work, but only for their OWN company's people.
+    // Batched rather than per-row because this feeds a live board that refreshes.
+    const [rowsRes, phonesRes] = await Promise.all([
+      supabase.from("profiles").select("id, name, avatar_url").in("id", unique),
+      supabase.rpc("profile_phones", { p_profile_ids: unique }),
+    ]);
+    if (phonesRes.error) {
+      console.error("[batchProfiles] phone lookup failed:", phonesRes.error);
+    }
+    const phoneById = new Map<string, string>();
+    (phonesRes.data ?? []).forEach((r: any) => {
+      if (r?.phone) phoneById.set(r.id, r.phone);
+    });
+
     const map = new Map<
       string,
       { name: string; phone: string; avatar_url: string | null }
     >();
-    data?.forEach((p: any) =>
+    (rowsRes.data ?? []).forEach((p: any) =>
       map.set(p.id, {
         name: p.name ?? "—",
-        phone: p.phone ?? "",
+        // "" when the RPC declines: a dispatcher who may not see this person
+        // gets a blank field, not a broken board.
+        phone: phoneById.get(p.id) ?? "",
         avatar_url: p.avatar_url ?? null,
       }),
     );
@@ -2633,17 +2650,22 @@ export default function DashboardPage({
       const phone = toE164(bookPassenger);
       // role filter matters: a driver or admin sharing this number would
       // otherwise be returned and booked as the passenger.
+      // Via the RPC: column privileges apply to WHERE as well as the select
+      // list, so `.eq("phone", ...)` is not readable by the client role after
+      // 20260765. find_passenger_by_phone is staff-gated, returns id/name and
+      // never a number, normalizes to E.164 itself, and keeps the null-tolerant
+      // role filter inside (profiles_role_check is a CHECK and NULL satisfies a
+      // CHECK, so a role-less guest row predating it exists; missing it mints a
+      // duplicate guest for a number that already has one). It deliberately
+      // does NOT match guest_phone — a retired guest must never resolve as a
+      // booking target again.
       let { data: passengerProfile, error: passengerLookupError } =
-        await supabase
-          .from("profiles")
-          .select("id, name")
-          .eq("phone", phone)
-          // null-tolerant: profiles_role_check is a CHECK, and NULL satisfies a
-          // CHECK, so a role-less guest row from before the constraint landed
-          // is possible. A bare .eq() would miss it and mint a duplicate guest
-          // for a number that already has one — the bug this filter prevents.
-          .or("role.eq.passenger,role.is.null")
-          .maybeSingle();
+        (await supabase
+          .rpc("find_passenger_by_phone", { p_phone: phone })
+          // `any` matches how this variable was typed before the RPC swap: it
+          // is reassigned below from create-guest-passenger's response, and
+          // narrowing it here would only push casts onto three call sites.
+          .maybeSingle()) as { data: any; error: any };
       // maybeSingle() errors (rather than throwing) when more than one row
       // matches, and returns data: null. Swallowing that sent us into the
       // guest-creation branch below, minting a fresh anon user and yet another
@@ -5006,12 +5028,11 @@ export default function DashboardPage({
                   onBlur={async () => {
                     const phone = toE164(bookPassenger);
                     if (phone.replace(/\D/g, "").length < 11) return;
-                    const { data } = await supabase
-                      .from("profiles")
-                      .select("name")
-                      .eq("phone", phone)
-                      .or("role.eq.passenger,role.is.null")
-                      .maybeSingle();
+                    const { data } = (await supabase
+                      .rpc("find_passenger_by_phone", { p_phone: phone })
+                      .maybeSingle()) as {
+                      data: { name: string | null } | null;
+                    };
                     if (data?.name) {
                       setBookPassengerName(data.name);
                       setBookPassengerRegistered(true);

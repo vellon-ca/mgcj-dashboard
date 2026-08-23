@@ -117,13 +117,27 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   // out by a "Loading…" flash when we reconcile after a write.
   async function fetchStaff(background = false) {
     if (!background) setStaffLoading(true);
+    // `phone` cannot be selected here after 20260765 — it would fail the whole
+    // query, not omit the column. profile_phones() re-checks entitlement per id
+    // and answers for staff at your own company, which is exactly this list.
     const { data } = await supabase
       .from("profiles")
-      .select("id, name, phone, role, is_active, created_at")
+      .select("id, name, role, is_active, created_at")
       .eq("company_id", companyId)
       .in("role", ["admin", "dispatcher"])
       .order("created_at");
-    setStaff((data ?? []) as StaffMember[]);
+    const rows = data ?? [];
+    const { data: phones, error: phoneError } = await supabase.rpc(
+      "profile_phones",
+      { p_profile_ids: rows.map((r: any) => r.id) },
+    );
+    if (phoneError) console.error("[fetchStaff] phone lookup failed:", phoneError);
+    const phoneById = new Map<string, string>(
+      ((phones ?? []) as any[]).filter((r) => r?.phone).map((r) => [r.id, r.phone]),
+    );
+    setStaff(
+      rows.map((r: any) => ({ ...r, phone: phoneById.get(r.id) ?? "" })) as StaffMember[],
+    );
     if (!background) setStaffLoading(false);
   }
 
