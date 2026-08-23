@@ -81,11 +81,13 @@ export function useAuth() {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${userId}` },
         (payload) => {
-          // Merge, don't replace — Realtime's WAL filter applies the subscribed
-          // role's column privileges, so after the revoke (mgcj-app
-          // `.claude/notes/g3-phone-column-revoke-plan.md`) `payload.new` no
-          // longer carries the private columns and a straight assignment would
-          // blank them on the next unrelated write to the row.
+          // Merge, don't replace — correct whether or not Realtime's WAL
+          // filter applies the subscribed role's column privileges, which is
+          // unverified. If it does, `payload.new` stops carrying the private
+          // columns after the revoke (mgcj-app `.claude/notes/
+          // g3-phone-column-revoke-plan.md`) and a straight assignment would
+          // blank them on the next unrelated write; if it doesn't, this is a
+          // no-op. Not asserting which, because it has not been checked.
           setProfile((prev) =>
             prev
               ? { ...prev, ...(payload.new as Partial<Profile>) }
