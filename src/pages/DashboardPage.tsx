@@ -2657,71 +2657,43 @@ export default function DashboardPage({
         return;
       }
       if (!passengerProfile) {
-        const currentSession = (await supabase.auth.getSession()).data.session;
-        const savedAccessToken = currentSession?.access_token;
-        const savedRefreshToken = currentSession?.refresh_token;
-        if (!savedAccessToken || !savedRefreshToken) {
-          setBookError(
-            "Session error — please refresh the page and try again.",
-          );
-          setBookLoading(false);
-          return;
-        }
-        const { data: anonData, error: anonError } =
-          await supabase.auth.signInAnonymously();
-        if (anonError || !anonData.user) {
-          await supabase.auth.setSession({
-            access_token: savedAccessToken,
-            refresh_token: savedRefreshToken,
-          });
-          setBookError(
-            `Could not create guest account: ${anonError?.message ?? "unknown error"}`,
-          );
-          setBookLoading(false);
-          return;
-        }
-        const guestId = anonData.user.id;
-        const { data: newProfile, error: insertError } = await supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: guestId,
+        // Server-side since 2026-08-23. This used to save the dispatcher's
+        // access/refresh tokens into local variables, call signInAnonymously()
+        // in THIS tab to satisfy the profiles RLS WITH CHECK, insert the guest
+        // row as that anonymous user, then restore the dispatcher's session.
+        // If anything interrupted that window — a dropped request, a refresh, a
+        // closed tab — the dispatcher was left in an anonymous session inside
+        // the dispatch console; and since `supabase` is a module singleton, any
+        // other in-flight query in the tab ran as the guest meanwhile.
+        // create-guest-passenger does it with the service role instead, and
+        // re-checks for an existing profile authoritatively so two dispatchers
+        // booking the same new number can't both mint one.
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-guest-passenger`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token}`,
+            },
+            body: JSON.stringify({
               phone,
               name: bookPassengerName.trim() || "Guest",
-              role: "passenger",
-              // Load-bearing. profiles.is_guest defaults to false, and
-              // phone_is_registered() keys on it (20260758) — a guest row left
-              // at false reads as a registered account, so this passenger gets
-              // routed to Log in and dead-ends at "This number isn't
-              // registered". It would also hide the row from
-              // claim_guest_rides() and collide with the real signup on
-              // profiles_one_real_passenger_per_phone.
-              is_guest: true,
-            },
-            { onConflict: "id" },
-          )
-          .select("id, name")
-          .single();
-        const { error: restoreError } =
-          await supabase.auth.setSession({
-            access_token: savedAccessToken,
-            refresh_token: savedRefreshToken,
-          });
-        if (restoreError) {
+            }),
+          },
+        );
+        const guestResult = await res
+          .json()
+          .catch(() => ({ error: res.statusText }));
+        if (!res.ok || !guestResult?.id) {
           setBookError(
-            "Session error restoring dispatcher — please refresh and try again.",
+            `Could not create guest profile: ${guestResult?.error ?? res.statusText}`,
           );
           setBookLoading(false);
           return;
         }
-        if (insertError || !newProfile) {
-          setBookError(
-            `Could not create guest profile: ${insertError?.message ?? "unknown error"} (code: ${insertError?.code})`,
-          );
-          setBookLoading(false);
-          return;
-        }
-        passengerProfile = newProfile;
+        passengerProfile = { id: guestResult.id, name: guestResult.name };
       }
       const baseFare = parseFloat(bookFare) || null;
       let finalFare = baseFare;
