@@ -2631,11 +2631,31 @@ export default function DashboardPage({
     setBookError(null);
     try {
       const phone = toE164(bookPassenger);
-      let { data: passengerProfile } = await supabase
-        .from("profiles")
-        .select("id, name")
-        .eq("phone", phone)
-        .maybeSingle();
+      // role filter matters: a driver or admin sharing this number would
+      // otherwise be returned and booked as the passenger.
+      let { data: passengerProfile, error: passengerLookupError } =
+        await supabase
+          .from("profiles")
+          .select("id, name")
+          .eq("phone", phone)
+          // null-tolerant: profiles_role_check is a CHECK, and NULL satisfies a
+          // CHECK, so a role-less guest row from before the constraint landed
+          // is possible. A bare .eq() would miss it and mint a duplicate guest
+          // for a number that already has one — the bug this filter prevents.
+          .or("role.eq.passenger,role.is.null")
+          .maybeSingle();
+      // maybeSingle() errors (rather than throwing) when more than one row
+      // matches, and returns data: null. Swallowing that sent us into the
+      // guest-creation branch below, minting a fresh anon user and yet another
+      // duplicate profile on this number — on every booking, forever.
+      if (passengerLookupError) {
+        setBookError(
+          "More than one passenger profile exists for this number. " +
+            "Resolve the duplicate before booking.",
+        );
+        setBookLoading(false);
+        return;
+      }
       if (!passengerProfile) {
         const currentSession = (await supabase.auth.getSession()).data.session;
         const savedAccessToken = currentSession?.access_token;
@@ -2669,6 +2689,14 @@ export default function DashboardPage({
               phone,
               name: bookPassengerName.trim() || "Guest",
               role: "passenger",
+              // Load-bearing. profiles.is_guest defaults to false, and
+              // phone_is_registered() keys on it (20260758) — a guest row left
+              // at false reads as a registered account, so this passenger gets
+              // routed to Log in and dead-ends at "This number isn't
+              // registered". It would also hide the row from
+              // claim_guest_rides() and collide with the real signup on
+              // profiles_one_real_passenger_per_phone.
+              is_guest: true,
             },
             { onConflict: "id" },
           )
@@ -5010,6 +5038,7 @@ export default function DashboardPage({
                       .from("profiles")
                       .select("name")
                       .eq("phone", phone)
+                      .or("role.eq.passenger,role.is.null")
                       .maybeSingle();
                     if (data?.name) {
                       setBookPassengerName(data.name);
