@@ -3,6 +3,26 @@ import { supabase } from "../lib/supabase";
 import type { Profile } from "../types";
 import type { Session } from "@supabase/supabase-js";
 
+/**
+ * Every column of `profiles`, enumerated rather than starred.
+ *
+ * A star select requires SELECT on every column it expands to, so once `phone`
+ * is revoked (see mgcj-app `.claude/notes/g3-phone-column-revoke-plan.md`) a
+ * star fails the whole query rather than omitting the column — and this is the
+ * dispatch auth path, so that is nobody being able to load the dashboard.
+ *
+ * Identical to what the star returns today: a behavioural no-op, shipped alone
+ * ahead of the revoke. The five marked columns leave in the commit that
+ * reroutes their readers through the definer RPC.
+ */
+const PROFILE_COLUMNS =
+  // Withheld at the revoke and rerouted through the definer RPC:
+  // phone, email, student_email, stripe_customer_id, guest_phone.
+  // Kept on ONE literal line: supabase-js infers the row type from the literal
+  // type of this string, and any concatenation or .join() widens it to `string`,
+  // which degrades every field to GenericStringError.
+  "id, name, role, company_id, avatar_url, created_at, is_active, deactivation_pending, deleted_at, notification_prefs, push_token, is_guest, student_verified, student_institution_id, student_verified_at, phone, email, student_email, stripe_customer_id, guest_phone";
+
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -78,7 +98,11 @@ export function useAuth() {
       let data: any = null;
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-          const res = await supabase.from("profiles").select("*").eq("id", userId).single();
+          const res = await supabase
+            .from("profiles")
+            .select(PROFILE_COLUMNS)
+            .eq("id", userId)
+            .single();
           if (!res.error && res.data) {
             data = res.data;
             break;
