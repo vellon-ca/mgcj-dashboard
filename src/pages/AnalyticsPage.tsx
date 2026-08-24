@@ -3,6 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import type { Ride } from "../types";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 
@@ -45,29 +46,16 @@ interface DayStat {
   day: string;
   rides: number;
 }
-interface RideRow {
-  id: string;
-  created_at: string;
-  status: string;
-  cancelled_reason: string | null;
-  pickup_address: string;
-  dropoff_address: string;
-  fare_estimate: number | null;
-  fare_final: number | null;
-  payment_method: string;
+// Carries the whole rides row, not a hand-picked subset. The old version named
+// ~20 columns explicitly and copied them one by one out of an `any`, so a column
+// added to `rides` was silently absent here — undefined, no error, the UI just
+// rendered nothing — until someone remembered to add it in both the interface
+// and the map below. arrived_at/no_show_at were the ones that caught it. The
+// three fields here are genuinely derived (joined lookups, not row columns).
+interface RideRow extends Ride {
   passenger_name: string;
   driver_name: string;
-  passenger_id: string;
-  driver_id: string | null;
   receipt_number: string | null;
-  settlement_route: string | null;
-  stripe_fee: number | null;
-  platform_fee_percent_at_completion: number | null;
-  refunded_amount_cents: number | null;
-  transfer_reversed_cents: number | null;
-  refund_reason: string | null;
-  arrived_at: string | null;
-  no_show_at: string | null;
 }
 interface ReviewRow {
   id: string;
@@ -1230,28 +1218,10 @@ export default function AnalyticsPage({
       receiptResult.data?.forEach((inv: any) => receiptMap.set(inv.ride_id, inv.receipt_number));
 
       const enriched: RideRow[] = rides.map((r: any) => ({
-        id: r.id,
-        created_at: r.created_at,
-        status: r.status,
-        cancelled_reason: r.cancelled_reason ?? null,
-        pickup_address: r.pickup_address,
-        dropoff_address: r.dropoff_address,
-        fare_estimate: r.fare_estimate,
-        fare_final: r.fare_final,
-        payment_method: r.payment_method,
+        ...r,
         passenger_name: profileMap.get(r.passenger_id) ?? "—",
         driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
-        passenger_id: r.passenger_id,
-        driver_id: r.driver_id ?? null,
         receipt_number: receiptMap.get(r.id) ?? null,
-        settlement_route: r.settlement_route ?? null,
-        stripe_fee: r.stripe_fee ?? null,
-        platform_fee_percent_at_completion: r.platform_fee_percent_at_completion ?? null,
-        refunded_amount_cents: r.refunded_amount_cents ?? null,
-        transfer_reversed_cents: r.transfer_reversed_cents ?? null,
-        refund_reason: r.refund_reason ?? null,
-        arrived_at: r.arrived_at ?? null,
-        no_show_at: r.no_show_at ?? null,
       }));
 
       if (fetchId === historyFetchId.current) setAllRides(enriched);
