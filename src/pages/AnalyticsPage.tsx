@@ -66,6 +66,8 @@ interface RideRow {
   refunded_amount_cents: number | null;
   transfer_reversed_cents: number | null;
   refund_reason: string | null;
+  arrived_at: string | null;
+  no_show_at: string | null;
 }
 interface ReviewRow {
   id: string;
@@ -420,7 +422,30 @@ const CANCEL_REASON_LABELS: Record<string, string> = {
   missed_window: "Missed scheduled window — no driver engaged",
   passenger_cancelled: "Cancelled by passenger",
   dispatch_cancelled: "Cancelled by dispatch",
+  passenger_no_show: "Passenger no-show — driver waited at pickup",
+  system_cancelled: "Cancelled automatically by the system",
 };
+
+// A driver-filed no-show is the one cancellation where dispatch has to arbitrate
+// between two people who disagree, so the detail modal shows the evidence rather
+// than the verdict. Both timestamps are stamped server-side by the lifecycle
+// trigger (mgcj-app migration 20260741), not written by the driver's app, and
+// settle-ride will not accept a no-show until 5 minutes after arrived_at with
+// the driver inside the pickup geofence — so this row is a record of what
+// happened, not a restatement of the driver's claim.
+function noShowEvidence(
+  arrivedAt: string | null,
+  noShowAt: string | null,
+): string | null {
+  if (!noShowAt) return null;
+  const time = (d: Date) =>
+    d.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" });
+  const filed = new Date(noShowAt);
+  if (!arrivedAt) return `Reported ${time(filed)} (arrival time not recorded)`;
+  const arrived = new Date(arrivedAt);
+  const mins = Math.round((filed.getTime() - arrived.getTime()) / 60_000);
+  return `${time(arrived)} → ${time(filed)} (${mins} min at pickup)`;
+}
 
 const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
   driver_transfer: "Paid directly to the driver",
@@ -1225,6 +1250,8 @@ export default function AnalyticsPage({
         refunded_amount_cents: r.refunded_amount_cents ?? null,
         transfer_reversed_cents: r.transfer_reversed_cents ?? null,
         refund_reason: r.refund_reason ?? null,
+        arrived_at: r.arrived_at ?? null,
+        no_show_at: r.no_show_at ?? null,
       }));
 
       if (fetchId === historyFetchId.current) setAllRides(enriched);
@@ -5666,6 +5693,13 @@ export default function AnalyticsPage({
                       CANCEL_REASON_LABELS[rideDetail.ride.cancelled_reason] ?? rideDetail.ride.cancelled_reason,
                     ]] as [string, string][])
                   : []),
+                ...((): [string, string][] => {
+                  const waited = noShowEvidence(
+                    rideDetail.ride.arrived_at,
+                    rideDetail.ride.no_show_at,
+                  );
+                  return waited ? [["Driver waited", waited]] : [];
+                })(),
               ] as [string, string][]
             ).map(([label, value]) => {
               const isSettlementWarning =

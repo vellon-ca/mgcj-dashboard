@@ -50,6 +50,10 @@ export interface Ride {
   payment_method: string;
   scheduled_at: string | null;
   cancelled_reason: string | null;
+  // Trigger-stamped server-side on entry to driver_arriving / on a filed
+  // no-show (mgcj-app 20260741). The evidence behind a no-show dispute.
+  arrived_at: string | null;
+  no_show_at: string | null;
   created_at: string;
   passenger_id: string;
   driver_id: string | null;
