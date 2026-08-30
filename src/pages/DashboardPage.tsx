@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { driverPresence, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import type { Ride, Driver, Profile, DriverInvite } from "../types";
@@ -739,6 +740,11 @@ function DriverDetailPanel({
   );
   const isAccountActive: boolean = driver.profile?.is_active ?? true;
   const isDeactivationPending: boolean = driver.profile?.deactivation_pending ?? false;
+  // Derived, not read off is_active — see lib/presence.ts for why the flag
+  // alone was lying. Recomputed on each render, and the page refetches every
+  // 15s, which is finer granularity than a 60s threshold needs.
+  const presence = driverPresence(driver);
+  const lastSeen = lastSeenLabel(driver.last_seen_at);
 
   async function handleConfirm() {
     setActing(true);
@@ -841,7 +847,7 @@ function DriverDetailPanel({
               <div className="dd-profile-name" style={{ marginBottom: 0 }}>{name}</div>
               <div
                 className="dd-status-dot"
-                style={{ background: !isAccountActive ? "#EF4444" : driver.is_active ? "#1D9E75" : "#374151", flexShrink: 0 }}
+                style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : presence === "away" ? "#F59E0B" : "#374151", flexShrink: 0 }}
               />
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
                 <button className="dd-action-edit" onClick={openVehicleEdit}>Edit vehicle</button>
@@ -885,14 +891,28 @@ function DriverDetailPanel({
             <span className="dd-pill dd-pill-red">Deactivated</span>
           ) : isDeactivationPending ? (
             <span className="dd-pill dd-pill-amber">⏳ Deactivation pending</span>
-          ) : driver.is_active ? (
-            activeRide ? (
-              <span className="dd-pill dd-pill-orange">● On a ride</span>
-            ) : (
-              <span className="dd-pill dd-pill-green">● Available</span>
-            )
-          ) : (
+          ) : presence === "offline" ? (
             <span className="dd-pill dd-pill-gray">Offline</span>
+          ) : activeRide ? (
+            <span className="dd-pill dd-pill-orange">● On a ride</span>
+          ) : presence === "away" ? (
+            /* Away = still switched on, but we have not heard from their phone
+               inside the same 60s window dispatch uses, so dispatch is skipping
+               them right now. Shown with the age so a dispatcher can tell a
+               tunnel from a driver who went home. */
+            <span className="dd-pill dd-pill-amber">
+              ◌ Away{lastSeen ? ` · last seen ${lastSeen}` : ""}
+            </span>
+          ) : (
+            <span className="dd-pill dd-pill-green">● Available</span>
+          )}
+          {presence === "away" && activeRide && (
+            /* On a ride AND out of contact: the passenger's live tracking has
+               stopped updating too. Worth its own pill rather than being hidden
+               behind the ride status. */
+            <span className="dd-pill dd-pill-amber">
+              ◌ Out of contact{lastSeen ? ` · ${lastSeen}` : ""}
+            </span>
           )}
           {openReports > 0 && (
             <span className="dd-pill dd-pill-red">
@@ -1209,6 +1229,7 @@ function ScheduledRideCard({
                 }}
               >
                 {(d as any).profile?.name ?? "Driver"}
+                {driverPresence(d as any) === "away" ? " · away" : ""}
                 {(ride.declined_by ?? []).includes(d.id) ? " (declined)" : ""}
               </button>
             ))}
@@ -1308,6 +1329,9 @@ export default function DashboardPage({
   const focusedDriverIdRef = useRef<string | null>(null);
   // Driver ids currently on a live ride — drives the busy (amber) car colour.
   const busyDriverIdsRef = useRef<Set<string>>(new Set());
+  // Ids whose last heartbeat is older than the dispatch window; see
+  // applyDriverIcon for why they are faded rather than dropped.
+  const awayDriverIdsRef = useRef<Set<string>>(new Set());
   // Rendered-icon signature per marker, so we only rebuild/setIcon on a real
   // change (colour, heading bucket or focus) instead of every poll tick.
   const driverIconSigRef = useRef<Map<string, string>>(new Map());
@@ -1928,7 +1952,10 @@ export default function DashboardPage({
     });
     setStats((s) => ({
       ...s,
-      driversOnline: enriched.filter((d: any) => d.is_active).length,
+      // Counts only drivers dispatch would actually reach right now. It used to
+      // count the raw is_active flag, so a driver who closed the app kept
+      // inflating this number until the reaper caught them 5 minutes later.
+      driversOnline: enriched.filter((d: any) => driverPresence(d) === "online").length,
     }));
     setSelectedDriver((prev: any) => {
       if (!prev) return null;
@@ -2005,13 +2032,19 @@ export default function DashboardPage({
     const busy = busyDriverIdsRef.current.has(id);
     const focused = focusedDriverIdRef.current === id;
     const bearing = driverAnimRef.current.get(key)?.bearing ?? null;
-    const sig = `${busy}|${focused}|${bearing ?? "x"}`;
+    // Faded rather than removed. The car is at their LAST KNOWN position, which
+    // is still the most useful thing dispatch has about them — "last seen here
+    // 20 minutes ago" beats an empty map. Opacity says the position is old
+    // without inventing a third car colour.
+    const away = awayDriverIdsRef.current.has(id);
+    const sig = `${busy}|${focused}|${away}|${bearing ?? "x"}`;
     if (driverIconSigRef.current.get(key) === sig) return;
     driverIconSigRef.current.set(key, sig);
     m.setIcon(
       buildCarIcon(busy ? DRIVER_COLOR_BUSY : DRIVER_COLOR_FREE, bearing, focused),
     );
-    m.setZIndex(focused ? 300 : busy ? 200 : 100);
+    m.setOpacity(away ? 0.45 : 1);
+    m.setZIndex(focused ? 300 : busy ? 200 : away ? 50 : 100);
   }
 
   function refreshDriverIcons() {
@@ -2023,6 +2056,9 @@ export default function DashboardPage({
   function renderDriverMarkers(enriched: any[]) {
     if (!googleMapRef.current) return;
     const focus = focusedDriverIdRef.current;
+    awayDriverIdsRef.current = new Set(
+      enriched.filter((d: any) => driverPresence(d) === "away").map((d: any) => d.id),
+    );
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
       .forEach((d: any) => {
@@ -3435,7 +3471,18 @@ export default function DashboardPage({
       .filter((r) => ["assigned", "driver_arriving", "in_progress"].includes(r.status) && r.driver_id)
       .map((r) => r.driver_id),
   );
-  const onlineDrivers = drivers.filter((d) => d.is_active && !activeRideDriverIds.has(d.id));
+  // Away drivers stay in this list on purpose. Dispatch would rather offer a
+  // ride to a driver whose phone has gone quiet than tell a passenger nobody is
+  // available — a ride offer is a push notification, which reaches a locked
+  // phone fine. They are ranked last and labelled so the choice is informed,
+  // not hidden. (Sorts downstream of this are stable, so this order survives.)
+  const onlineDrivers = drivers
+    .filter((d) => d.is_active && !activeRideDriverIds.has(d.id))
+    .sort(
+      (a, b) =>
+        Number(driverPresence(a as any) === "away") -
+        Number(driverPresence(b as any) === "away"),
+    );
   const availableDiscountCodes = discountCodes.filter((c) => {
     const now = new Date();
     if (c.starts_at && now < new Date(c.starts_at)) return false;
@@ -4337,6 +4384,7 @@ export default function DashboardPage({
                                       }}
                                     >
                                       {dName}
+                                      {driverPresence(d as any) === "away" ? " · away" : ""}
                                       {((ride as any).declined_by ?? []).includes(d.id) ? " (declined)" : ""}
                                       {heldFor
                                         ? ` · ${heldFor.minutes_short != null ? `${heldFor.minutes_short}m late for` : "due at"} ${shortTime(heldFor.commitment_at)}`
@@ -4737,6 +4785,8 @@ export default function DashboardPage({
                       const avatarUrl = (driver as any).profile?.avatar_url;
                       const isAccountActive: boolean = (driver as any).profile?.is_active ?? true;
                       const isDeactivationPending: boolean = (driver as any).profile?.deactivation_pending ?? false;
+                      const presence = driverPresence(driver as any);
+                      const lastSeen = lastSeenLabel((driver as any).last_seen_at);
                       return (
                         <div
                           key={driver.id}
@@ -4781,25 +4831,30 @@ export default function DashboardPage({
                                 <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
                                   ⏳ Deactivation pending
                                 </div>
-                              ) : driver.is_active ? (
-                                driverActiveRide ? (
-                                  <div className="db-driver-status-on-ride">
-                                    ● On a ride
-                                  </div>
-                                ) : (
-                                  <div className="db-driver-status-available">
-                                    ● Available
-                                  </div>
-                                )
-                              ) : null}
+                              ) : presence === "offline" ? null : driverActiveRide ? (
+                                <div className="db-driver-status-on-ride">
+                                  ● On a ride
+                                  {presence === "away" ? " · out of contact" : ""}
+                                </div>
+                              ) : presence === "away" ? (
+                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
+                                  ◌ Away{lastSeen ? ` · ${lastSeen}` : ""}
+                                </div>
+                              ) : (
+                                <div className="db-driver-status-available">
+                                  ● Available
+                                </div>
+                              )}
                             </div>
                             <div
                               className="db-online-dot"
                               style={{
                                 background: !isAccountActive
                                   ? "#E24B4A"
-                                  : driver.is_active
+                                  : presence === "online"
                                   ? "#1D9E75"
+                                  : presence === "away"
+                                  ? "#F59E0B"
                                   : "#374151",
                               }}
                             />
@@ -5281,6 +5336,7 @@ export default function DashboardPage({
                     <option key={d.id} value={d.id}>
                       {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
                       {d.vehicle_model}
+                      {driverPresence(d as any) === "away" ? " · away" : ""}
                     </option>
                   ))}
                 </select>
