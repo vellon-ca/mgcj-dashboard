@@ -58,9 +58,21 @@ export function useAuth() {
       setSession(session);
       if (session) {
         if (fetchingForRef.current === session.user.id) return;
-        // Supabase docs: don't call other supabase.auth/db functions synchronously
-        // inside this callback — it runs while the auth lock is held, and fetchProfile
-        // needs that same lock to attach the access token, which can deadlock.
+        // Deferred because auth-js AWAITS this callback: `_notifyAllSubscribers`
+        // does `await x.callback(event, session)`. Calling a supabase function
+        // here awaits `initializePromise`, which is what is waiting on this
+        // callback — a permanent deadlock, cleared only by a fresh JS context.
+        //
+        // NOT because of the auth lock, which is what this comment used to say.
+        // That was true of older auth-js; the lock path is legacy and disabled
+        // by default on 2.105.3. The distinction matters because the lock
+        // explanation implies a version bump could make this `setTimeout`
+        // unnecessary. It cannot — the await on the callback is unconditional.
+        //
+        // Diagnosed in mgcj-app 2026-08-29 (see its AuthContext.tsx): it only
+        // bites after the app has been idle, because a fresh token emits
+        // SIGNED_IN before anything subscribes, while a stale one emits after
+        // the refresh round trip, by which point this subscriber exists.
         setTimeout(() => fetchProfile(session.user.id), 0);
       } else {
         fetchingForRef.current = null;
