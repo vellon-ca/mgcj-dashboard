@@ -745,6 +745,13 @@ function DriverDetailPanel({
   // 15s, which is finer granularity than a 60s threshold needs.
   const presence = driverPresence(driver);
   const lastSeen = lastSeenLabel(driver.last_seen_at);
+  // `activeRide` includes status 'offered', which is a ride the driver has been
+  // ASKED about and has not accepted — they can still decline it, or let the 30s
+  // timer run out and have it cycled to someone else. Rendering that as "On a
+  // ride" claimed a commitment that did not exist yet, which is misleading in
+  // both directions: dispatch sees a driver as taken who is still free, and a
+  // ride that ends up unaccepted leaves no trace of having been offered at all.
+  const awaitingReply = activeRide?.status === "offered";
 
   async function handleConfirm() {
     setActing(true);
@@ -893,6 +900,8 @@ function DriverDetailPanel({
             <span className="dd-pill dd-pill-amber">⏳ Deactivation pending</span>
           ) : presence === "offline" ? (
             <span className="dd-pill dd-pill-gray">Offline</span>
+          ) : awaitingReply ? (
+            <span className="dd-pill dd-pill-amber">◷ Offered — awaiting reply</span>
           ) : activeRide ? (
             <span className="dd-pill dd-pill-orange">● On a ride</span>
           ) : presence === "away" ? (
@@ -906,7 +915,7 @@ function DriverDetailPanel({
           ) : (
             <span className="dd-pill dd-pill-green">● Available</span>
           )}
-          {presence === "away" && activeRide && (
+          {presence === "away" && activeRide && !awaitingReply && (
             /* On a ride AND out of contact: the passenger's live tracking has
                stopped updating too. Worth its own pill rather than being hidden
                behind the ride status. */
@@ -4787,6 +4796,8 @@ export default function DashboardPage({
                       const isDeactivationPending: boolean = (driver as any).profile?.deactivation_pending ?? false;
                       const presence = driverPresence(driver as any);
                       const lastSeen = lastSeenLabel((driver as any).last_seen_at);
+                      // See the detail panel: 'offered' is not yet a commitment.
+                      const awaitingReply = driverActiveRide?.status === "offered";
                       return (
                         <div
                           key={driver.id}
@@ -4831,7 +4842,11 @@ export default function DashboardPage({
                                 <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
                                   ⏳ Deactivation pending
                                 </div>
-                              ) : presence === "offline" ? null : driverActiveRide ? (
+                              ) : presence === "offline" ? null : awaitingReply ? (
+                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
+                                  ◷ Offered — awaiting reply
+                                </div>
+                              ) : driverActiveRide ? (
                                 <div className="db-driver-status-on-ride">
                                   ● On a ride
                                   {presence === "away" ? " · out of contact" : ""}
