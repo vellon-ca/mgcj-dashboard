@@ -22,10 +22,18 @@
  * Keep them separate; do not write one from the other.
  *
  * MIRRORS `mgcj-app/supabase/functions/_shared/presence.ts` — same 60s
- * threshold and the same NULL tolerance, deliberately. The point is that
- * "away" on this screen means exactly "dispatch is skipping them right now",
- * so a dispatcher can trust the two agree. If that file's threshold changes,
- * change this one. (Separate repos; there is no shared module to import.)
+ * threshold and the same NULL tolerance, deliberately, so a dispatcher can
+ * trust that this screen and dispatch are talking about the same drivers. If
+ * that file's threshold changes, change this one. (Separate repos; there is no
+ * shared module to import.)
+ *
+ * What "away" MEANS changed with mgcj-app migration 20260766. It used to be
+ * "dispatch is skipping them right now", because the 60s window was a hard
+ * filter on the driver pool. It is now "dispatch will use them only if nobody
+ * fresher is free": liveness ranks rather than excludes, since a ride offer is
+ * a push notification and push reaches a pocketed phone perfectly well. So an
+ * away driver is still reachable, still assignable by hand, and may still be
+ * auto-assigned — they are just last in line.
  */
 
 /** 6 missed 10s heartbeats. Matches the dispatch filter exactly. */
