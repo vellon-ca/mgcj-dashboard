@@ -3,6 +3,14 @@ import { supabase } from "../lib/supabase";
 import { driverPresence, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import {
+  buildTrail,
+  formatDuration,
+  formatKm,
+  positionAt,
+  type Trail,
+  type TrailFix,
+} from "../lib/trail";
 import type { Ride, Driver, Profile, DriverInvite } from "../types";
 import AnalyticsPage from "./AnalyticsPage";
 import ReportsPage from "./ReportsPage";
@@ -557,6 +565,7 @@ function DriverDetailPanel({
   onDelete,
   onVehicleUpdated,
   onOverlayChange,
+  onViewTrail,
 }: {
   driver: any;
   rides: Ride[];
@@ -568,6 +577,7 @@ function DriverDetailPanel({
   onDelete: () => void;
   onVehicleUpdated: (updates: Partial<Driver>) => void;
   onOverlayChange?: (active: boolean) => void;
+  onViewTrail: () => void;
 }) {
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
@@ -1015,6 +1025,12 @@ function DriverDetailPanel({
           </div>
         )}
 
+        <div className="dd-section-label">Location history</div>
+        <button className="dd-trail-btn" onClick={onViewTrail} type="button">
+          View this driver's trail
+          <span className="dd-trail-hint">Where they drove, and where they stopped</span>
+        </button>
+
         <div className="dd-section-label">Ride history</div>
         {loading ? (
           <div className="dd-empty">Loading…</div>
@@ -1113,6 +1129,17 @@ function AssignmentHold({ ride }: { ride: any }) {
       )}
     </div>
   );
+}
+
+/** yyyy-mm-dd in the viewer's own timezone. Date.toISOString() would use UTC,
+ *  which files a Halifax evening under the following day. */
+function localDayISO(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function clockOf(t: number): string {
+  return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function shortTime(iso: string): string {
@@ -1385,6 +1412,212 @@ export default function DashboardPage({
   );
   const [showMessages, setShowMessages] = useState(initialView === "messages");
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
+
+  // ── Driver trail (location history) ─────────────────────────────────────
+  // Reuses the main map rather than mounting a second one: a Google Map is
+  // expensive, and the shell already keeps this one alive permanently for
+  // exactly this reason. While a trail is open the driver-detail panel steps
+  // aside so the map underneath is visible again.
+  const [trailDriver, setTrailDriver] = useState<any | null>(null);
+  const [trailDate, setTrailDate] = useState<string>(() => localDayISO(new Date()));
+  const [trail, setTrail] = useState<Trail | null>(null);
+  const [trailLoading, setTrailLoading] = useState(false);
+  const [trailError, setTrailError] = useState<string | null>(null);
+  // Scrubber position, in epoch ms. null = show the whole day, no marker.
+  const [scrubT, setScrubT] = useState<number | null>(null);
+  // Map overlays owned by the trail, kept in a ref so redrawing can remove
+  // exactly what it drew. Leaving these to garbage collection does not work —
+  // an unreferenced Google overlay stays on the map forever.
+  const trailOverlays = useRef<any[]>([]);
+  // Read by the marker renderers, which are called from fetches and a 15s poll
+  // and so would otherwise close over a stale value. While a trail is open they
+  // draw nothing: today's live driver dots and pickup pins sitting on top of
+  // Tuesday's trail is not clutter, it is a dispatcher misreading one as the
+  // other on the view we are selling as the record.
+  const trailDriverRef = useRef<any | null>(null);
+
+  function openTrail(driver: any) {
+    trailDriverRef.current = driver;
+    hideLiveMarkers();
+    setTrailDriver(driver);
+    setTrailDate(localDayISO(new Date()));
+    setScrubT(null);
+    setTrail(null);
+  }
+
+  function closeTrail() {
+    clearTrailOverlays();
+    trailDriverRef.current = null;
+    setTrailDriver(null);
+    setTrail(null);
+    setScrubT(null);
+    setTrailError(null);
+    // Redraw what was suppressed. The markers were removed from the map, not
+    // just hidden, because fetchRides() recreates ride markers wholesale on
+    // every refresh anyway — hiding once would have let the 15s poll quietly
+    // put them back mid-session.
+    fetchAll();
+    fetchDrivers();
+  }
+
+  function hideLiveMarkers() {
+    markersRef.current.forEach((m, k) => {
+      m.setMap(null);
+      if (!k.startsWith("driver-")) markersRef.current.delete(k);
+    });
+  }
+
+  function clearTrailOverlays() {
+    for (const o of trailOverlays.current) o.setMap(null);
+    trailOverlays.current = [];
+    scrubMarker.current?.setMap(null);
+    scrubMarker.current = null;
+  }
+
+  function shiftTrailDate(days: number) {
+    const d = new Date(trailDate + "T12:00:00");
+    d.setDate(d.getDate() + days);
+    setTrailDate(localDayISO(d));
+    setScrubT(null);
+  }
+
+  useEffect(() => {
+    if (!trailDriver) return;
+    let cancelled = false;
+
+    (async () => {
+      setTrailLoading(true);
+      setTrailError(null);
+      // Day boundaries in the dispatcher's own timezone, which is the one they
+      // mean when they say "Tuesday" — the column is timestamptz, so this
+      // compares correctly whatever the driver's device clock was set to.
+      const from = new Date(trailDate + "T00:00:00");
+      const to = new Date(trailDate + "T00:00:00");
+      to.setDate(to.getDate() + 1);
+
+      const { data, error } = await supabase
+        .from("driver_locations")
+        .select("recorded_at, lat, lng, ride_id")
+        .eq("driver_id", trailDriver.id)
+        .gte("recorded_at", from.toISOString())
+        .lt("recorded_at", to.toISOString())
+        .order("recorded_at", { ascending: true })
+        // A full shift is ~2,000 fixes; the ceiling is a guard against pulling
+        // a pathological day into the browser, not an expected limit.
+        .limit(20000);
+
+      if (cancelled) return;
+      if (error) {
+        setTrailError(error.message);
+        setTrail(null);
+      } else {
+        setTrail(buildTrail((data ?? []) as TrailFix[]));
+      }
+      setTrailLoading(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [trailDriver?.id, trailDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Draw. Redraws wholesale on every change — a trail is a few hundred
+  // vertices, and diffing overlays for this would be more code than it saves.
+  useEffect(() => {
+    const map = googleMapRef.current;
+    const google = (window as any).google;
+    if (!map || !google) return;
+    clearTrailOverlays();
+    if (!trailDriver || !trail) return;
+
+    const bounds = new google.maps.LatLngBounds();
+
+    for (const seg of trail.segments) {
+      if (seg.points.length < 2) continue;
+      const path = seg.points.map((p) => ({ lat: p.lat, lng: p.lng }));
+      for (const pt of path) bounds.extend(pt);
+      trailOverlays.current.push(
+        new google.maps.Polyline({
+          path,
+          map,
+          // On-fare stretches in the brand orange, everything else grey. This
+          // is the distinction a dispute actually turns on: "was the meter
+          // running while you drove that way".
+          strokeColor: seg.rideId ? "#E8500A" : "#9CA3AF",
+          strokeOpacity: seg.rideId ? 0.95 : 0.7,
+          strokeWeight: seg.rideId ? 5 : 3,
+          zIndex: seg.rideId ? 2 : 1,
+        }),
+      );
+    }
+
+    trail.stops.forEach((stop, i) => {
+      trailOverlays.current.push(
+        new google.maps.Marker({
+          position: { lat: stop.at.lat, lng: stop.at.lng },
+          map,
+          zIndex: 3,
+          label: { text: String(i + 1), color: "#fff", fontSize: "11px", fontWeight: "700" },
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: "#111827",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 2,
+          },
+          title: `Stopped ${stop.minutes} min`,
+        }),
+      );
+      bounds.extend({ lat: stop.at.lat, lng: stop.at.lng });
+    });
+
+    if (!bounds.isEmpty()) map.fitBounds(bounds, 60);
+  }, [trail, trailDriver]);
+
+  // The scrub marker is its own effect and its own overlay. A range input fires
+  // continuously while dragged, and the effect above tears down and rebuilds
+  // every polyline and stop marker it drew — doing that per pixel of drag
+  // visibly stutters. Nothing above depends on scrubT, so it does not belong in
+  // that dependency list.
+  const scrubMarker = useRef<any>(null);
+  useEffect(() => {
+    const map = googleMapRef.current;
+    const google = (window as any).google;
+    if (!map || !google) return;
+
+    const pos = trail && scrubT != null ? positionAt(trail, scrubT) : null;
+    if (!pos) {
+      scrubMarker.current?.setMap(null);
+      scrubMarker.current = null;
+      return;
+    }
+    const icon = {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 9,
+      // Hollow when the nearest fix is far from the scrubbed time: nothing was
+      // recorded around then, so this is the last known position rather than
+      // where the car was. Drawing it solid would assert something we do not
+      // know.
+      fillColor: pos.stale ? "#fff" : "#2563EB",
+      fillOpacity: 1,
+      strokeColor: "#2563EB",
+      strokeWeight: 3,
+    };
+    if (scrubMarker.current) {
+      scrubMarker.current.setPosition({ lat: pos.at.lat, lng: pos.at.lng });
+      scrubMarker.current.setIcon(icon);
+    } else {
+      scrubMarker.current = new google.maps.Marker({
+        position: { lat: pos.at.lat, lng: pos.at.lng },
+        map,
+        zIndex: 4,
+        icon,
+      });
+    }
+  }, [trail, scrubT]);
+
+  // Overlays must not outlive the view.
+  useEffect(() => clearTrailOverlays, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [cancelPendingId, setCancelPendingId] = useState<string | null>(null);
   const [selectedRide, setSelectedRide] = useState<string | null>(null);
   const [selectedDriver, setSelectedDriver] = useState<any | null>(null);
@@ -2064,6 +2297,7 @@ export default function DashboardPage({
 
   function renderDriverMarkers(enriched: any[]) {
     if (!googleMapRef.current) return;
+    if (trailDriverRef.current) return; // a trail owns the map; see hideLiveMarkers
     const focus = focusedDriverIdRef.current;
     awayDriverIdsRef.current = new Set(
       enriched.filter((d: any) => driverPresence(d) === "away").map((d: any) => d.id),
@@ -2248,6 +2482,7 @@ export default function DashboardPage({
   }
 
   function updateMapMarkers(rideData: Ride[]) {
+    if (trailDriverRef.current) return; // a trail owns the map; see hideLiveMarkers
     // Computed above the map guard: rides commonly load before the map does,
     // and the map-init flush of renderDriverMarkers needs this to already be
     // right or every car paints green until the next rides tick.
@@ -3817,6 +4052,43 @@ export default function DashboardPage({
         .dd-stat-box { background: #1E2A3A; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
         .dd-stat-val { font-size: 18px; font-weight: 700; color: #F1F5F9; }
         .dd-stat-lbl { font-size: 10px; color: #6B7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+        .dd-trail-btn { width: 100%; text-align: left; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 18px; display: block; }
+        .dd-trail-btn:hover { background: #F3F4F6; border-color: #D1D5DB; }
+        .dd-trail-hint { display: block; font-size: 11px; font-weight: 400; color: #6B7280; margin-top: 2px; }
+
+        /* Trail overlay — floats over the always-mounted map, never replaces it. */
+        .db-trail { position: absolute; top: 16px; left: 16px; width: 300px; max-height: calc(100% - 32px); overflow-y: auto; background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 14px; z-index: 5; }
+        .db-trail-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .db-trail-name { font-size: 14px; font-weight: 700; color: #111827; }
+        .db-trail-sub { font-size: 11px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+        .db-trail-close { background: none; border: none; color: #6B7280; font-size: 12px; cursor: pointer; padding: 2px 4px; }
+        .db-trail-close:hover { color: #111827; }
+        .db-trail-dates { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+        .db-trail-dates input { flex: 1; border: 1px solid #E5E7EB; border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; }
+        .db-trail-dates button { width: 28px; height: 28px; border: 1px solid #E5E7EB; background: #fff; border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1; color: #374151; }
+        .db-trail-dates button:disabled { opacity: 0.35; cursor: default; }
+        .db-trail-empty { font-size: 12px; color: #6B7280; padding: 10px 0; }
+        .db-trail-note { font-size: 11px; color: #9CA3AF; margin-top: 6px; line-height: 1.45; }
+        .db-trail-stats { display: flex; gap: 8px; margin-bottom: 14px; }
+        .db-trail-stats > div { flex: 1; background: #F9FAFB; border-radius: 8px; padding: 8px 6px; text-align: center; font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; }
+        .db-trail-stats span { display: block; font-size: 15px; font-weight: 700; color: #111827; letter-spacing: 0; text-transform: none; margin-bottom: 1px; }
+        .db-trail-scrub { margin-bottom: 12px; }
+        .db-trail-scrub-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; color: #9CA3AF; margin-bottom: 4px; }
+        .db-trail-scrub-head strong { font-size: 12px; color: #111827; }
+        .db-trail-scrub input[type=range] { width: 100%; accent-color: #2563EB; }
+        .db-trail-reset { background: none; border: none; color: #2563EB; font-size: 11px; cursor: pointer; padding: 2px 0; }
+        .db-trail-legend { display: flex; gap: 12px; font-size: 11px; color: #6B7280; margin-bottom: 12px; }
+        .db-trail-legend span { display: flex; align-items: center; gap: 5px; }
+        .db-trail-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+        .db-trail-legend i.fare { background: #E8500A; }
+        .db-trail-legend i.idle { background: #9CA3AF; }
+        .db-trail-stops { display: flex; flex-direction: column; gap: 4px; }
+        .db-trail-stop { display: flex; align-items: center; gap: 8px; width: 100%; background: #fff; border: 1px solid #F3F4F6; border-radius: 8px; padding: 7px 9px; cursor: pointer; text-align: left; }
+        .db-trail-stop:hover { background: #F9FAFB; border-color: #E5E7EB; }
+        .db-trail-stop-n { width: 18px; height: 18px; border-radius: 9px; background: #111827; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .db-trail-stop-time { flex: 1; font-size: 12px; color: #374151; }
+        .db-trail-stop-dur { font-size: 11px; font-weight: 600; color: #6B7280; }
+
         .dd-section-label { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
         .dd-empty { font-size: 13px; color: #6B7280; text-align: center; padding: 24px 0; }
         .dd-ride-row { background: #1E2A3A; border-radius: 10px; padding: 11px 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
@@ -4968,7 +5240,7 @@ export default function DashboardPage({
                   )}
                 </div>
               )}
-              {selectedDriver && (
+              {selectedDriver && !trailDriver && (
                 <DriverDetailPanel
                   driver={selectedDriver}
                   rides={rides}
@@ -4980,13 +5252,133 @@ export default function DashboardPage({
                   onDelete={() => deleteDriver(selectedDriver.id)}
                   onVehicleUpdated={(updates) => { setSelectedDriver((prev: any) => ({ ...prev, ...updates })); fetchDrivers(); }}
                   onOverlayChange={setDetailOverlayActive}
+                  onViewTrail={() => openTrail(selectedDriver)}
                 />
               )}
               <div
                 ref={mapRef}
                 className="db-map"
-                style={{ visibility: selectedDriver ? "hidden" : "visible" }}
+                style={{ visibility: selectedDriver && !trailDriver ? "hidden" : "visible" }}
               />
+
+              {trailDriver && (
+                <div className="db-trail">
+                  <div className="db-trail-head">
+                    <div>
+                      <div className="db-trail-name">
+                        {trailDriver.profile?.name ?? "Driver"}
+                      </div>
+                      <div className="db-trail-sub">Location history</div>
+                    </div>
+                    <button className="db-trail-close" onClick={closeTrail} type="button">
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="db-trail-dates">
+                    <button onClick={() => shiftTrailDate(-1)} type="button">‹</button>
+                    <input
+                      type="date"
+                      value={trailDate}
+                      max={localDayISO(new Date())}
+                      onChange={(e) => { setTrailDate(e.target.value); setScrubT(null); }}
+                    />
+                    <button
+                      onClick={() => shiftTrailDate(1)}
+                      type="button"
+                      disabled={trailDate >= localDayISO(new Date())}
+                    >
+                      ›
+                    </button>
+                  </div>
+
+                  {trailLoading ? (
+                    <div className="db-trail-empty">Loading…</div>
+                  ) : trailError ? (
+                    <div className="db-trail-empty">Couldn't load: {trailError}</div>
+                  ) : !trail || trail.fixCount === 0 ? (
+                    <div className="db-trail-empty">
+                      No location history for this day.
+                      <div className="db-trail-note">
+                        Location history is only recorded while a driver is
+                        online, on a version of the driver app that supports
+                        background location. Until that update reaches drivers,
+                        every day here will be empty.
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="db-trail-stats">
+                        <div>
+                          <span>{formatKm(trail.distanceM)}</span>
+                          driven
+                        </div>
+                        <div>
+                          <span>{formatDuration(trail.idleMs)}</span>
+                          stopped
+                        </div>
+                        <div>
+                          <span>{trail.stops.length}</span>
+                          {trail.stops.length === 1 ? "stop" : "stops"}
+                        </div>
+                      </div>
+
+                      {trail.firstAt != null && trail.lastAt != null && (
+                        <div className="db-trail-scrub">
+                          <div className="db-trail-scrub-head">
+                            <span>{clockOf(trail.firstAt)}</span>
+                            <strong>
+                              {scrubT == null ? "Whole day" : clockOf(scrubT)}
+                            </strong>
+                            <span>{clockOf(trail.lastAt)}</span>
+                          </div>
+                          <input
+                            type="range"
+                            min={trail.firstAt}
+                            max={trail.lastAt}
+                            step={60_000}
+                            value={scrubT ?? trail.firstAt}
+                            onChange={(e) => setScrubT(Number(e.target.value))}
+                          />
+                          {scrubT != null && (
+                            <button
+                              className="db-trail-reset"
+                              onClick={() => setScrubT(null)}
+                              type="button"
+                            >
+                              Show whole day
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="db-trail-legend">
+                        <span><i className="fare" />On a fare</span>
+                        <span><i className="idle" />Between fares</span>
+                      </div>
+
+                      {trail.stops.length > 0 && (
+                        <div className="db-trail-stops">
+                          {trail.stops.map((stop, i) => (
+                            <button
+                              key={stop.from}
+                              className="db-trail-stop"
+                              type="button"
+                              onClick={() => setScrubT(stop.from)}
+                            >
+                              <span className="db-trail-stop-n">{i + 1}</span>
+                              <span className="db-trail-stop-time">
+                                {clockOf(stop.from)} – {clockOf(stop.to)}
+                              </span>
+                              <span className="db-trail-stop-dur">{stop.minutes}m</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {rideDetail && !editingRide && !selectedDriver && LIVE_STATUSES.has(rideDetail.status) && (() => {
                 const rd = rideDetail;
