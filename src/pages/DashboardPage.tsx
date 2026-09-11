@@ -1849,6 +1849,12 @@ export default function DashboardPage({
   }, []);
 
   useEffect(() => {
+    fetchStaticConfig();
+    const i = setInterval(fetchStaticConfig, 300_000);
+    return () => clearInterval(i);
+  }, []);
+
+  useEffect(() => {
     const ch = supabase
       .channel("dashboard-rt")
       .on(
@@ -1941,8 +1947,10 @@ export default function DashboardPage({
       .map((r) => r.id);
   }, [rides]);
 
-  // Poll active ride statuses every 2 s — cheap query, guarantees sub-2s updates
-  // regardless of Supabase Realtime CDC latency.
+  // Poll active ride statuses every 5 s — guarantees bounded updates regardless
+  // of Supabase Realtime CDC latency. Was 2s; raised 2026-09-10 because at 2s
+  // this one effect was 30 requests/minute per open tab, more than the entire
+  // 15s refresh loop, to shave latency nobody was measuring.
   useEffect(() => {
     const interval = setInterval(async () => {
       const ids = activeRideIdsRef.current;
@@ -1974,7 +1982,7 @@ export default function DashboardPage({
         updateMapMarkers(next);
         return next;
       });
-    }, 2000);
+    }, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -1993,19 +2001,34 @@ export default function DashboardPage({
     return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
+  // Split in two on purpose (2026-09-10, after the free-tier CPU-credit
+  // exhaustion). Everything here used to run every 15s, which meant refetching
+  // company pricing, vehicle classes, discount codes and unused invite codes
+  // four times a minute forever — config that changes maybe weekly. That is
+  // roughly half of the ~14 HTTP requests each cycle made, spent re-reading
+  // rows that had not changed since the tab was opened.
+  //
+  // Note driver_invites also has its own realtime subscription, so its slow
+  // poll here is a backstop, not the delivery mechanism.
   async function fetchAll() {
     await Promise.all([
       fetchRides(),
       fetchStats(),
       fetchDrivers(),
-      fetchInvites(),
       fetchReviewsBadge(),
       fetchReportsBadge(),
+    ]);
+    setLoading(false);
+  }
+
+  /** Slow-changing config. Fetched on mount and rarely after. */
+  async function fetchStaticConfig() {
+    await Promise.all([
+      fetchInvites(),
       fetchDiscountCodes(),
       fetchVehicleClasses(),
       fetchCompanyPricing(),
     ]);
-    setLoading(false);
   }
 
   async function fetchCompanyPricing() {
