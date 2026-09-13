@@ -8,7 +8,7 @@ interface Props {
   isAdmin: boolean;
 }
 
-type Section = "pricing" | "vehicle_classes" | "support" | "team";
+type Section = "pricing" | "vehicle_classes" | "numbering" | "support" | "team";
 
 interface DispatchReport {
   id: string;
@@ -45,6 +45,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     ? [
         { id: "pricing", label: "Pricing" },
         { id: "vehicle_classes", label: "Vehicle Classes" },
+        { id: "numbering", label: "Numbering" },
         { id: "team", label: "Team" },
         { id: "support", label: "Support" },
       ]
@@ -62,6 +63,20 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Numbering state (20260775_fleet_numbering.sql).
+  // Three fields per entity, deliberately not a format string: a mini-language
+  // is something dispatch gets wrong and support then owns forever. Cars and
+  // drivers are configured separately because bare numbers for cars and "D-"
+  // for drivers is the common case.
+  const [carPrefix, setCarPrefix] = useState("");
+  const [carPad, setCarPad] = useState("0");
+  const [carStart, setCarStart] = useState("1");
+  const [driverPrefix, setDriverPrefix] = useState("");
+  const [driverPad, setDriverPad] = useState("0");
+  const [numSaving, setNumSaving] = useState(false);
+  const [numSaved, setNumSaved] = useState(false);
+  const [numError, setNumError] = useState<string | null>(null);
 
   // Vehicle classes state
   interface VehicleClass { id: string; name: string; capacity: number; surcharge_percent: number; display_order: number; is_active: boolean; }
@@ -255,7 +270,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("base_fare, rate_per_km, phone")
+      .select("base_fare, rate_per_km, phone, car_number_prefix, car_number_pad, car_number_start, driver_number_prefix, driver_number_pad")
       .eq("id", companyId)
       .maybeSingle()
       .then(({ data }) => {
@@ -265,6 +280,11 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           setSavedBaseFare(String(data.base_fare ?? 4));
           setSavedRatePerKm(String(data.rate_per_km ?? 1.8));
           setDispatchPhone(data.phone ?? "");
+          setCarPrefix(data.car_number_prefix ?? "");
+          setCarPad(String(data.car_number_pad ?? 0));
+          setCarStart(String(data.car_number_start ?? 1));
+          setDriverPrefix(data.driver_number_prefix ?? "");
+          setDriverPad(String(data.driver_number_pad ?? 0));
         }
         setLoading(false);
       });
@@ -400,6 +420,48 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     });
     setSavedBaseFare(String(base));
     setSavedRatePerKm(String(rate));
+  }
+
+  async function saveNumbering() {
+    setNumError(null);
+    setNumSaved(false);
+    const cp = parseInt(carPad, 10);
+    const cs = parseInt(carStart, 10);
+    const dp = parseInt(driverPad, 10);
+    if (isNaN(cp) || cp < 0 || cp > 6) { setNumError("Car padding must be between 0 and 6."); return; }
+    if (isNaN(dp) || dp < 0 || dp > 6) { setNumError("Driver padding must be between 0 and 6."); return; }
+    if (isNaN(cs) || cs < 0) { setNumError("Starting car number must be 0 or more."); return; }
+    setNumSaving(true);
+    const { error: err } = await supabase
+      .from("companies")
+      .update({
+        car_number_prefix: carPrefix,
+        car_number_pad: cp,
+        car_number_start: cs,
+        driver_number_prefix: driverPrefix,
+        driver_number_pad: dp,
+      })
+      .eq("id", companyId);
+    setNumSaving(false);
+    if (err) { setNumError(err.message); return; }
+    setNumSaved(true);
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "settings.numbering_updated",
+      details: {
+        car_number_prefix: carPrefix, car_number_pad: cp, car_number_start: cs,
+        driver_number_prefix: driverPrefix, driver_number_pad: dp,
+      },
+    });
+  }
+
+  // Formatting only — changing these never rewrites a stored number. A driver
+  // number is an int and a car number is the text painted on the car; the
+  // prefix and padding are how they are drawn.
+  function preview(prefix: string, pad: string, n: number) {
+    const p = parseInt(pad, 10);
+    return prefix + String(n).padStart(isNaN(p) ? 0 : p, "0");
   }
 
   return (
@@ -728,6 +790,150 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     </div>
                   </div>
                 </div>
+              )}
+            </>
+          )}
+
+          {section === "numbering" && (
+            <>
+              <div className="st-header">
+                <div>
+                  <div className="st-title">Numbering</div>
+                  <div className="st-subtitle">
+                    How car and driver numbers are written. Formatting only —
+                    changing these never renumbers anyone.
+                  </div>
+                </div>
+                <button
+                  className={`st-save-btn${numSaved ? " st-saved" : ""}`}
+                  onClick={saveNumbering}
+                  disabled={numSaving || loading}
+                >
+                  {numSaving ? "Saving…" : numSaved ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+
+              {loading ? (
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+              ) : (
+                <>
+                  <div className="st-card">
+                    <p className="st-card-label">
+                      Car numbers &nbsp;·&nbsp; next: <strong style={{ color: "#E2E8F0" }}>
+                        {preview(carPrefix, carPad, parseInt(carStart, 10) || 1)}
+                      </strong>
+                    </p>
+
+                    <div className="st-field-row">
+                      <div className="st-field-text">
+                        <span className="st-field-label">Prefix</span>
+                        <span className="st-field-hint">Leave blank for plain numbers</span>
+                      </div>
+                      <div className="st-input-wrap">
+                        <input
+                          className="st-input"
+                          type="text"
+                          maxLength={8}
+                          placeholder="none"
+                          value={carPrefix}
+                          onChange={e => { setCarPrefix(e.target.value); setNumSaved(false); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="st-divider" />
+
+                    <div className="st-field-row">
+                      <div className="st-field-text">
+                        <span className="st-field-label">Digits</span>
+                        <span className="st-field-hint">Pad with leading zeros — 3 gives 007, 0 gives 7</span>
+                      </div>
+                      <div className="st-input-wrap">
+                        <input
+                          className="st-input"
+                          type="number"
+                          min="0"
+                          max="6"
+                          value={carPad}
+                          onChange={e => { setCarPad(e.target.value); setNumSaved(false); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="st-divider" />
+
+                    <div className="st-field-row">
+                      <div className="st-field-text">
+                        <span className="st-field-label">Start at</span>
+                        <span className="st-field-hint">
+                          Where a new car number is suggested from. Numbers are reused —
+                          when a car is retired its number becomes free again.
+                        </span>
+                      </div>
+                      <div className="st-input-wrap">
+                        <input
+                          className="st-input"
+                          type="number"
+                          min="0"
+                          value={carStart}
+                          onChange={e => { setCarStart(e.target.value); setNumSaved(false); }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="st-card">
+                    <p className="st-card-label">
+                      Driver numbers &nbsp;·&nbsp; example: <strong style={{ color: "#E2E8F0" }}>
+                        {preview(driverPrefix, driverPad, 7)}
+                      </strong>
+                    </p>
+
+                    <div className="st-field-row">
+                      <div className="st-field-text">
+                        <span className="st-field-label">Prefix</span>
+                        <span className="st-field-hint">Leave blank for plain numbers</span>
+                      </div>
+                      <div className="st-input-wrap">
+                        <input
+                          className="st-input"
+                          type="text"
+                          maxLength={8}
+                          placeholder="none"
+                          value={driverPrefix}
+                          onChange={e => { setDriverPrefix(e.target.value); setNumSaved(false); }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="st-divider" />
+
+                    <div className="st-field-row">
+                      <div className="st-field-text">
+                        <span className="st-field-label">Digits</span>
+                        <span className="st-field-hint">Pad with leading zeros — 3 gives 007, 0 gives 7</span>
+                      </div>
+                      <div className="st-input-wrap">
+                        <input
+                          className="st-input"
+                          type="number"
+                          min="0"
+                          max="6"
+                          value={driverPad}
+                          onChange={e => { setDriverPad(e.target.value); setNumSaved(false); }}
+                        />
+                      </div>
+                    </div>
+
+                    <p className="st-field-hint" style={{ marginTop: 12, display: "block" }}>
+                      Driver numbers are issued in order as drivers join and are never
+                      reused — a number always points at the same person, which is what
+                      lets an old ride record still resolve correctly.
+                    </p>
+
+                    {numError && <p className="st-error">{numError}</p>}
+                  </div>
+                </>
               )}
             </>
           )}

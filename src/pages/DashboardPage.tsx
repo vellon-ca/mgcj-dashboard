@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { driverPresence, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import { formatDriverNumber, formatRideRef } from "../lib/numbering";
 import {
   buildTrail,
   formatDuration,
@@ -566,6 +567,8 @@ function DriverDetailPanel({
   onVehicleUpdated,
   onOverlayChange,
   onViewTrail,
+  isAdmin,
+  driverNumFormat,
 }: {
   driver: any;
   rides: Ride[];
@@ -578,6 +581,12 @@ function DriverDetailPanel({
   onVehicleUpdated: (updates: Partial<Driver>) => void;
   onOverlayChange?: (active: boolean) => void;
   onViewTrail: () => void;
+  // Car and driver numbers are staff config, so they follow the role split
+  // (20260715): admins own them, dispatchers do ride ops. guard_driver_numbering
+  // rejects a dispatcher's write anyway — gating here means they see a
+  // read-only field instead of a save that fails.
+  isAdmin: boolean;
+  driverNumFormat: { prefix: string; pad: number };
 }) {
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
@@ -594,6 +603,11 @@ function DriverDetailPanel({
   const [vYear, setVYear] = useState('');
   const [vPlate, setVPlate] = useState('');
   const [vClassId, setVClassId] = useState('');
+  const [vCarNumber, setVCarNumber] = useState('');
+  // Suggestion only — shown as the input's placeholder, never auto-filled.
+  // next_car_number() returns the LOWEST unused number rather than a counter,
+  // because a retired Car 7 should be offered again to the next driver.
+  const [suggestedCar, setSuggestedCar] = useState<number | null>(null);
   const [classTouched, setClassTouched] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleError, setVehicleError] = useState<string | null>(null);
@@ -676,6 +690,20 @@ function DriverDetailPanel({
   }
 
   function openVehicleEdit() {
+    setVCarNumber(driver.car_number ?? '');
+    setSuggestedCar(null);
+    // Fire-and-forget, deliberately NOT awaited before the modal opens. Awaiting
+    // it made opening the editor depend on a network round trip, and any
+    // rejection would have stopped the modal opening at all — for a value that
+    // is only ever a placeholder.
+    if (isAdmin && !driver.car_number) {
+      supabase
+        .rpc('next_car_number', { p_company_id: companyId })
+        .then(({ data, error }) => {
+          if (error) { console.warn('[next_car_number]', error.message); return; }
+          if (typeof data === 'number') setSuggestedCar(data);
+        });
+    }
     setVMake(driver.vehicle_make ?? '');
     setVModel(driver.vehicle_model ?? '');
     setVYear(driver.vehicle_year ? String(driver.vehicle_year) : '');
@@ -705,10 +733,27 @@ function DriverDetailPanel({
         vehicle_year: vYear ? parseInt(vYear) : null,
         plate_number: vPlate.trim() || null,
         vehicle_class_id: vClassId || null,
+        ...(isAdmin ? { car_number: vCarNumber.trim() || null } : {}),
       })
       .eq('id', driver.id);
     setVehicleSaving(false);
-    if (error) { setVehicleError(error.message); return; }
+    if (error) {
+      // 23505 is the per-company unique index on (company_id, lower(car_number)).
+      setVehicleError(
+        error.code === '23505'
+          ? `Car ${vCarNumber.trim()} is already assigned to another driver.`
+          : error.message
+      );
+      return;
+    }
+    if (isAdmin && (vCarNumber.trim() || null) !== (driver.car_number ?? null)) {
+      logDispatchEvent({
+        companyId,
+        dispatcherId,
+        eventType: 'driver.car_number_changed',
+        details: { driver_id: driver.id, from: driver.car_number ?? null, to: vCarNumber.trim() || null },
+      });
+    }
     setEditingVehicle(false);
     const updatedClass = vehicleClasses.find((c: any) => c.id === vClassId);
     onVehicleUpdated({
@@ -735,6 +780,10 @@ function DriverDetailPanel({
   }
 
   const name = driver.profile?.name ?? "Unknown";
+  // "#7" when the company uses bare numbers, "D-007" when it has set a prefix.
+  // Prefixing a prefixed number would read "#D-007", which is nonsense — the
+  // "#" is only there to mark a bare integer as an identifier.
+  const driverNumLabel = formatDriverNumber(driver.driver_number, driverNumFormat);
   const avatarUrl = driver.profile?.avatar_url ?? null;
   const initials = name
     .split(" ")
@@ -862,6 +911,11 @@ function DriverDetailPanel({
           <div className="dd-profile-info">
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
               <div className="dd-profile-name" style={{ marginBottom: 0 }}>{name}</div>
+              {driverNumLabel && (
+                <span className="dd-driver-num" title="Driver number">
+                  {driverNumLabel}
+                </span>
+              )}
               <div
                 className="dd-status-dot"
                 style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : presence === "away" ? "#F59E0B" : "#374151", flexShrink: 0 }}
@@ -994,6 +1048,21 @@ function DriverDetailPanel({
                 <div className="dd-vehicle-field">
                   <div className="dd-vehicle-field-label">Plate</div>
                   <input className="dd-vehicle-input" value={vPlate} onChange={e => setVPlate(e.target.value.toUpperCase())} placeholder="ABC 123" />
+                </div>
+                <div className="dd-vehicle-field">
+                  <div className="dd-vehicle-field-label">Car number</div>
+                  {isAdmin ? (
+                    <input
+                      className="dd-vehicle-input"
+                      value={vCarNumber}
+                      onChange={e => setVCarNumber(e.target.value)}
+                      placeholder={suggestedCar !== null ? String(suggestedCar) : '7'}
+                    />
+                  ) : (
+                    <div className="dd-vehicle-input" style={{ opacity: 0.6 }}>
+                      {driver.car_number ?? '—'}
+                    </div>
+                  )}
                 </div>
               </div>
               {vehicleClasses.length > 0 && (
@@ -1631,6 +1700,9 @@ export default function DashboardPage({
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [detailOverlayActive, setDetailOverlayActive] = useState(false);
   const [driverSearch, setDriverSearch] = useState("");
+  // Company display convention for driver numbers (20260775). Formatting only —
+  // the stored value is an int, so changing prefix/padding never renumbers.
+  const [driverNumFormat, setDriverNumFormat] = useState({ prefix: "", pad: 0 });
   const [loading, setLoading] = useState(true);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
@@ -2046,11 +2118,15 @@ export default function DashboardPage({
     if (!profile?.company_id) return;
     const { data } = await supabase
       .from("companies")
-      .select("base_fare, rate_per_km")
+      .select("base_fare, rate_per_km, driver_number_prefix, driver_number_pad")
       .eq("id", profile.company_id)
       .maybeSingle();
     setCompanyBaseFare(data?.base_fare ?? 4);
     setCompanyRatePerKm(data?.rate_per_km ?? 1.8);
+    setDriverNumFormat({
+      prefix: data?.driver_number_prefix ?? "",
+      pad: data?.driver_number_pad ?? 0,
+    });
   }
 
   async function fetchDiscountCodes() {
@@ -3798,9 +3874,22 @@ export default function DashboardPage({
       const make = (d.vehicle_make ?? "").toLowerCase();
       const model = (d.vehicle_model ?? "").toLowerCase();
       const plate = (d.plate_number ?? "").toLowerCase();
+      const car = ((d as any).car_number ?? "").toLowerCase();
+      const driverNum = (d as any).driver_number;
       const qDigits = q.replace(/\D/g, "");
+      // Car number matches as a substring (it is free text and can be "12A").
+      // Driver number matches EXACTLY on the digits of the query, so typing 7
+      // finds Driver 7 rather than 7, 17, 27 and 70 — stripping non-digits
+      // first is what lets a dispatcher type the number as they see it
+      // written, "D-007", and still land on driver 7.
+      const carDigits = car.replace(/\D/g, "");
       return name.includes(q) || make.includes(q) || model.includes(q) || plate.includes(q)
-        || (qDigits.length > 0 && phone.includes(qDigits));
+        || (!!car && car.includes(q))
+        || (qDigits.length > 0 && phone.includes(qDigits))
+        || (qDigits.length > 0 && (
+              (driverNum != null && String(driverNum) === String(Number(qDigits)))
+              || (!!carDigits && carDigits === qDigits)
+            ));
     });
   })();
 
@@ -3943,7 +4032,9 @@ export default function DashboardPage({
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
         .db-driver-avatar { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.12); }
         .db-driver-avatar-photo { width: 34px; height: 34px; border-radius: 17px; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.18); }
-        .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; display: flex; align-items: baseline; gap: 8px; }
+        .db-driver-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .db-car-num { margin-left: auto; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; }
         .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
         .db-driver-phone { font-size: 11px; color: #6B7280; margin-top: 3px; }
         .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
@@ -4079,6 +4170,7 @@ export default function DashboardPage({
         .dd-avatar-photo { width: 52px; height: 52px; border-radius: 26px; object-fit: cover; border: 2px solid rgba(74,158,255,0.2); flex-shrink: 0; }
         .dd-avatar-initials { width: 52px; height: 52px; border-radius: 26px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 2px solid rgba(74,158,255,0.12); }
         .dd-profile-info { flex: 1; min-width: 0; }
+        .dd-driver-num { font-size: 12px; font-weight: 600; color: #6B7280; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; flex-shrink: 0; }
         .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .dd-profile-sub { font-size: 12px; color: #6B7280; }
         .dd-profile-phone { font-size: 12px; color: #6B7280; margin-top: 2px; }
@@ -4162,6 +4254,7 @@ export default function DashboardPage({
         .dd-action-edit { background: rgba(74,158,255,0.07); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
         .dd-action-edit:hover { background: rgba(74,158,255,0.14); }
         .dd-vehicle-card { background: #1E2A3A; border-radius: 10px; padding: 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
+        .db-ride-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
         .dd-vehicle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .dd-vehicle-field { display: flex; flex-direction: column; gap: 4px; }
         .dd-vehicle-field-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; }
@@ -5086,7 +5179,7 @@ export default function DashboardPage({
                     </div>
                     <input
                       className="db-driver-search"
-                      placeholder="Search by name, phone, vehicle or plate…"
+                      placeholder="Search by name, phone, car or driver number, vehicle or plate…"
                       value={driverSearch}
                       onChange={e => setDriverSearch(e.target.value)}
                     />
@@ -5140,9 +5233,23 @@ export default function DashboardPage({
                             )}
                             <div style={{ flex: 1 }}>
                               <div className="db-driver-name">
-                                {(driver as any).profile?.name ?? "Unknown"}
+                                <span className="db-driver-name-text">
+                                  {(driver as any).profile?.name ?? "Unknown"}
+                                </span>
+                                {/* Dispatch speaks in car numbers, so this sits
+                                    on the name row rather than in the small
+                                    print — but grey and unfilled, so the status
+                                    colour stays the only colour on the card. */}
+                                {(driver as any).car_number && (
+                                  <span className="db-car-num">
+                                    CAR {(driver as any).car_number}
+                                  </span>
+                                )}
                               </div>
                               <div className="db-driver-sub">
+                                {formatDriverNumber((driver as any).driver_number, driverNumFormat)
+                                  ? `${formatDriverNumber((driver as any).driver_number, driverNumFormat)} · `
+                                  : ""}
                                 {driver.vehicle_make} {driver.vehicle_model} ·{" "}
                                 {driver.plate_number}
                                 {(driver as any).vehicle_class_name ? ` · ${(driver as any).vehicle_class_name}` : ""}
@@ -5291,6 +5398,8 @@ export default function DashboardPage({
                   onDeactivate={(hasActiveRide) => deactivateDriver(selectedDriver.id, hasActiveRide)}
                   onActivate={() => activateDriver(selectedDriver.id)}
                   onDelete={() => deleteDriver(selectedDriver.id)}
+                  isAdmin={isAdmin}
+                  driverNumFormat={driverNumFormat}
                   onVehicleUpdated={(updates) => { setSelectedDriver((prev: any) => ({ ...prev, ...updates })); fetchDrivers(); }}
                   onOverlayChange={setDetailOverlayActive}
                   onViewTrail={() => openTrail(selectedDriver)}
@@ -5922,6 +6031,12 @@ export default function DashboardPage({
             >
               <div className="db-modal-title" style={{ marginBottom: 0 }}>
                 {editingRide ? "Edit ride" : "Ride details"}
+                {/* The reference a passenger or driver will quote on the phone.
+                    Selectable so a dispatcher can copy it into a report.
+                    No null guard: ride_ref is NOT NULL in the DB (20260774). */}
+                <span className="db-ride-ref">
+                  {formatRideRef(rideDetail.ride_ref)}
+                </span>
               </div>
               <button
                 style={{
@@ -6339,6 +6454,14 @@ export default function DashboardPage({
                               ] as [string, string][])
                             : []),
                         ] as [string, string][])
+                      : []),
+                    // The car that actually did the ride, frozen at assignment
+                    // (20260775). Read off the ride, NOT the driver's current
+                    // car_number — a car number is a reassignable slot, so
+                    // resolving it live would answer a dispute about last March
+                    // with whoever holds Car 7 today.
+                    ...((rideDetail as any).car_number_at_assignment
+                      ? ([["Car", `Car ${(rideDetail as any).car_number_at_assignment}`]] as [string, string][])
                       : []),
                     [
                       "Scheduled",

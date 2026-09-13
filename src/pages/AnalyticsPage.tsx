@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { formatRideRef } from "../lib/numbering";
 import {
   AreaChart, Area, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -81,6 +82,9 @@ interface RideDetailModal {
 }
 interface SettlementRideRow {
   id: string;
+  // NOT NULL in the DB (20260774 backfills, then sets NOT NULL), so no display
+  // site needs a fallback.
+  ride_ref: string;
   completed_at: string | null;
   created_at: string;
   fare_final: number | null;
@@ -1382,7 +1386,7 @@ export default function AnalyticsPage({
     try {
       const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
+        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .in("settlement_route", SETTLEMENT_ACTIONABLE_ROUTES as unknown as string[])
@@ -1402,6 +1406,7 @@ export default function AnalyticsPage({
       setNeedsAttention(
         rides.map((r: any) => ({
           id: r.id,
+          ride_ref: r.ride_ref,
           completed_at: r.completed_at,
           created_at: r.created_at,
           fare_final: r.fare_final,
@@ -1437,7 +1442,7 @@ export default function AnalyticsPage({
 
       const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
+        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .eq("status", "completed")
@@ -1458,6 +1463,7 @@ export default function AnalyticsPage({
       setSettlementRides(
         rides.map((r: any) => ({
           id: r.id,
+          ride_ref: r.ride_ref,
           completed_at: r.completed_at,
           created_at: r.created_at,
           fare_final: r.fare_final,
@@ -1726,9 +1732,10 @@ export default function AnalyticsPage({
     });
     downloadCSV(
       `settlements-${period}-${settlementRouteFilter}.csv`,
-      ["Date", "Ride ID", "Driver", "Fare", "Settlement route", "Dispute", "Resolved at"],
+      ["Date", "Ride ref", "Ride ID", "Driver", "Fare", "Settlement route", "Dispute", "Resolved at"],
       filteredSettlementRides.map((r) => [
         new Date(r.completed_at ?? r.created_at).toLocaleDateString("en-CA"),
+        r.ride_ref,
         r.id,
         r.driver_name,
         r.fare_final != null ? r.fare_final.toFixed(2) : "",
@@ -2228,6 +2235,7 @@ export default function AnalyticsPage({
         (r) => `
       <tr>
         <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
+        <td style="font-family:monospace;font-size:11px">${esc(formatRideRef(r.ride_ref))}</td>
         <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
         <td style="font-size:11px">${esc(r.pickup_address)}</td>
         <td style="font-size:11px">${esc(r.dropoff_address)}</td>
@@ -2249,9 +2257,9 @@ export default function AnalyticsPage({
         <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value">${completed.length}</div></div>
         <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">$${group.totalRevenue.toFixed(2)}</div></div>
       </div>
-      <table><thead><tr class="pg-spacer"><td colspan="9"></td></tr><tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr></thead>
-      <tbody>${rows || "<tr><td colspan='9' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
-      <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot></table>
+      <table><thead><tr class="pg-spacer"><td colspan="10"></td></tr><tr><th>Date</th><th>Ride</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr></thead>
+      <tbody>${rows || "<tr><td colspan='10' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
+      <tfoot><tr class="pg-spacer-foot"><td colspan="10"></td></tr></tfoot></table>
       ${APPROVAL_BLOCK}
     `,
       label,
@@ -2274,6 +2282,7 @@ export default function AnalyticsPage({
             (r) => `
         <tr>
           <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
+          <td style="font-family:monospace;font-size:11px">${esc(formatRideRef(r.ride_ref))}</td>
           <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
           <td style="font-size:11px">${esc(r.pickup_address)}</td>
           <td style="font-size:11px">${esc(r.dropoff_address)}</td>
@@ -2287,11 +2296,11 @@ export default function AnalyticsPage({
         return `<div class="month-section">
         <div class="month-heading-row">${group.label} · ${group.rides.length} rides · $${group.totalRevenue.toFixed(2)}</div>
         <table><thead>
-          <tr class="pg-spacer-sm"><td colspan="9"></td></tr>
-          <tr><th>Date</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr>
+          <tr class="pg-spacer-sm"><td colspan="10"></td></tr>
+          <tr><th>Date</th><th>Ride</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr>
         </thead>
-        <tbody>${rows || "<tr><td colspan='9' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
-        <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot>
+        <tbody>${rows || "<tr><td colspan='10' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
+        <tfoot><tr class="pg-spacer-foot"><td colspan="10"></td></tr></tfoot>
         </table>
         ${APPROVAL_BLOCK}
         </div>`;
@@ -2321,6 +2330,7 @@ export default function AnalyticsPage({
       filename,
       [
         "Date",
+        "Ride ref",
         "Passenger",
         "Driver",
         "Pickup",
@@ -2332,6 +2342,7 @@ export default function AnalyticsPage({
       ],
       rides.map((r) => [
         new Date(r.created_at).toLocaleDateString("en-CA"),
+        r.ride_ref,
         r.passenger_name,
         r.driver_name,
         r.pickup_address,
@@ -3643,6 +3654,7 @@ export default function AnalyticsPage({
                                   <tr>
                                     {[
                                       "Date",
+                                      "Ride",
                                       "Passenger",
                                       "Driver",
                                       "Pickup",
@@ -3685,6 +3697,17 @@ export default function AnalyticsPage({
                                           month: "short",
                                           day: "numeric",
                                         })}
+                                      </td>
+                                      <td
+                                        className="an-td"
+                                        style={{
+                                          fontFamily: "ui-monospace, monospace",
+                                          fontSize: 11,
+                                          letterSpacing: "0.06em",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {formatRideRef(r.ride_ref)}
                                       </td>
                                       <td className="an-td primary">
                                         {r.passenger_name}
@@ -4631,7 +4654,7 @@ export default function AnalyticsPage({
                               style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }}
                               title={row.id}
                             >
-                              {row.id.slice(0, 8)}
+                              {formatRideRef(row.ride_ref)}
                             </td>
                             <td className="an-td primary">{row.driver_name}</td>
                             <td className="an-td" style={{ color: "#E2E8F0", fontWeight: 600 }}>

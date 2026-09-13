@@ -7,6 +7,10 @@ const esc = (s: string | null | undefined) =>
 
 interface ReportRow {
   id: string;
+  // Human-readable reference (20260777), e.g. "DR-K7M4Q2". The prefix is part
+  // of the stored value: three report tables share the generator, so without
+  // it a support conversation about "DR-K7M4Q2" would have to search all three.
+  report_ref: string;
   ride_id: string | null;
   passenger_id: string;
   driver_id: string;
@@ -311,7 +315,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
     <div class="header-right">
       <div>${esc(date)}</div>
       <div>${esc(time)}</div>
-      <div style="margin-top:6px;font-size:11px">Report ID: ${esc(r.id.slice(0, 8).toUpperCase())}</div>
+      <div style="margin-top:6px;font-size:11px">Report ID: ${esc(r.report_ref)}</div>
     </div>
   </div>
 
@@ -493,6 +497,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
         .rp-modal { background: #1A2535; border-radius: 16px; width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 24px 64px rgba(0,0,0,0.6); }
         .rp-modal-header { padding: 20px 22px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; }
         .rp-modal-header-left { flex: 1; min-width: 0; }
+        .rp-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; user-select: all; }
         .rp-modal-title { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
         .rp-modal-subtitle { font-size: 12px; color: #6B7280; }
         .rp-modal-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
@@ -854,7 +859,13 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
               {/* Header */}
               <div className="rp-modal-header">
                 <div className="rp-modal-header-left">
-                  <div className="rp-modal-title">{REASON_LABELS[selected.reason] ?? selected.reason}</div>
+                  <div className="rp-modal-title">
+                    {REASON_LABELS[selected.reason] ?? selected.reason}
+                    {/* Selectable so a dispatcher can copy it straight into an
+                        email to Vellon — the printed PDF carries the same
+                        value, so the two can be matched up later. */}
+                    <span className="rp-ref">{selected.report_ref}</span>
+                  </div>
                   <div className="rp-modal-subtitle">
                     {new Date(selected.created_at).toLocaleDateString("en-CA", {
                       weekday: "short", month: "short", day: "numeric", year: "numeric",

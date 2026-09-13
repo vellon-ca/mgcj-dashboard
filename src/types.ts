@@ -27,6 +27,12 @@ export interface Driver {
 
 export interface Ride {
   id: string;
+  // Human-readable reference (20260774). Frozen at insert and unique
+  // platform-wide — this is what a passenger or driver quotes on the phone.
+  ride_ref: string;
+  // The car that did the ride, frozen at assignment (20260775). Not the
+  // driver's current car_number: a car number is a reassignable slot.
+  car_number_at_assignment: string | null;
   status:
     | "pending"
     | "offered"
