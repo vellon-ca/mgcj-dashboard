@@ -223,9 +223,14 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
     return -1;
   }, [messages, driverLastReadAt]);
 
-  // Keep the marker live while the thread is open. driver_chat_state is
-  // already in the supabase_realtime publication, so postgres_changes is the
-  // natural transport — no new plumbing.
+  // Keep the marker live while the thread is open.
+  //
+  // This comment used to claim driver_chat_state was "already in the
+  // supabase_realtime publication". It was not, and had never been, so this
+  // callback never fired and the marker froze at whatever it read on open.
+  // Added to the publication in mgcj-app's 20260773. Subscribing to an
+  // unpublished table returns SUBSCRIBED and silently delivers nothing, which
+  // is why there was no error anywhere to find.
   useEffect(() => {
     if (!selectedId) return;
     const channel = supabase

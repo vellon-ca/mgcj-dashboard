@@ -1918,11 +1918,6 @@ export default function DashboardPage({
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "driver_invites" },
-        fetchInvites,
-      )
-      .on(
-        "postgres_changes",
         { event: "INSERT", schema: "public", table: "ride_reviews" },
         fetchReviewsBadge,
       )
@@ -2008,8 +2003,18 @@ export default function DashboardPage({
   // roughly half of the ~14 HTTP requests each cycle made, spent re-reading
   // rows that had not changed since the tab was opened.
   //
-  // Note driver_invites also has its own realtime subscription, so its slow
-  // poll here is a backstop, not the delivery mechanism.
+  // driver_invites used to carry a note here saying it "also has its own
+  // realtime subscription, so its slow poll is a backstop, not the delivery
+  // mechanism". That was backwards: the table is not in the supabase_realtime
+  // publication, so the subscription never fired once and this poll has always
+  // been the only delivery mechanism. Subscription removed rather than the
+  // table published — an invite code is the only gate on driver registration,
+  // and broadcasting the unused ones to every admin session buys a second
+  // dispatcher a 4-minute head start on a list they did not change.
+  //
+  // Nobody actually waits: createInvite and revokeInvite both refetch straight
+  // away, so the admin who made the change sees it immediately. Only another
+  // admin's already-open tab is on the 5-minute cadence.
   async function fetchAll() {
     await Promise.all([
       fetchRides(),
