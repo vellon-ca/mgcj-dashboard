@@ -1338,6 +1338,12 @@ export default function DashboardPage({
   const mapRef = useRef<HTMLDivElement>(null);
   const googleMapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.Marker>>(new Map());
+  // Which ride's pickup/drop-off dots belong on the map. Endpoint markers used
+  // to be drawn for every active ride at once, which turns into a field of dots
+  // on a busy board; now only the open ride's two endpoints are drawn. Kept as a
+  // ref because updateMapMarkers() is called from fetches and Realtime handlers,
+  // not from render.
+  const selectedRideIdRef = useRef<string | null>(null);
   // Per-driver-marker glide state: interpolates old→new position over the
   // measured update interval (Realtime on `drivers` fires per location write,
   // ~5s active / ~10s idle) so dots slide instead of teleporting.
@@ -2532,14 +2538,16 @@ export default function DashboardPage({
       }
     });
     rideData
-      .filter((r) =>
-        [
-          "pending",
-          "offered",
-          "assigned",
-          "driver_arriving",
-          "in_progress",
-        ].includes(r.status),
+      .filter(
+        (r) =>
+          r.id === selectedRideIdRef.current &&
+          [
+            "pending",
+            "offered",
+            "assigned",
+            "driver_arriving",
+            "in_progress",
+          ].includes(r.status),
       )
       .forEach((ride) => {
         const mk1 = new google.maps.Marker({
@@ -2691,6 +2699,11 @@ export default function DashboardPage({
     // driver yet keeps every car visible — dispatch is about to pick one.
     focusedDriverIdRef.current = active ? (rideDetail!.driver_id ?? null) : null;
     applyDriverVisibility();
+    // Endpoint dots follow the open ride, so the selection change itself has to
+    // repaint them — the fetch/Realtime path that normally calls this may not
+    // fire again for seconds.
+    selectedRideIdRef.current = active ? rideDetail!.id : null;
+    updateMapMarkers(rides);
   }, [rideDetail]);
 
   async function createInvite(e: React.FormEvent) {
