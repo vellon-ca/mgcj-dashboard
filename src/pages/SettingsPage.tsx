@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import ServiceAreasSection from "../components/ServiceAreasSection";
 
 interface Props {
   companyId: string;
@@ -8,7 +9,13 @@ interface Props {
   isAdmin: boolean;
 }
 
-type Section = "pricing" | "vehicle_classes" | "numbering" | "support" | "team";
+type Section =
+  | "pricing"
+  | "vehicle_classes"
+  | "service_areas"
+  | "numbering"
+  | "support"
+  | "team";
 
 interface DispatchReport {
   id: string;
@@ -45,6 +52,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     ? [
         { id: "pricing", label: "Pricing" },
         { id: "vehicle_classes", label: "Vehicle Classes" },
+        { id: "service_areas", label: "Service Areas" },
         { id: "numbering", label: "Numbering" },
         { id: "team", label: "Team" },
         { id: "support", label: "Support" },
@@ -792,6 +800,10 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                 </div>
               )}
             </>
+          )}
+
+          {section === "service_areas" && (
+            <ServiceAreasSection companyId={companyId} />
           )}
 
           {section === "numbering" && (

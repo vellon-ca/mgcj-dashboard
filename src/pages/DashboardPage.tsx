@@ -20,7 +20,8 @@ import SettingsPage from "./SettingsPage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import MessagesPage from "./MessagesPage";
 
-const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
+import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
+import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM } from "../lib/serviceAreaFraming";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -1432,6 +1433,10 @@ export default function DashboardPage({
   >(new Map());
   const driverRafRef = useRef<number | null>(null);
   const mapInitialized = useRef(false);
+  // Set the first time the dispatcher pans or zooms. Company framing resolves
+  // asynchronously, and re-framing a map someone has already moved reads as the
+  // map fighting them.
+  const mapUserMovedRef = useRef(false);
   const latestDriversForMapRef = useRef<any[] | null>(null);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
@@ -1829,7 +1834,7 @@ export default function DashboardPage({
       attempts += 1;
       const s = document.createElement("script");
       s.id = "gmaps";
-      s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+      s.src = mapsScriptUrl();
       s.async = true;
       s.onload = () => {
         if (!cancelled) initMap();
@@ -1849,12 +1854,36 @@ export default function DashboardPage({
       if (mapInitialized.current || !mapRef.current) return;
       mapInitialized.current = true;
       googleMapRef.current = new google.maps.Map(mapRef.current, {
-        center: { lat: 45.0773, lng: -64.3601 },
-        zoom: 11,
+        // Opening values only, and deliberately a wide continental view rather
+        // than any particular city: the real frame (this company's areas, or
+        // their city) lands a moment later, and a map of the WRONG city in the
+        // meantime reads as a bug where a zoomed-out one reads as loading.
+        center: NEUTRAL_CENTER,
+        zoom: NEUTRAL_ZOOM,
         styles: darkMapStyle,
         disableDefaultUI: true,
         zoomControl: true,
       });
+
+      googleMapRef.current.addListener("dragstart", () => {
+        mapUserMovedRef.current = true;
+      });
+
+      // Frame on the company's own territory rather than on a constant. Unlike
+      // the phone apps there is no GPS here to correct a wrong guess, so this
+      // is the only thing standing between a dispatcher in another province and
+      // a permanent view of the Annapolis Valley.
+      if (profile.company_id) {
+        fetchCompanyFrame(profile.company_id)
+          .then(frame => {
+            // Don't yank the map out from under someone who has already started
+            // panning — framing is a starting position, not a leash.
+            if (!cancelled && googleMapRef.current && !mapUserMovedRef.current) {
+              applyFrame(googleMapRef.current, frame);
+            }
+          })
+          .catch(() => { /* fallback centre already applied */ });
+      }
       // fetchDrivers() commonly resolves before the Maps script/map finish loading,
       // so it has nowhere to draw markers. Flush whatever it last computed now that
       // the map exists, instead of waiting for the next poll/Realtime tick.
@@ -6548,25 +6577,5 @@ export default function DashboardPage({
   );
 }
 
-const darkMapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#1d2c3f" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1a3646" }] },
-  {
-    featureType: "road",
-    elementType: "geometry",
-    stylers: [{ color: "#253d56" }],
-  },
-  {
-    featureType: "road.highway",
-    elementType: "geometry",
-    stylers: [{ color: "#2c6675" }],
-  },
-  {
-    featureType: "water",
-    elementType: "geometry",
-    stylers: [{ color: "#0e1626" }],
-  },
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-];
+// darkMapStyle + the Maps script URL now live in src/lib/googleMaps.ts, shared
+// with the service-area editor. See that file for why the URL must be shared.
