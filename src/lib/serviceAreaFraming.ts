@@ -111,10 +111,29 @@ export async function fetchCompanyFrame(companyId: string): Promise<CompanyFrame
 }
 
 /** Apply a frame to a live map. Bounds win over a centre when we have them:
- *  they carry the extent, which is the half a centre cannot express. */
-export function applyFrame(map: google.maps.Map, frame: CompanyFrame) {
+ *  they carry the extent, which is the half a centre cannot express.
+ *
+ *  `minZoom` puts a floor under the fit, for surfaces that would rather show
+ *  usable streets than the whole territory — see the dispatch board's call.
+ *  The editor passes nothing, because there the extent IS the subject. */
+export function applyFrame(
+  map: google.maps.Map,
+  frame: CompanyFrame,
+  opts?: { minZoom?: number },
+) {
   if (frame.bounds) {
     map.fitBounds(frame.bounds, 48);
+    // The fit's zoom isn't readable on the next line — fitBounds settles over
+    // a frame or two — so clamp once the map goes idle. setZoom keeps the
+    // centre fitBounds just computed, so this tightens the view without
+    // moving it off the company's territory.
+    const floor = opts?.minZoom;
+    if (floor != null) {
+      google.maps.event.addListenerOnce(map, "idle", () => {
+        const z = map.getZoom();
+        if (z != null && z < floor) map.setZoom(floor);
+      });
+    }
   } else {
     map.setCenter(frame.center);
     map.setZoom(frame.source === "neutral" ? NEUTRAL_ZOOM : 11);

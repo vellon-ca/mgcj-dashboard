@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import ServiceAreasSection from "../components/ServiceAreasSection";
@@ -59,7 +60,15 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
       ]
     : [{ id: "support", label: "Support" }];
 
-  const [section, setSection] = useState<Section>(isAdmin ? "pricing" : "support");
+  // Bound to /settings/<section>. The allowed list is the role-filtered one, so
+  // a dispatcher who deep-links /settings/pricing lands on Support rather than
+  // rendering an admin pane the nav never offered them.
+  const SECTION_IDS = useMemo(() => SECTIONS.map(s => s.id), [isAdmin]);
+  const [section, setSection] = useSubView<Section>(
+    "settings",
+    SECTION_IDS,
+    isAdmin ? "pricing" : "support",
+  );
 
   // Pricing state
   const [baseFare, setBaseFare] = useState("");
@@ -485,6 +494,17 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .st-content::-webkit-scrollbar { width: 4px; }
         .st-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
+        /* Service Areas is a map section, not a form: it should fill the pane
+           down to the bottom padding rather than sit in a short box with the
+           page scrolling underneath it. Flex column here + flex:1 on .sa-root
+           is what gives the map a definite height to stretch into. overflow-y
+           stays auto so a short viewport still scrolls instead of clipping.
+           Only above the point where .sa-grid stops being two columns — below
+           it the map and the list stack and ordinary page scroll is right. */
+        @media (min-width: 901px) {
+          .st-content.st-content-fill { display: flex; flex-direction: column; }
+        }
+
         .st-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
         .st-title { font-size: 18px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
         .st-subtitle { font-size: 13px; color: #6B7280; line-height: 1.5; max-width: 480px; }
@@ -574,7 +594,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           ))}
         </div>
 
-        <div className="st-content">
+        <div className={`st-content${section === "service_areas" ? " st-content-fill" : ""}`}>
           {section === "vehicle_classes" && (
             <>
               <div className="st-header">

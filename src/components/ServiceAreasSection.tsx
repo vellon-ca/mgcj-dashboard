@@ -578,7 +578,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
   const noDropoffArea = activeAreas.length > 0 && !activeAreas.some(a => a.allows_dropoff);
 
   return (
-    <>
+    <div className="sa-root">
       <style>{`
         .sa-map { width: 100%; height: 420px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); background: #0e1626; }
         .sa-city { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
@@ -604,6 +604,25 @@ export default function ServiceAreasSection({ companyId }: Props) {
         .sa-impact.warn { background: rgba(232,80,10,0.1); border: 1px solid rgba(232,80,10,0.3); color: #fdba74; }
         .sa-warn { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; border-radius: 10px; padding: 10px 12px; font-size: 12px; margin-bottom: 10px; }
         .sa-empty { color: #6B7280; font-size: 12px; padding: 8px 0; }
+        .sa-list { min-width: 0; }
+
+        /* Tall mode. Paired with .st-content-fill in SettingsPage: the root
+           claims the leftover height, the grid claims what the header,
+           warnings and toolbar leave behind, and the map stretches into it.
+           Only the area list scrolls — a company with thirty areas shouldn't
+           have to scroll the map off the screen to reach the last one.
+           Same 900px breakpoint the grid already collapses at; below it the
+           two stack and a fixed-height map with normal page scroll is right.
+           min-height:0 on every link in the chain, or flex children refuse to
+           shrink below their content and the whole column overflows instead. */
+        @media (min-width: 901px) {
+          .sa-root { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+          .sa-grid { flex: 1; min-height: 0; align-items: stretch; }
+          .sa-map { height: 100%; min-height: 320px; }
+          .sa-list { overflow-y: auto; min-height: 0; padding-right: 4px; }
+          .sa-list::-webkit-scrollbar { width: 4px; }
+          .sa-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        }
       `}</style>
 
       <div className="st-header">
@@ -714,7 +733,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
       <div className="sa-grid">
         <div ref={mapDivRef} className="sa-map" />
 
-        <div>
+        <div className="sa-list">
           {loading && <div className="sa-empty">Loading…</div>}
           {!loading && areas.length === 0 && (
             <div className="sa-empty">
@@ -784,6 +803,6 @@ export default function ServiceAreasSection({ companyId }: Props) {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

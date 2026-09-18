@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 
@@ -53,8 +54,15 @@ const EMPTY_FORM = {
   active: true,
 };
 
+const DISCOUNT_SECTIONS = ["student", "codes"] as const;
+
 export default function DiscountsPage({ companyId, adminId }: Props) {
-  const [section, setSection] = useState<"student" | "codes">("codes");
+  // Bound to /discounts/<section>.
+  const [section, setSection] = useSubView<"student" | "codes">(
+    "discounts",
+    DISCOUNT_SECTIONS,
+    "codes",
+  );
 
   // Student discount state
   const [loading, setLoading] = useState(true);

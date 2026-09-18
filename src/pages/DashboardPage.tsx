@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { segment, navigate, VIEW_PATHS, type View } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { driverPresence, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
@@ -21,7 +22,7 @@ import AnnouncementsPage from "./AnnouncementsPage";
 import MessagesPage from "./MessagesPage";
 
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
-import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM } from "../lib/serviceAreaFraming";
+import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -278,24 +279,17 @@ type Tab = "rides" | "drivers";
 // (e.g. /analytics) via the History API so a browser refresh (or back/forward)
 // restores it instead of dumping you on Rides. The `tab`/`show*` state below stays
 // the render truth; the path is the source of truth on load and on popstate.
+// This component owns only the FIRST segment. The section inside a page is
+// segment 1 (/analytics/settlements), written by that page through useSubView
+// in src/lib/viewPath — so every write here compares and sets segment 0 alone,
+// or it would strip the sub-segment straight back off on mount.
 // Keep this list in sync with the nav sections. (Refresh on a deep path relies on
 // the SPA rewrite in vercel.json so /analytics serves the app instead of 404ing.)
-const VIEW_PATHS = [
-  "rides",
-  "drivers",
-  "analytics",
-  "reports",
-  "discounts",
-  "settings",
-  "announcements",
-  "messages",
-] as const;
-type View = (typeof VIEW_PATHS)[number];
 function readViewPath(): View {
-  const p =
-    typeof window !== "undefined"
-      ? window.location.pathname.replace(/^\/+/, "").replace(/\/+$/, "")
-      : "";
+  // Segment 0 only. Segment 1 is the page's own section (/settings/team) and
+  // belongs to that page — matching the whole pathname here would miss every
+  // deep link and fall back to Rides.
+  const p = segment(0);
   return (VIEW_PATHS as readonly string[]).includes(p) ? (p as View) : "rides";
 }
 
@@ -1437,6 +1431,15 @@ export default function DashboardPage({
   // asynchronously, and re-framing a map someone has already moved reads as the
   // map fighting them.
   const mapUserMovedRef = useRef(false);
+  // The company frame, held until the board map is actually on screen. Since
+  // sign-in and refresh can now restore straight to a deep link (/settings/...,
+  // /analytics/...), the board's map div is often inside a display:none overlay
+  // when the frame resolves — and a Google map in a zero-size container neither
+  // fits bounds correctly nor reaches "idle", so applying it there produces a
+  // frame that is silently wrong by the time you click back to Rides.
+  const companyFrameRef = useRef<CompanyFrame | null>(null);
+  const frameAppliedRef = useRef(false);
+  const applyCompanyFrameRef = useRef<(() => void) | null>(null);
   const latestDriversForMapRef = useRef<any[] | null>(null);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
@@ -1850,6 +1853,26 @@ export default function DashboardPage({
       };
       document.head.appendChild(s);
     };
+    // Frame the board the moment it is both known and visible, whichever
+    // happens last — clientWidth is the direct test for "this div is really on
+    // screen", which beats reproducing the six show* booleans.
+    function maybeApplyCompanyFrame() {
+      const map = googleMapRef.current;
+      const frame = companyFrameRef.current;
+      if (!map || !frame || frameAppliedRef.current) return;
+      if (mapUserMovedRef.current) return;
+      if (!mapRef.current || mapRef.current.clientWidth === 0) return;
+      frameAppliedRef.current = true;
+      // Floor the zoom at 11 — the fixed zoom this board opened at before it
+      // was framed per-company. Fitting the whole service area is right for the
+      // editor and wrong here: a dispatch board is for watching cars move down
+      // streets, and a company whose areas reach out to an airport or the next
+      // county would open on a view where the actual work is a few pixels wide.
+      // Centre still comes from their territory; only the extent is overruled.
+      applyFrame(map, frame, { minZoom: 11 });
+    }
+    applyCompanyFrameRef.current = maybeApplyCompanyFrame;
+
     function initMap() {
       if (mapInitialized.current || !mapRef.current) return;
       mapInitialized.current = true;
@@ -1878,9 +1901,9 @@ export default function DashboardPage({
           .then(frame => {
             // Don't yank the map out from under someone who has already started
             // panning — framing is a starting position, not a leash.
-            if (!cancelled && googleMapRef.current && !mapUserMovedRef.current) {
-              applyFrame(googleMapRef.current, frame);
-            }
+            if (cancelled) return;
+            companyFrameRef.current = frame;
+            maybeApplyCompanyFrame();
           })
           .catch(() => { /* fallback centre already applied */ });
       }
@@ -1915,6 +1938,9 @@ export default function DashboardPage({
       setTimeout(() => {
         if (googleMapRef.current)
           google.maps.event.trigger(googleMapRef.current, "resize");
+        // The board just became visible. If the frame resolved while it was
+        // hidden it has not been applied yet — this is the moment it can be.
+        applyCompanyFrameRef.current?.();
       }, 50);
     }
   }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, selectedDriver]);
@@ -1923,13 +1949,13 @@ export default function DashboardPage({
   // sync (normalizing e.g. "/" to "/rides", or a no-op on a matching deep link)
   // uses replaceState; genuine navigations pushState so back/forward get entries.
   useEffect(() => {
-    const path = `/${viewFromState()}`;
-    if (window.location.pathname !== path) {
-      if (urlSynced.current) {
-        window.history.pushState(null, "", path);
-      } else {
-        window.history.replaceState(null, "", path);
-      }
+    const view = viewFromState();
+    if (segment(0) !== view) {
+      // Only on a genuine top-level move — dropping the old page's sub-segment
+      // is correct there, and doing nothing when segment 0 already matches is
+      // what leaves the sub-segment alone the rest of the time. The page's own
+      // useSubView appends its section once it sees this write land.
+      navigate(`/${view}`, urlSynced.current ? "push" : "replace");
     }
     urlSynced.current = true;
   }, [

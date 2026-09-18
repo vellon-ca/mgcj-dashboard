@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
+import { goToLogin, consumeReturnPath } from './lib/viewPath'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
   const { session, profile, companyName, loading, signOut } = useAuth()
   const [stuck, setStuck] = useState(false)
+
+  // Signed out (on arrival or after signing out): park where we were and show
+  // /login in the address bar. Gated on !loading — doing this while the session
+  // is still resolving would flash /login into the URL on every refresh. An
+  // effect is right HERE (unlike the consume below) because nothing about the
+  // login screen reads the path, and it is idempotent under StrictMode.
+  useEffect(() => {
+    if (!loading && (!session || !profile)) goToLogin()
+  }, [loading, session, profile])
 
   useEffect(() => {
     if (!loading) {
@@ -86,6 +96,13 @@ export default function App() {
       </div>
     </div>
   )
+
+  // Restore the path we parked at goToLogin() before DashboardPage renders.
+  // Deliberately below the access-denied and deactivated branches: both of
+  // those run with a session present, and rewriting the URL to a dashboard
+  // section for someone who can't open one would be a lie in the address bar.
+  // Deliberately in render, not an effect — see consumeReturnPath's comment.
+  consumeReturnPath()
 
   return (
     <DashboardPage

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 
@@ -80,12 +81,20 @@ const ESC_REASON_ORDER = [
   "other",
 ];
 
+const REPORT_SOURCES = ["drivers", "escalations"] as const;
+
 export default function ReportsPage({ onBadgeChange, isActive, companyId, adminId, companyName }: Props) {
   // Source-level split, NOT a merged list. Everything on this page is
   // driver-centric — driverFilter, per-driver counts, a PDF titled "Driver
   // Report", HIGH_SEVERITY keyed to driver reason codes — and none of it
   // transfers to a ride escalation. They share the shell, nothing else.
-  const [source, setSource] = useState<"drivers" | "escalations">("drivers");
+  // Bound to /reports/<source>: the two lists share only the shell, so which one
+  // you're looking at is a place, not a filter.
+  const [source, setSource] = useSubView<"drivers" | "escalations">(
+    "reports",
+    REPORT_SOURCES,
+    "drivers",
+  );
   const [escalations, setEscalations] = useState<any[]>([]);
   const [escLoading, setEscLoading] = useState(true);
   const [reports, setReports] = useState<ReportRow[]>([]);

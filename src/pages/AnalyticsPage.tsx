@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSubView } from "../lib/viewPath";
 import { formatRideRef } from "../lib/numbering";
 import {
   AreaChart, Area, BarChart, Bar, Cell,
@@ -371,6 +372,9 @@ const SECTION_ITEMS: { id: Section; label: string }[] = [
   { id: "activity", label: "Activity Log" },
   { id: "receipts", label: "Receipts" },
 ];
+// Bound to /analytics/<section>. No section here is role-gated, so every id is
+// reachable by anyone who can open Analytics at all.
+const SECTION_IDS = SECTION_ITEMS.map(s => s.id);
 
 // Needs a human to manually move money -- the only settlement_route values
 // that ever warrant a "Mark resolved" action. transfer_reversed (dispute
@@ -647,7 +651,7 @@ export default function AnalyticsPage({
   dispatcherId: string;
 }) {
   const label = companyName ?? "M&G C&J";
-  const [section, setSection] = useState<Section>("revenue");
+  const [section, setSection] = useSubView<Section>("analytics", SECTION_IDS, "revenue");
   const [period, setPeriod] = useState<"today" | "week" | "month" | "year">(
     "month",
   );
