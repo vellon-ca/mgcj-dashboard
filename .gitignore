@@ -27,6 +27,9 @@ dist-ssr
 # Local Supabase CLI link state (this repo has no functions/migrations of its own)
 supabase/.temp
 
+# Local Vercel CLI link state — created by `vercel link`, holds project/org ids
+.vercel
+
 # env — never commit real secrets
 .env*.local
 .env.production
