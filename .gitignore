@@ -39,3 +39,4 @@ supabase/.temp
 *.p8
 *.p12
 *.keystore
+.env*
