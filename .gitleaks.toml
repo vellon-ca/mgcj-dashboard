@@ -1,0 +1,17 @@
+# gitleaks config — see mgcj-app/docs/secrets/REGISTRY.md
+
+[extend]
+useDefault = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KNOWN FINDING — commit 16eb124 ("feat: dispatch dashboard complete", 2026-05-06)
+# committed .env with VITE_SUPABASE_ANON_KEY and VITE_GOOGLE_MAPS_KEY. It was
+# untracked again in 8a1ce43, but both values remain in git history forever.
+#
+# CI stays RED until this is decided. Do not allowlist it to make CI green —
+# allowlist it only AFTER the Maps key has actually been rotated.
+#
+# [allowlist]
+# description = "Historical .env leak — Maps key rotated <DATE>; anon key is PUBLIC by design"
+# commits = ["16eb124ede5f..."]   # ← full SHA
+# ─────────────────────────────────────────────────────────────────────────────

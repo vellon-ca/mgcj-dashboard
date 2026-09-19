@@ -26,3 +26,13 @@ dist-ssr
 
 # Local Supabase CLI link state (this repo has no functions/migrations of its own)
 supabase/.temp
+
+# env — never commit real secrets
+.env*.local
+.env.production
+
+# signing / credentials
+*.jks
+*.p8
+*.p12
+*.keystore
