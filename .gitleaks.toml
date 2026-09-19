@@ -8,10 +8,27 @@ useDefault = true
 # committed .env with VITE_SUPABASE_ANON_KEY and VITE_GOOGLE_MAPS_KEY. It was
 # untracked again in 8a1ce43, but both values remain in git history forever.
 #
-# CI stays RED until this is decided. Do not allowlist it to make CI green —
-# allowlist it only AFTER the Maps key has actually been rotated.
+# This block was deliberately left commented out until the Maps key was actually
+# rotated. RESOLVED 2026-09-19 — both values verified live, not assumed:
 #
-# [allowlist]
-# description = "Historical .env leak — Maps key rotated <DATE>; anon key is PUBLIC by design"
-# commits = ["16eb124ede5f..."]   # ← full SHA
+#   VITE_GOOGLE_MAPS_KEY — the leaked value is NOT the key in use. It was
+#   replaced at some point (almost certainly the 2026-06-16 five-key split) and
+#   Google now answers it "The provided API key is expired." The current key,
+#   as a control, answers the same request "API keys with referer restrictions
+#   cannot be used with this API" — so the probe distinguishes dead from
+#   restricted, and the leaked one is dead. Nothing to rotate; it already was.
+#
+#   VITE_SUPABASE_ANON_KEY — still the live key, and that is correct: the anon
+#   key is public by design and ships in the browser bundle, so it is in every
+#   dashboard user's devtools already. Rotating it would change nothing about
+#   who can read it. What matters is whether RLS holds, and it does: an
+#   unauthenticated request with this key for companies.stripe_account_id and
+#   platform_fee_percent returns 200 [] — the privilege layer grants SELECT and
+#   RLS returns no rows, which is the state 20260745 established.
+#
+# If a FUTURE .env is ever committed, this allowlist will not hide it — it is
+# pinned to this one commit SHA, not to the file or the rules.
 # ─────────────────────────────────────────────────────────────────────────────
+[allowlist]
+description = "Historical .env leak, commit 16eb124 (2026-05-06). Maps key verified expired at Google 2026-09-19; anon key is public by design and RLS verified holding. See the comment above before extending this."
+commits = ["16eb124ede5f03317420a5db5d011ddedcde5606"]
