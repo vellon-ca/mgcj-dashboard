@@ -2,7 +2,7 @@
   "redirects": [
     {
       "source": "/stripe-connect-return",
-      "destination": "mgcjapp://stripe-connect-return",
+      "destination": "vellondispatch://stripe-connect-return",
       "permanent": false
     }
   ],
