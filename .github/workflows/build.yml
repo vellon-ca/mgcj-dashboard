@@ -1,0 +1,52 @@
+name: build
+
+# Compile gate. Answers one question: does this commit build?
+#
+# Vercel already builds on push, but it does so AFTER the commit lands, and it
+# reports as a deployment failure rather than as a mark on the change that
+# caused it. This runs on the commit itself.
+#
+# NO SECRETS NEEDED — and that is deliberate, not luck. Vite substitutes
+# `import.meta.env.*` as literal strings at build time and nothing reaches out
+# to a network, so dummy values compile identically to real ones. Keeping this
+# job secret-free means CI never becomes another place live keys live.
+#
+# Lint is NOT part of this gate: `npm run lint` currently reports 309 problems
+# (279 errors). A gate that fails on pre-existing style debt is a gate that
+# gets switched off in a week. Clean the lint backlog first, then add it here.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Pinned. No `engines.node` in package.json, so without this the
+          # runner drifts onto whatever setup-node defaults to that month and
+          # fails on something no local machine can reproduce.
+          node-version: 20
+          cache: npm
+
+      # `ci` not `install`: installs strictly from the lockfile, and fails loudly
+      # if the lockfile has drifted from package.json — itself worth knowing.
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        # `npm run build` is `tsc -b && vite build`, so this typechecks too.
+        # A stale *.tsbuildinfo would let `tsc -b` skip the work and pass
+        # vacuously; a fresh checkout has none, which is what keeps this honest.
+        env:
+          VITE_SUPABASE_URL: https://ci-dummy.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-dummy-value-not-a-real-key
+          VITE_GOOGLE_MAPS_KEY: ci-dummy-value-not-a-real-key
+        run: npm run build

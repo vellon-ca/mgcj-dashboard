@@ -81,3 +81,21 @@ There's no router — `App.tsx` switches screens purely on auth state, and `Dash
 - **Ride address edits don't re-geocode unless the dispatcher picks a new autocomplete suggestion.** Editing a ride's pickup/drop-off via the detail modal updates `pickup_lat`/`pickup_lng`/`dropoff_lat`/`dropoff_lng` only when `editPickupCoords`/`editDropoffCoords` are set from a selected place; a manually-typed address with no matching suggestion silently leaves the old coordinates in place (and the fare auto-recalculation effect, gated on `editAddressChanged`, won't fire either).
 - No automated tests of any kind in this repo (no test runner configured, no `*.test.*`/`*.spec.*` files).
 - No router and no code-splitting — `AnalyticsPage` and `ReportsPage` (each 2000+ lines) are always mounted and bundled into the initial `DashboardPage` render regardless of whether the dispatcher ever opens them.
+
+---
+
+## CI (`.github/workflows/`)
+
+- **`secret-scan.yml`** — gitleaks over full history.
+- **`build.yml`** — `npm ci` + `npm run build` (`tsc -b && vite build`, so it typechecks too).
+  Runs with **dummy** `VITE_*` values and needs no secrets: Vite substitutes
+  `import.meta.env.*` as literal strings at build time and nothing reaches the network, so
+  fake credentials compile identically to real ones.
+
+Two things keep it honest. `npm ci` (not `install`) installs strictly from the lockfile.
+And a stale `*.tsbuildinfo` would let `tsc -b` skip the work and pass vacuously — a fresh
+checkout has none, and the file is now gitignored so it can never be committed into the gate.
+
+**Lint is deliberately not in the gate**: `npm run lint` currently reports 309 problems
+(279 errors). A gate that fails on pre-existing style debt is one that gets switched off.
+Clear the backlog first, then add it.

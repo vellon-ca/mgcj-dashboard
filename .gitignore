@@ -40,3 +40,6 @@ supabase/.temp
 *.p12
 *.keystore
 .env*
+
+# Would let `tsc -b` skip work and pass vacuously if ever committed.
+*.tsbuildinfo
