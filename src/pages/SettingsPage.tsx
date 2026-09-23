@@ -12,6 +12,7 @@ interface Props {
 
 type Section =
   | "pricing"
+  | "contact"
   | "vehicle_classes"
   | "service_areas"
   | "numbering"
@@ -52,6 +53,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const SECTIONS: { id: Section; label: string }[] = isAdmin
     ? [
         { id: "pricing", label: "Pricing" },
+        { id: "contact", label: "Contact" },
         { id: "vehicle_classes", label: "Vehicle Classes" },
         { id: "service_areas", label: "Service Areas" },
         { id: "numbering", label: "Numbering" },
@@ -73,8 +75,13 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   // Pricing state
   const [baseFare, setBaseFare] = useState("");
   const [ratePerKm, setRatePerKm] = useState("");
+  // Contact state — its own save flags, mirroring Numbering. Sharing Pricing's
+  // `saved`/`saving` would light up the wrong button in the wrong pane.
   const [dispatchPhone, setDispatchPhone] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
+  const [contactSaving, setContactSaving] = useState(false);
+  const [contactSaved, setContactSaved] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
   const [savedBaseFare, setSavedBaseFare] = useState("");
   const [savedRatePerKm, setSavedRatePerKm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -420,8 +427,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
       .update({
         base_fare: base,
         rate_per_km: rate,
-        phone: dispatchPhone.trim() || null,
-        support_email: supportEmail.trim() || null,
       })
       .eq("id", companyId);
     setSaving(false);
@@ -440,6 +445,35 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     });
     setSavedBaseFare(String(base));
     setSavedRatePerKm(String(rate));
+  }
+
+  async function saveContact() {
+    setContactError(null);
+    setContactSaved(false);
+    // Deliberately no format validation: a dispatch number can legitimately be
+    // an extension, a toll-free, or a number with an instruction beside it, and
+    // the app formats display-only and falls back to the stored string. An empty
+    // field is meaningful too — it means "show no card" rather than "unset".
+    setContactSaving(true);
+    const { error: err } = await supabase
+      .from("companies")
+      .update({
+        phone: dispatchPhone.trim() || null,
+        support_email: supportEmail.trim() || null,
+      })
+      .eq("id", companyId);
+    setContactSaving(false);
+    if (err) { setContactError(err.message); return; }
+    setContactSaved(true);
+    logDispatchEvent({
+      companyId,
+      dispatcherId: adminId,
+      eventType: "settings.contact_updated",
+      details: {
+        phone_set: !!dispatchPhone.trim(),
+        support_email_set: !!supportEmail.trim(),
+      },
+    });
   }
 
   async function saveNumbering() {
@@ -794,14 +828,37 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                 </div>
               )}
 
-              {/* Reached by a passenger escalating a live ride ("Something's
-                  wrong with this ride" → "Call dispatch"). Left blank, the app
-                  shows the flag on its own with no call option, which is a
-                  working but weaker experience — so this is worth filling in
-                  at onboarding. */}
-              {!loading && (
+            </>
+          )}
+
+          {section === "contact" && (
+            <>
+              <div className="st-header">
+                <div>
+                  <div className="st-title">Contact</div>
+                  <div className="st-subtitle">
+                    How passengers and drivers reach <strong style={{ color: "#E2E8F0" }}>you</strong> from the apps — not how you reach Vellon, which is under Support
+                  </div>
+                </div>
+                <button
+                  className={`st-save-btn${contactSaved ? " st-saved" : ""}`}
+                  onClick={saveContact}
+                  disabled={contactSaving || loading}
+                >
+                  {contactSaving ? "Saving…" : contactSaved ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+
+              {/* Both fields reach the apps in two places: a passenger escalating
+                  a live ride ("Something's wrong with this ride" → "Call
+                  dispatch"), and the Help screen in both apps. Left blank, the
+                  app renders no card at all rather than a dead one — so this is
+                  worth filling in at onboarding. */}
+              {loading ? (
+                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+              ) : (
                 <div className="st-card">
-                  <p className="st-card-label">Dispatch contact</p>
+                  <p className="st-card-label">Shown in the apps</p>
                   <div className="st-field-row">
                     <div className="st-field-text">
                       <span className="st-field-label">Phone number</span>
@@ -817,7 +874,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         type="tel"
                         placeholder="902-555-0100"
                         value={dispatchPhone}
-                        onChange={e => { setDispatchPhone(e.target.value); setSaved(false); }}
+                        onChange={e => { setDispatchPhone(e.target.value); setContactSaved(false); }}
                       />
                     </div>
                   </div>
@@ -840,10 +897,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         type="email"
                         placeholder="dispatch@yourcompany.ca"
                         value={supportEmail}
-                        onChange={e => { setSupportEmail(e.target.value); setSaved(false); }}
+                        onChange={e => { setSupportEmail(e.target.value); setContactSaved(false); }}
                       />
                     </div>
                   </div>
+
+                  {contactError && <p className="st-error">{contactError}</p>}
                 </div>
               )}
             </>

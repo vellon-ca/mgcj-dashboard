@@ -28,6 +28,7 @@ export type DispatchEventType =
   | "export.pdf"
   | "invoice.printed"
   | "settings.pricing_updated"
+  | "settings.contact_updated"
   | "settings.numbering_updated"
   | "driver.number_changed"
   | "driver.car_number_changed"

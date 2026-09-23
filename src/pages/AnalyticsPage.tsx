@@ -163,6 +163,9 @@ const EVENT_LABELS: Record<string, string> = {
   "export.pdf": "Exported PDF",
   "invoice.printed": "Printed receipt",
   "settings.pricing_updated": "Updated pricing",
+  "settings.contact_updated": "Updated contact details",
+  "settings.numbering_updated": "Updated numbering",
+  "ride.flag_resolved": "Resolved ride flag",
   "settings.vehicle_class_created": "Added vehicle class",
   "settings.vehicle_class_updated": "Edited vehicle class",
   "settings.vehicle_class_status_changed": "Vehicle class status changed",
@@ -199,6 +202,9 @@ const EVENT_COLORS: Record<string, string> = {
   "export.pdf": "#6B7280",
   "invoice.printed": "#A855F7",
   "settings.pricing_updated": "#F59E0B",
+  "settings.contact_updated": "#F59E0B",
+  "settings.numbering_updated": "#6B7280",
+  "ride.flag_resolved": "#1D9E75",
   "settings.vehicle_class_created": "#1D9E75",
   "settings.vehicle_class_updated": "#60A5FA",
   "settings.vehicle_class_status_changed": "#6B7280",
@@ -5355,6 +5361,8 @@ export default function AnalyticsPage({
                     </optgroup>
                     <optgroup label="Settings">
                       <option value="settings.pricing_updated">Updated pricing</option>
+                      <option value="settings.contact_updated">Updated contact details</option>
+                      <option value="settings.numbering_updated">Updated numbering</option>
                       <option value="settings.vehicle_class_created">Added vehicle class</option>
                       <option value="settings.vehicle_class_updated">Edited vehicle class</option>
                       <option value="settings.vehicle_class_status_changed">Vehicle class status changed</option>
