@@ -6,6 +6,11 @@ export type DispatchEventType =
   | "ride.assigned"
   | "ride.reassigned"
   | "ride.scheduled_modified"
+  // Emitted by the edit-ride Edge Function rather than this app, but it belongs
+  // in the union: this list is the contract with the DB's CHECK constraint, and
+  // the two drifting apart is what silently broke ride.flag_resolved and
+  // settings.numbering_updated (see mgcj-app 20260923030000).
+  | "ride.route_modified"
   | "ride.notes_added"
   | "ride.fare_changed"
   | "driver.suspended"

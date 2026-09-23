@@ -142,6 +142,7 @@ const EVENT_LABELS: Record<string, string> = {
   "ride.assigned": "Assigned ride",
   "ride.reassigned": "Reassigned ride",
   "ride.scheduled_modified": "Edited ride",
+  "ride.route_modified": "Changed route",
   "ride.notes_added": "Added ride notes",
   "ride.fare_changed": "Changed fare",
   "driver.suspended": "Suspended driver",
@@ -174,6 +175,11 @@ const EVENT_LABELS: Record<string, string> = {
   "staff.deactivated": "Deactivated team member",
   "staff.reactivated": "Reactivated team member",
   "dispatch_report.submitted": "Submitted support report",
+  "settlement.resolved": "Resolved settlement",
+  // Declared and allowed, but nothing emits these yet — listed so the feed
+  // never renders a raw string the day something does.
+  "driver.number_changed": "Changed driver number",
+  "driver.car_number_changed": "Changed car number",
 };
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
@@ -181,6 +187,7 @@ const EVENT_COLORS: Record<string, string> = {
   "ride.assigned": "#4a9eff",
   "ride.reassigned": "#60A5FA",
   "ride.scheduled_modified": "#A855F7",
+  "ride.route_modified": "#A855F7",
   "ride.notes_added": "#6B7280",
   "ride.fare_changed": "#F59E0B",
   "driver.suspended": "#F59E0B",
@@ -213,6 +220,9 @@ const EVENT_COLORS: Record<string, string> = {
   "staff.deactivated": "#F59E0B",
   "staff.reactivated": "#1D9E75",
   "dispatch_report.submitted": "#A855F7",
+  "settlement.resolved": "#1D9E75",
+  "driver.number_changed": "#60A5FA",
+  "driver.car_number_changed": "#60A5FA",
 };
 
 function formatEventDetails(type: string, details: any): string {
@@ -299,6 +309,23 @@ function formatEventDetails(type: string, details: any): string {
           ? `Rate $${Number(details.rate_per_km_from).toFixed(2)} → $${Number(details.rate_per_km_to).toFixed(2)}/km`
           : null,
       ].filter(Boolean).join(" · ");
+    // Deliberately reports set/cleared rather than the values: this feed is
+    // visible to every admin at the company, and a support address is fine there
+    // but the row does not need to be a second copy of it.
+    case "settings.contact_updated":
+      return [
+        `Phone ${details.phone_set ? "set" : "cleared"}`,
+        `support email ${details.support_email_set ? "set" : "cleared"}`,
+      ].join(" · ");
+    case "settings.numbering_updated":
+      return [
+        details.car_number_prefix != null || details.car_number_pad != null
+          ? `Car ${details.car_number_prefix ?? ""}${"0".repeat(Number(details.car_number_pad ?? 0))}${details.car_number_start != null ? ` from ${details.car_number_start}` : ""}`
+          : null,
+        details.driver_number_prefix != null || details.driver_number_pad != null
+          ? `Driver ${details.driver_number_prefix ?? ""}${"0".repeat(Number(details.driver_number_pad ?? 0))}`
+          : null,
+      ].filter(Boolean).join(" · ") || "—";
     case "settings.vehicle_class_created":
       return `${details.name ?? "—"} · ${details.capacity ?? "?"} seats · +${details.surcharge_percent ?? 0}%`;
     case "settings.vehicle_class_updated": {
@@ -5341,6 +5368,8 @@ export default function AnalyticsPage({
                       <option value="ride.reassigned">Reassigned ride</option>
                       <option value="ride.fare_changed">Changed fare</option>
                       <option value="ride.scheduled_modified">Edited ride</option>
+                      <option value="ride.route_modified">Changed route</option>
+                      <option value="ride.flag_resolved">Resolved ride flag</option>
                     </optgroup>
                     <optgroup label="Drivers">
                       <option value="driver.suspended">Suspended driver</option>
@@ -5366,6 +5395,24 @@ export default function AnalyticsPage({
                       <option value="settings.vehicle_class_created">Added vehicle class</option>
                       <option value="settings.vehicle_class_updated">Edited vehicle class</option>
                       <option value="settings.vehicle_class_status_changed">Vehicle class status changed</option>
+                    </optgroup>
+                    {/* Only types something actually emits are listed. The
+                        remaining allowed values (ride.notes_added,
+                        escalation.acknowledged, report.reviewed/dismissed,
+                        driver.number_changed, driver.car_number_changed,
+                        staff.deactivated/reactivated) have no emitter, so an
+                        option for them would be a filter that always returns
+                        nothing. Add the option WITH the emitter. */}
+                    <optgroup label="Reports">
+                      <option value="report.printed">Printed report</option>
+                      <option value="dispatch_report.submitted">Submitted support report</option>
+                    </optgroup>
+                    <optgroup label="Team">
+                      <option value="staff.created">Added team member</option>
+                      <option value="staff.updated">Edited team member</option>
+                    </optgroup>
+                    <optgroup label="Settlements">
+                      <option value="settlement.resolved">Resolved settlement</option>
                     </optgroup>
                     <optgroup label="Exports">
                       <option value="export.csv">CSV export</option>
