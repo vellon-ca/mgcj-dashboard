@@ -5415,8 +5415,8 @@ export default function AnalyticsPage({
                       <option value="settlement.resolved">Resolved settlement</option>
                     </optgroup>
                     <optgroup label="Exports">
-                      <option value="export.csv">CSV export</option>
-                      <option value="export.pdf">PDF export</option>
+                      <option value="export.csv">Exported CSV</option>
+                      <option value="export.pdf">Exported PDF</option>
                       <option value="invoice.printed">Printed receipt</option>
                     </optgroup>
                   </select>
