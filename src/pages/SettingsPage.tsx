@@ -74,6 +74,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const [baseFare, setBaseFare] = useState("");
   const [ratePerKm, setRatePerKm] = useState("");
   const [dispatchPhone, setDispatchPhone] = useState("");
+  const [supportEmail, setSupportEmail] = useState("");
   const [savedBaseFare, setSavedBaseFare] = useState("");
   const [savedRatePerKm, setSavedRatePerKm] = useState("");
   const [loading, setLoading] = useState(true);
@@ -287,7 +288,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   useEffect(() => {
     supabase
       .from("companies")
-      .select("base_fare, rate_per_km, phone, car_number_prefix, car_number_pad, car_number_start, driver_number_prefix, driver_number_pad")
+      .select("base_fare, rate_per_km, phone, support_email, car_number_prefix, car_number_pad, car_number_start, driver_number_prefix, driver_number_pad")
       .eq("id", companyId)
       .maybeSingle()
       .then(({ data }) => {
@@ -297,6 +298,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           setSavedBaseFare(String(data.base_fare ?? 4));
           setSavedRatePerKm(String(data.rate_per_km ?? 1.8));
           setDispatchPhone(data.phone ?? "");
+          setSupportEmail(data.support_email ?? "");
           setCarPrefix(data.car_number_prefix ?? "");
           setCarPad(String(data.car_number_pad ?? 0));
           setCarStart(String(data.car_number_start ?? 1));
@@ -419,6 +421,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         base_fare: base,
         rate_per_km: rate,
         phone: dispatchPhone.trim() || null,
+        support_email: supportEmail.trim() || null,
       })
       .eq("id", companyId);
     setSaving(false);
@@ -803,7 +806,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     <div className="st-field-text">
                       <span className="st-field-label">Phone number</span>
                       <span className="st-field-hint">
-                        Shown to passengers who flag a problem during a ride
+                        Shown to passengers who flag a problem during a ride, and
+                        on the Help screen in both apps
                       </span>
                     </div>
                     <div className="st-input-wrap">
@@ -814,6 +818,29 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         placeholder="902-555-0100"
                         value={dispatchPhone}
                         onChange={e => { setDispatchPhone(e.target.value); setSaved(false); }}
+                      />
+                    </div>
+                  </div>
+                  {/* Your OWN support address, not the billing address Vellon
+                      invoices — these reach different inboxes on purpose. Left
+                      blank, the apps show no email option at all rather than a
+                      dead one. */}
+                  <div className="st-field-row">
+                    <div className="st-field-text">
+                      <span className="st-field-label">Support email</span>
+                      <span className="st-field-hint">
+                        Where passengers and drivers email you from the app's
+                        Help screen. Not your billing address.
+                      </span>
+                    </div>
+                    <div className="st-input-wrap">
+                      <input
+                        className="st-input"
+                        style={{ width: 220, textAlign: "left" }}
+                        type="email"
+                        placeholder="dispatch@yourcompany.ca"
+                        value={supportEmail}
+                        onChange={e => { setSupportEmail(e.target.value); setSaved(false); }}
                       />
                     </div>
                   </div>
