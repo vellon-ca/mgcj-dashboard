@@ -43,6 +43,15 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Text-to-text consistency check, so it belongs in this secret-free job.
+      # It runs BEFORE the build because it is the faster failure and the more
+      # specific message. Note it runs in its WEAKER form here: the comparison
+      # against mgcj-app's CHECK constraint needs that repo checked out, which
+      # CI does not do, so CI covers the in-app copies and a local run covers
+      # the database's. The script says which half it skipped.
+      - name: Check event_type lists agree
+        run: npm run check:event-types
+
       - name: Build
         # `npm run build` is `tsc -b && vite build`, so this typechecks too.
         # A stale *.tsbuildinfo would let `tsc -b` skip the work and pass
