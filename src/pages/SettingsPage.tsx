@@ -43,7 +43,11 @@ const REPORT_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
 interface StaffMember {
   id: string;
   name: string | null;
+  // Legacy contact only. Email is the staff credential as of 2026-09-26; a
+  // number here is what an older account used to sign in with and is now just
+  // a way to reach them. Nothing writes it any more.
   phone: string | null;
+  email: string | null;
   role: "admin" | "dispatcher";
   is_active: boolean;
   created_at: string;
@@ -134,14 +138,14 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const [staffLoading, setStaffLoading] = useState(true);
   const [addingStaff, setAddingStaff] = useState(false);
   const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffEmail, setNewStaffEmail] = useState('');
   const [staffSaving, setStaffSaving] = useState(false);
   const [staffError, setStaffError] = useState<string | null>(null);
   const [staffBusyId, setStaffBusyId] = useState<string | null>(null);
   // Dispatcher edit state
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
   const [editStaffName, setEditStaffName] = useState('');
-  const [editStaffPhone, setEditStaffPhone] = useState('');
+  const [editStaffEmail, setEditStaffEmail] = useState('');
   const [editStaffSaving, setEditStaffSaving] = useState(false);
   const [editStaffError, setEditStaffError] = useState<string | null>(null);
 
@@ -175,8 +179,23 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     const phoneById = new Map<string, string>(
       ((phones ?? []) as any[]).filter((r) => r?.phone).map((r) => [r.id, r.phone]),
     );
+    // `email` is withheld from authenticated exactly like `phone` is, so it
+    // cannot be added to the select above — it would read EMPTY rather than
+    // fail. staff_emails() is its definer accessor (20260926000000).
+    const { data: emails, error: emailError } = await supabase.rpc(
+      "staff_emails",
+      { p_profile_ids: rows.map((r: any) => r.id) },
+    );
+    if (emailError) console.error("[fetchStaff] email lookup failed:", emailError);
+    const emailById = new Map<string, string>(
+      ((emails ?? []) as any[]).filter((r) => r?.email).map((r) => [r.id, r.email]),
+    );
     setStaff(
-      rows.map((r: any) => ({ ...r, phone: phoneById.get(r.id) ?? "" })) as StaffMember[],
+      rows.map((r: any) => ({
+        ...r,
+        phone: phoneById.get(r.id) ?? "",
+        email: emailById.get(r.id) ?? "",
+      })) as StaffMember[],
     );
     if (!background) setStaffLoading(false);
   }
@@ -184,22 +203,22 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   async function addStaff() {
     setStaffError(null);
     if (!newStaffName.trim()) { setStaffError("Name is required."); return; }
-    if (!newStaffPhone.trim()) { setStaffError("Phone number is required."); return; }
+    if (!newStaffEmail.trim()) { setStaffError("Email address is required."); return; }
     setStaffSaving(true);
     const { data, error: err } = await supabase.functions.invoke("create-staff-account", {
-      body: { name: newStaffName.trim(), phone: newStaffPhone.trim() },
+      body: { name: newStaffName.trim(), email: newStaffEmail.trim() },
     });
     setStaffSaving(false);
     if (err || data?.error) { setStaffError(data?.error ?? err?.message ?? "Failed to create account."); return; }
     setAddingStaff(false);
-    setNewStaffName(''); setNewStaffPhone('');
+    setNewStaffName(''); setNewStaffEmail('');
     fetchStaff(true);
   }
 
   function openEditStaff(member: StaffMember) {
     setEditingStaffId(member.id);
     setEditStaffName(member.name ?? '');
-    setEditStaffPhone(member.phone ?? '');
+    setEditStaffEmail(member.email ?? '');
     setEditStaffError(null);
   }
 
@@ -207,17 +226,17 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     if (!editingStaffId) return;
     setEditStaffError(null);
     if (!editStaffName.trim()) { setEditStaffError("Name is required."); return; }
-    if (!editStaffPhone.trim()) { setEditStaffError("Phone number is required."); return; }
+    if (!editStaffEmail.trim()) { setEditStaffError("Email address is required."); return; }
     setEditStaffSaving(true);
     const { data, error: err } = await supabase.functions.invoke("update-staff-account", {
-      body: { staff_id: editingStaffId, name: editStaffName.trim(), phone: editStaffPhone.trim() },
+      body: { staff_id: editingStaffId, name: editStaffName.trim(), email: editStaffEmail.trim() },
     });
     setEditStaffSaving(false);
     if (err || data?.error) { setEditStaffError(data?.error ?? err?.message ?? "Failed to save changes."); return; }
     // Optimistic local patch so the edited name/phone shows immediately.
     const savedName = editStaffName.trim();
-    const savedPhone = editStaffPhone.trim();
-    setStaff(prev => prev.map(m => m.id === editingStaffId ? { ...m, name: savedName, phone: savedPhone } : m));
+    const savedEmail = editStaffEmail.trim().toLowerCase();
+    setStaff(prev => prev.map(m => m.id === editingStaffId ? { ...m, name: savedName, email: savedEmail } : m));
     // The update-staff-account edge function logs the staff.updated activity event
     // server-side (with before→after detail), so we deliberately don't log here.
     setEditingStaffId(null);
@@ -1085,8 +1104,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                                   <input className="vc-input" value={editStaffName} onChange={e => setEditStaffName(e.target.value)} autoFocus />
                                 </div>
                                 <div className="vc-add-field">
-                                  <div className="vc-add-label">Phone</div>
-                                  <input className="vc-input" value={editStaffPhone} onChange={e => setEditStaffPhone(e.target.value)} />
+                                  <div className="vc-add-label">Email</div>
+                                  <input className="vc-input" type="email" value={editStaffEmail} onChange={e => setEditStaffEmail(e.target.value)} />
                                 </div>
                               </div>
                               {editStaffError && <div className="vc-error" style={{ marginBottom: 8 }}>{editStaffError}</div>}
@@ -1104,7 +1123,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                             <strong>{member.name ?? "Unnamed"}</strong>
                             {member.id === adminId && <span className="tm-td muted"> (you)</span>}
                           </td>
-                          <td className="tm-td muted">{member.phone}</td>
+                          <td className="tm-td muted">
+                            {member.email || <span style={{ opacity: 0.6 }}>No email — cannot sign in</span>}
+                            {member.phone && (
+                              <div style={{ fontSize: 11, opacity: 0.7 }}>{member.phone}</div>
+                            )}
+                          </td>
                           <td className="tm-td">
                             <span className="tm-badge-role">{member.role}</span>
                           </td>
@@ -1143,12 +1167,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     <input className="vc-input" placeholder="Full name" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} autoFocus />
                   </div>
                   <div className="vc-add-field" style={{ marginBottom: 10 }}>
-                    <div className="vc-add-label">Phone</div>
-                    <input className="vc-input" placeholder="(902) 555-0100" value={newStaffPhone} onChange={e => setNewStaffPhone(e.target.value)} />
+                    <div className="vc-add-label">Email</div>
+                    <input className="vc-input" type="email" placeholder="dispatcher@company.ca" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} />
                   </div>
                   {staffError && <div className="vc-error">{staffError}</div>}
                   <div className="vc-add-actions">
-                    <button className="vc-add-cancel" onClick={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffPhone(''); setStaffError(null); }}>Cancel</button>
+                    <button className="vc-add-cancel" onClick={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffEmail(''); setStaffError(null); }}>Cancel</button>
                     <button className="vc-add-save" onClick={addStaff} disabled={staffSaving}>{staffSaving ? 'Adding…' : 'Add dispatcher'}</button>
                   </div>
                 </div>

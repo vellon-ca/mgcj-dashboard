@@ -1,64 +1,64 @@
 import { useState } from "react";
 import { supabase } from "../lib/supabase";
 
-type Step = "phone" | "otp";
+type Step = "email" | "otp";
 
 export default function LoginPage() {
-  const [step, setStep] = useState<Step>("phone");
-  const [phone, setPhone] = useState("");
+  const [step, setStep] = useState<Step>("email");
+  const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  function formatPhoneDisplay(value: string): string {
-    const digits = value.replace(/\D/g, "").slice(0, 10);
-    if (digits.length <= 3) return digits.length ? `(${digits}` : "";
-    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-
-  function toE164(raw: string) {
-    const digits = raw.replace(/\D/g, "");
-    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
-    if (digits.length === 10) return `+1${digits}`;
-    return `+${digits}`;
+  // Deliberately loose. The authoritative check is email_is_dispatch() one line
+  // below and GoTrue's own validation after it; this only catches a typed
+  // fragment before it costs a round trip.
+  function looksLikeEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
   }
 
   async function handleSendOTP(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    const e164 = toE164(phone);
-    if (e164.replace(/\D/g, "").length < 11) {
-      setError("Enter a valid 10-digit phone number.");
+    const address = email.trim().toLowerCase();
+    if (!looksLikeEmail(address)) {
+      setError("Enter a valid email address.");
       return;
     }
     setLoading(true);
 
-    // Only send an OTP to numbers that belong to a dispatch account (admin or
-    // dispatcher). phone_is_dispatch() is SECURITY DEFINER so it works without a
+    // Only send a code to addresses that belong to a dispatch account (admin or
+    // dispatcher). email_is_dispatch() is SECURITY DEFINER so it works without a
     // session. If the check itself errors, fall through and send anyway — App.tsx
     // still gates access post-login, so we fail open rather than lock out staff.
     const { data: isDispatch, error: checkError } = await supabase.rpc(
-      "phone_is_dispatch",
-      { p_phone: e164 },
+      "email_is_dispatch",
+      { p_email: address },
     );
     if (checkError) {
       console.error("[Login] dispatch check error:", checkError);
     } else if (!isDispatch) {
       setLoading(false);
       setError(
-        "This number isn't registered to a dispatch account. Contact your administrator if you think this is a mistake.",
+        "This address isn't registered to a dispatch account. Contact your administrator if you think this is a mistake.",
       );
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
+    // shouldCreateUser: false is load-bearing, not tidiness. Staff accounts are
+    // provisioned by vellon-ops; letting the login screen mint one would create
+    // an auth user with a bare profiles row and no company — the same half-made
+    // account the four-week registration outage produced.
+    const { error } = await supabase.auth.signInWithOtp({
+      email: address,
+      options: { shouldCreateUser: false },
+    });
     setLoading(false);
     if (error) {
       setError(error.message);
       return;
     }
-    setPhone(e164);
+    setEmail(address);
     setStep("otp");
   }
 
@@ -66,10 +66,13 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    // type "email" is the emailed-code channel. It is NOT interchangeable with
+    // "magiclink" (that one takes the hashed token out of a link), even though
+    // the same template can carry both.
     const { error } = await supabase.auth.verifyOtp({
-      phone,
+      email,
       token: otp,
-      type: "sms",
+      type: "email",
     });
     setLoading(false);
     if (error) {
@@ -183,18 +186,6 @@ export default function LoginPage() {
           border-color: rgba(99,102,241,0.4);
         }
 
-        .login-prefix {
-          padding: 13px 14px;
-          font-size: 14px;
-          color: #4A6080;
-          border-right: 1px solid rgba(255,255,255,0.06);
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          white-space: nowrap;
-          font-weight: 500;
-        }
-
         .login-input {
           flex: 1;
           background: transparent;
@@ -303,18 +294,19 @@ export default function LoginPage() {
           <div className="login-subtitle">Dispatch Dashboard</div>
           <div className="login-rule" />
 
-          {step === "phone" ? (
+          {step === "email" ? (
             <form onSubmit={handleSendOTP} className="login-form">
               <div>
-                <label className="login-label">Phone number</label>
+                <label className="login-label">Email address</label>
                 <div className="login-field">
-                  <span className="login-prefix">🇨🇦 +1</span>
                   <input
                     className="login-input"
-                    type="tel"
-                    placeholder="(902) 555-1234"
-                    value={phone}
-                    onChange={(e) => setPhone(formatPhoneDisplay(e.target.value))}
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="you@company.ca"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     autoFocus
                   />
                 </div>
@@ -330,7 +322,9 @@ export default function LoginPage() {
                 <label className="login-label">Verification code</label>
                 <input
                   className="login-otp-input"
-                  type="tel"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   placeholder="——————"
                   value={otp}
                   onChange={(e) =>
@@ -341,7 +335,7 @@ export default function LoginPage() {
                 />
               </div>
               <div className="login-hint">
-                Code sent to <strong>{phone}</strong>
+                Code sent to <strong>{email}</strong>
               </div>
               {error && <div className="login-error">{error}</div>}
               <button className="login-btn" type="submit" disabled={loading}>
@@ -351,12 +345,12 @@ export default function LoginPage() {
                 type="button"
                 className="login-back-btn"
                 onClick={() => {
-                  setStep("phone");
+                  setStep("email");
                   setError("");
                   setOtp("");
                 }}
               >
-                ← Use a different number
+                ← Use a different address
               </button>
             </form>
           )}
