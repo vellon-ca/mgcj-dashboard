@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
+import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import ServiceAreasSection from "../components/ServiceAreasSection";
 
@@ -205,11 +206,16 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     if (!newStaffName.trim()) { setStaffError("Name is required."); return; }
     if (!newStaffEmail.trim()) { setStaffError("Email address is required."); return; }
     setStaffSaving(true);
-    const { data, error: err } = await supabase.functions.invoke("create-staff-account", {
-      body: { name: newStaffName.trim(), email: newStaffEmail.trim() },
-    });
+    // invokeFunction, not supabase.functions.invoke: a non-2xx RESOLVES INTO A
+    // THROW with `data: null`, so reading `err.message` shows the dispatcher
+    // "Edge Function returned a non-2xx status code" while the reason the server
+    // actually sent -- "A user with this email address already exists",
+    // "Forbidden -- admin only" -- sits unread in `err.context`.
+    const { error: err } = await invokeFunction("create-staff-account", {
+      name: newStaffName.trim(), email: newStaffEmail.trim(),
+    }, "Failed to create account.");
     setStaffSaving(false);
-    if (err || data?.error) { setStaffError(data?.error ?? err?.message ?? "Failed to create account."); return; }
+    if (err) { setStaffError(err); return; }
     setAddingStaff(false);
     setNewStaffName(''); setNewStaffEmail('');
     fetchStaff(true);
@@ -228,11 +234,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     if (!editStaffName.trim()) { setEditStaffError("Name is required."); return; }
     if (!editStaffEmail.trim()) { setEditStaffError("Email address is required."); return; }
     setEditStaffSaving(true);
-    const { data, error: err } = await supabase.functions.invoke("update-staff-account", {
-      body: { staff_id: editingStaffId, name: editStaffName.trim(), email: editStaffEmail.trim() },
-    });
+    // Same reason as addStaff above -- the server's message lives in err.context.
+    const { error: err } = await invokeFunction("update-staff-account", {
+      staff_id: editingStaffId, name: editStaffName.trim(), email: editStaffEmail.trim(),
+    }, "Failed to save changes.");
     setEditStaffSaving(false);
-    if (err || data?.error) { setEditStaffError(data?.error ?? err?.message ?? "Failed to save changes."); return; }
+    if (err) { setEditStaffError(err); return; }
     // Optimistic local patch so the edited name/phone shows immediately.
     const savedName = editStaffName.trim();
     const savedEmail = editStaffEmail.trim().toLowerCase();
