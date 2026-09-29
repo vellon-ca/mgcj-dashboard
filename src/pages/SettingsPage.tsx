@@ -585,6 +585,31 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .st-suffix { padding: 0 10px; font-size: 12px; color: #6B7280; border-left: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
         .st-input { width: 80px; background: none; border: none; outline: none; color: #F1F5F9; font-size: 14px; font-weight: 600; padding: 0 10px; height: 36px; font-family: system-ui, sans-serif; text-align: right; }
 
+        /* Number spinners OVERLAY the right edge of the field (Firefox draws them
+           over the content, not beside it), and these inputs are text-align:right
+           -- so the value sat underneath them and read as clipped. Hiding the
+           stepper is the fix: these are typed config values, not things anyone
+           nudges one at a time. All three declarations are needed: the standard
+           appearance property for current browsers, the -moz- prefix for older
+           Firefox, and the ::-webkit- pseudo-elements for Chromium, which
+           ignores appearance on the spin buttons themselves.
+           (No backticks in here -- this whole block is a template literal, and
+           a backtick in a COMMENT ends the string. It did, once.) */
+        .st-input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+        .st-input[type="number"]::-webkit-inner-spin-button,
+        .st-input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* Free-text fields (phone, email) hold values of unpredictable length --
+           an email can run 40 characters. A fixed px width clips them, and
+           .st-input-wrap's overflow:hidden means the tail is invisible rather
+           than scrollable, so the value silently looks wrong. Grow to fill the
+           row instead and let the label column give up space: min-width:0 is
+           what allows a flex item to shrink below its content width at all. */
+        .st-field-row--wide { gap: 24px; }
+        .st-field-row--wide .st-field-text { flex: 1 1 auto; min-width: 0; }
+        .st-input-wrap--grow { flex: 1 1 280px; min-width: 180px; max-width: 420px; }
+        .st-input--text { width: 100%; text-align: left; }
+
         .st-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 14px 0; }
 
         .st-save-btn { background: #E8500A; color: #fff; border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, opacity 0.12s; white-space: nowrap; }
@@ -885,7 +910,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               ) : (
                 <div className="st-card">
                   <p className="st-card-label">Shown in the apps</p>
-                  <div className="st-field-row">
+                  <div className="st-field-row st-field-row--wide">
                     <div className="st-field-text">
                       <span className="st-field-label">Phone number</span>
                       <span className="st-field-hint">
@@ -893,10 +918,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         on the Help screen in both apps
                       </span>
                     </div>
-                    <div className="st-input-wrap">
+                    <div className="st-input-wrap st-input-wrap--grow">
                       <input
-                        className="st-input"
-                        style={{ width: 150, textAlign: "left" }}
+                        className="st-input st-input--text"
                         type="tel"
                         placeholder="902-555-0100"
                         value={dispatchPhone}
@@ -908,7 +932,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                       invoices — these reach different inboxes on purpose. Left
                       blank, the apps show no email option at all rather than a
                       dead one. */}
-                  <div className="st-field-row">
+                  <div className="st-field-row st-field-row--wide">
                     <div className="st-field-text">
                       <span className="st-field-label">Support email</span>
                       <span className="st-field-hint">
@@ -916,10 +940,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         Help screen. Not your billing address.
                       </span>
                     </div>
-                    <div className="st-input-wrap">
+                    <div className="st-input-wrap st-input-wrap--grow">
                       <input
-                        className="st-input"
-                        style={{ width: 220, textAlign: "left" }}
+                        className="st-input st-input--text"
                         type="email"
                         placeholder="dispatch@yourcompany.ca"
                         value={supportEmail}
