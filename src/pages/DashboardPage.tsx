@@ -607,8 +607,21 @@ function DriverDetailPanel({
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleError, setVehicleError] = useState<string | null>(null);
 
+  // The dim/blur backdrop is OWNED by this panel but STORED in the parent, so
+  // the parent must be told when it goes away -- and the cleanup is what does
+  // that. Without it, any parent action that unmounts this panel while a confirm
+  // dialog is open strands `detailOverlayActive` at true forever: the backdrop
+  // is `pointerEvents: none`, so the whole dashboard reads as dimmed and
+  // unclickable with nothing on screen to dismiss, and only a reload clears it.
+  //
+  // `deleteDriver` is exactly that shape -- it nulls selectedDriver on success,
+  // from inside this panel's own delete confirmation -- and it is the reason the
+  // bug surfaced only once someone actually deleted a driver. Fixing it here
+  // rather than in deleteDriver covers every other caller that unmounts us the
+  // same way, and there are ten of them.
   useEffect(() => {
     onOverlayChange?.(!!confirmAction || editingVehicle);
+    return () => onOverlayChange?.(false);
   }, [confirmAction, editingVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
