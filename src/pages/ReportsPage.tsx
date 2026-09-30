@@ -160,6 +160,9 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
         (profs ?? []).forEach((p: any) => nameMap.set(p.id, p.name));
       }
       setEscalations(
+        // No snapshot fallback here: this reads `rides`, which carries no
+        // name snapshot, so a deleted passenger's escalation shows "—". See
+        // the driver_reports path below for the shape that does have one.
         rows.map((r: any) => ({ ...r, passenger_name: nameMap.get(r.passenger_id) ?? null })),
       );
     } catch (e) {
@@ -200,8 +203,15 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
           return {
             ...r,
             resolution_notes: r.resolution_notes ?? null,
-            passenger_name: passenger?.name ?? null,
-            driver_name: driver?.name ?? null,
+            // Fall back to the identity snapshotted when the report was filed.
+            // Either party can now vanish from `profiles`: a passenger who
+            // deletes their account SET NULLs passenger_id, and a deleted
+            // driver's profile survives with `name` nulled out. Joining live
+            // rows alone renders a blank reporter on exactly the reports that
+            // most need reading -- and reads empty rather than failing, so
+            // nothing would have flagged it. See mgcj-app 20260929060000.
+            passenger_name: passenger?.name ?? r.reporter_name_at_report ?? null,
+            driver_name: driver?.name ?? r.driver_name_at_report ?? null,
             ride_pickup: ride?.pickup_address ?? null,
             ride_dropoff: ride?.dropoff_address ?? null,
             ride_fare: ride?.fare_final ?? ride?.fare_estimate ?? null,
