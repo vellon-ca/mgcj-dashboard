@@ -9,6 +9,10 @@ export interface Profile {
   deactivation_pending: boolean;
   deleted_at: string | null;
   created_at: string;
+  /** BCP-47 tag the dispatcher last explicitly chose, so the choice follows
+   *  them to another machine. Source 2 of the precedence in
+   *  src/i18n/LocaleContext.tsx; NULL = never chosen. */
+  locale: string | null;
 }
 
 export interface Driver {

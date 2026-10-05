@@ -24,7 +24,7 @@ const PROFILE_COLUMNS =
   // Kept on ONE literal line: supabase-js infers the row type from the literal
   // type of this string, and any concatenation or .join() widens it to `string`,
   // which degrades every field to GenericStringError.
-  "id, name, role, company_id, avatar_url, created_at, is_active, deactivation_pending, deleted_at, notification_prefs, push_token, is_guest, student_verified, student_institution_id, student_verified_at";
+  "id, name, role, company_id, avatar_url, created_at, is_active, deactivation_pending, deleted_at, notification_prefs, push_token, is_guest, student_verified, student_institution_id, student_verified_at, locale";
 
 export function useAuth() {
   const [session, setSession] = useState<Session | null>(null);
