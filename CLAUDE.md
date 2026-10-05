@@ -87,7 +87,7 @@ There's no router — `App.tsx` switches screens purely on auth state, and `Dash
 
 The dashboard is bilingual (en + fr), the same shape as `mgcj-app`'s client half
 and deliberately parallel to it: `src/i18n/` holds the runtime, `src/i18n/locales/{en,fr}.json`
-the bundles (**954 keys each**), and `npm run check:i18n` is the gate. en+fr is a
+the bundles (**955 keys each**), and `npm run check:i18n` is the gate. en+fr is a
 **pause, not the final list** — see the tier table in
 `mgcj-app/.claude/notes/i18n-design.md`, which prices a language by its script,
 not its word count.
@@ -191,6 +191,46 @@ which is precisely the false-clean it shipped.
 `$4.86` in every language, so the ~140 hand-built `` `$${n.toFixed(2)}` `` sites
 are correct as they are. `fr-CA` renders `4,86 $`, whose decimal comma breaks CSV
 parsing against a comma delimiter — revisit the two together or neither.
+
+### The receipt is rendered in THREE places — read before touching tax or totals
+
+Fixed 2026-10-05. `send-ride-receipt` (the emailed PDF) had already been
+corrected to read a frozen per-ride tax rate; this repo kept `fare / 1.15` in
+**both** of its receipt renderers — `printReceipt()`'s HTML and the
+receipt-detail modal — so the same ride produced two documents with different
+numbers. Three defects, in increasing severity:
+
+1. **The rate.** Nova Scotia moved to 14% on 2025-04-01, so `1.15` had been
+   wrong since.
+2. **The gate.** The split was drawn UNCONDITIONALLY, gating only the
+   registration line on `hst_number`. A company under the $30k small-supplier
+   threshold — ordinary for a Valley operator — got a receipt claiming tax it
+   never collected and cannot remit, off which a passenger could claim an input
+   tax credit. The quieter defect and the worse one.
+3. **Recomputing at all.** `ride_receipts` already stores `tax_rate_percent`,
+   `tax_amount` and `tax_label`, rounded once at send time — the record of what
+   was actually printed. Deriving the figure again is how two copies of one
+   number disagree by a cent.
+
+So `receiptTax()` in `AnalyticsPage.tsx` reads the row and does no arithmetic
+beyond `fare - tax_amount`, and its `taxed` gate is byte-for-byte the Edge
+Function's (`rate != null && amount != null`). **There is no tax rate anywhere
+in this repo now** — if you find yourself typing one, the number belongs in
+`companies.tax_rate_percent` and arrives frozen on the row.
+
+Two things that follow:
+
+- **A receipt sent before `20260930000000` has all three columns NULL and
+  prints no tax line.** Deliberate, and the same choice the function makes: an
+  understated receipt is a lesser defect than one asserting uncollected tax.
+- **`select("*")` was already returning those columns.** Only the `ReceiptRow`
+  type and the math were behind, so nothing failed and nothing logged — the
+  wrong number simply rendered. A type that is missing a column it receives is
+  invisible to tsc in exactly this direction.
+
+The general rule: **this repo renders money but must never derive it.** Same
+family as `rides.completed_at` and `platform_fee_percent_at_completion` — the
+document is the snapshot, not a recomputation from live settings.
 
 ### Conventions that keep the gate honest
 
