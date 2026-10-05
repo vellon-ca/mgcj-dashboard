@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import { useTranslation } from "react-i18next";
+import { fmtDate, fmtDateTime, fmtTime } from "../i18n/format";
+import { ESC_REASON_KEYS, FLAG_REASON_ORDER, REPORT_REASON_KEYS } from "../lib/labels";
 
 const esc = (s: string | null | undefined) =>
   (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -28,25 +31,14 @@ interface ReportRow {
   ride_date: string | null;
 }
 
-const REASON_LABELS: Record<string, string> = {
-  unsafe_driving: "Unsafe driving",
-  rude_behavior: "Rude or unprofessional behavior",
-  wrong_vehicle: "Different vehicle than expected",
-  wrong_driver: "Different driver than expected",
-  vehicle_condition: "Vehicle condition / cleanliness",
-  cash_request: "Asked for cash to bypass the app",
-  harassment: "Felt unsafe / harassed",
-  smoking: "Smoking in vehicle",
-  other: "Other",
-};
+// REASON_LABELS, STATUS_LABELS and ESC_REASON_LABELS moved to src/lib/labels.ts
+// when they became translation keys — they were copy-pasted into three pages,
+// and three parallel key sets for one list is how a translation drifts in a
+// language the editor cannot read. The COLOR maps stay here: they are styling,
+// and each page scopes its own CSS.
 
 const HIGH_SEVERITY = new Set(["unsafe_driving", "harassment"]);
 
-const STATUS_LABELS: Record<string, string> = {
-  open: "Open",
-  reviewed: "Reviewed",
-  dismissed: "Dismissed",
-};
 const STATUS_COLORS: Record<string, string> = {
   open: "#F59E0B",
   reviewed: "#1D9E75",
@@ -66,24 +58,19 @@ interface Props {
   companyName: string | null;
 }
 
-const ESC_REASON_LABELS: Record<string, string> = {
-  not_in_car: "Not in the car",
-  felt_unsafe: "Felt unsafe",
-  driver_never_came: "Driver never arrived",
-  wrong_destination: "Going the wrong way",
-  other: "Something else",
-};
-const ESC_REASON_ORDER = [
-  "not_in_car",
-  "felt_unsafe",
-  "driver_never_came",
-  "wrong_destination",
-  "other",
-];
 
 const REPORT_SOURCES = ["drivers", "escalations"] as const;
 
 export default function ReportsPage({ onBadgeChange, isActive, companyId, adminId, companyName }: Props) {
+  const { t } = useTranslation();
+  // Both fall back to the raw column value, as the old maps did: an unknown
+  // code means a schema change this build predates, and showing `foo` is more
+  // use to whoever reports it than showing nothing.
+  const reasonLabel = (reason: string) =>
+    REPORT_REASON_KEYS[reason] ? t(REPORT_REASON_KEYS[reason]) : reason;
+  // This title-cases an identifier into an i18n KEY, which is the fix for the
+  // derived-label hazard rather than an instance of it. i18n-ok
+  const statusLabel = (status: string) => t(`reports.status${status[0].toUpperCase()}${status.slice(1)}`);
   // Source-level split, NOT a merged list. Everything on this page is
   // driver-centric — driverFilter, per-driver counts, a PDF titled "Driver
   // Report", HIGH_SEVERITY keyed to driver reason codes — and none of it
@@ -141,11 +128,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
     try {
       const { data: rows } = await supabase
         .from("rides")
-        .select(
-          "id, passenger_id, pickup_address, dropoff_address, status, created_at, " +
-          "passenger_flagged_at, passenger_flag_updated_at, passenger_flag_reasons, " +
-          "passenger_flag_note, passenger_flag_resolved_at",
-        )
+        // ONE literal, deliberately not three concatenated: supabase-js infers
+        // the row type from the LITERAL type of this string, and any `+` widens
+        // it to `string`, which degrades every field read off the result to
+        // `GenericStringError`. Three such queries accounted for 181 of the 189
+        // errors mgcj-app's deno gate found on its first run.
+        .select("id, passenger_id, pickup_address, dropoff_address, status, created_at, passenger_flagged_at, passenger_flag_updated_at, passenger_flag_reasons, passenger_flag_note, passenger_flag_resolved_at")
         .eq("company_id", companyId)
         .not("passenger_flagged_at", "is", null)
         .order("passenger_flagged_at", { ascending: false })
@@ -259,16 +247,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
 
   function printReport(r: ReportRow) {
     const isHigh = HIGH_SEVERITY.has(r.reason);
-    const date = new Date(r.created_at).toLocaleDateString("en-CA", {
+    const date = fmtDate(r.created_at, {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
     });
-    const time = new Date(r.created_at).toLocaleTimeString("en-CA", {
-      hour: "numeric", minute: "2-digit",
-    });
+    const time = fmtTime(r.created_at, { hour: "numeric", minute: "2-digit" });
     const rideDate = r.ride_date
-      ? new Date(r.ride_date).toLocaleDateString("en-CA", {
-          year: "numeric", month: "long", day: "numeric",
-        })
+      ? fmtDate(r.ride_date, { year: "numeric", month: "long", day: "numeric" })
       : null;
     const driverCount = reports.filter((x) => x.driver_id === r.driver_id).length;
 
@@ -288,7 +272,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
 <html>
 <head>
 <meta charset="utf-8">
-<title>Driver Report — ${esc(r.driver_name) || "Unknown"}</title>
+<title>${esc(t("reports.printTitle", { name: r.driver_name || t("common.unknown") }))}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1a1a1a; padding: 48px; font-size: 13px; line-height: 1.5; max-width: 720px; margin: 0 auto; }
@@ -329,81 +313,81 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
   <div class="header">
     <div class="header-left">
       <h1>${esc(companyName)}</h1>
-      <p>Driver Incident Report</p>
+      <p>${esc(t("reports.printHeading"))}</p>
     </div>
     <div class="header-right">
       <div>${esc(date)}</div>
       <div>${esc(time)}</div>
-      <div style="margin-top:6px;font-size:11px">Report ID: ${esc(r.report_ref)}</div>
+      <div style="margin-top:6px;font-size:11px">${esc(t("reports.printReportId"))}: ${esc(r.report_ref)}</div>
     </div>
   </div>
 
-  ${isHigh ? '<div class="severity-badge">⚠ High severity</div>' : ""}
+  ${isHigh ? `<div class="severity-badge">⚠ ${esc(t("reports.highSeverity"))}</div>` : ""}
 
   <div class="section">
-    <div class="section-title">Incident</div>
+    <div class="section-title">${esc(t("reports.incident"))}</div>
     <div class="row">
-      <div class="row-label">Reason</div>
-      <div class="row-value reason">${esc(REASON_LABELS[r.reason] ?? r.reason)}</div>
+      <div class="row-label">${esc(t("reports.reason"))}</div>
+      <div class="row-value reason">${esc(reasonLabel(r.reason))}</div>
     </div>
     <div class="row">
-      <div class="row-label">Reported on</div>
-      <div class="row-value">${date} at ${time}</div>
+      <div class="row-label">${esc(t("reports.reportedOn"))}</div>
+      <div class="row-value">${esc(t("reports.dateAtTime", { date, time }))}</div>
     </div>
     <div class="row">
-      <div class="row-label">Status</div>
+      <div class="row-label">${esc(t("common.status"))}</div>
       <div class="row-value">
-        <span class="status-chip status-${r.status}">${STATUS_LABELS[r.status]}</span>
+        <span class="status-chip status-${r.status}">${esc(statusLabel(r.status))}</span>
       </div>
     </div>
     ${r.comment ? `<div class="comment-box">&ldquo;${esc(r.comment)}&rdquo;</div>` : ""}
   </div>
 
   <div class="section">
-    <div class="section-title">Parties</div>
+    <div class="section-title">${esc(t("reports.parties"))}</div>
     <div class="row">
-      <div class="row-label">Driver</div>
+      <div class="row-label">${esc(t("reports.driver"))}</div>
       <div class="row-value bold">
         ${esc(r.driver_name) || "—"}
-        ${driverCount > 1 ? `<div class="driver-count-note">${driverCount} total reports on file for this driver</div>` : ""}
+        ${driverCount > 1 ? `<div class="driver-count-note">${esc(t("reports.totalOnFileForDriver", { count: driverCount }))}</div>` : ""}
       </div>
     </div>
     <div class="row">
-      <div class="row-label">Reported by</div>
+      <div class="row-label">${esc(t("reports.reportedBy"))}</div>
       <div class="row-value">${esc(r.passenger_name) || "—"}</div>
     </div>
   </div>
 
   ${r.ride_id ? `
   <div class="section">
-    <div class="section-title">Associated Ride</div>
-    ${rideDate ? `<div class="row"><div class="row-label">Ride date</div><div class="row-value">${rideDate}</div></div>` : ""}
-    ${r.ride_pickup ? `<div class="row"><div class="row-label">Pickup</div><div class="row-value">${esc(r.ride_pickup)}</div></div>` : ""}
-    ${r.ride_dropoff ? `<div class="row"><div class="row-label">Drop-off</div><div class="row-value">${esc(r.ride_dropoff)}</div></div>` : ""}
-    ${r.ride_fare != null ? `<div class="row"><div class="row-label">Fare</div><div class="row-value bold">$${Number(r.ride_fare).toFixed(2)}</div></div>` : ""}
+    <div class="section-title">${esc(t("reports.associatedRide"))}</div>
+    ${rideDate ? `<div class="row"><div class="row-label">${esc(t("reports.rideDate"))}</div><div class="row-value">${esc(rideDate)}</div></div>` : ""}
+    ${r.ride_pickup ? `<div class="row"><div class="row-label">${esc(t("reports.pickup"))}</div><div class="row-value">${esc(r.ride_pickup)}</div></div>` : ""}
+    ${r.ride_dropoff ? `<div class="row"><div class="row-label">${esc(t("reports.dropoff"))}</div><div class="row-value">${esc(r.ride_dropoff)}</div></div>` : ""}
+    ${r.ride_fare != null ? `<div class="row"><div class="row-label">${esc(t("reports.fare"))}</div><div class="row-value bold">$${Number(r.ride_fare).toFixed(2)}</div></div>` : ""}
   </div>` : ""}
 
   <div class="section">
-    <div class="section-title">Resolution</div>
+    <div class="section-title">${esc(t("reports.resolution"))}</div>
     ${r.resolution_notes
       ? `<div class="resolution-box">${esc(r.resolution_notes)}</div>`
-      : `<div class="row"><div class="row-label">Notes</div><div class="row-value" style="color:#9ca3af">No resolution notes recorded.</div></div>`}
+      : `<div class="row"><div class="row-label">${esc(t("reports.notes"))}</div><div class="row-value" style="color:#9ca3af">${esc(t("reports.noResolutionNotes"))}</div></div>`}
   </div>
 
   <div class="sig-section">
-    <div class="sig-title">Authorization</div>
+    <div class="sig-title">${esc(t("reports.authorization"))}</div>
     <div class="sig-row">
       <div class="sig-field">
         <div class="sig-line"></div>
-        <div class="sig-line-label">Authorized by (print name)</div>
+        <div class="sig-line-label">${esc(t("reports.authorizedBy"))}</div>
       </div>
       <div class="sig-field">
         <div class="sig-line"></div>
-        <div class="sig-line-label">Signature</div>
+        <div class="sig-line-label">${esc(t("reports.signature"))}</div>
       </div>
       <div class="sig-field" style="max-width:130px">
         <div class="sig-line"></div>
-        <div class="sig-line-label">Date</div>
+        <div class="sig-line-label">${esc(t("reports.date"))}</div>
       </div>
     </div>
   </div>
@@ -420,7 +404,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
 
   const driverOptions = Array.from(
     reports.reduce((map, r) => {
-      if (!map.has(r.driver_id)) map.set(r.driver_id, r.driver_name ?? "Unknown");
+      if (!map.has(r.driver_id)) map.set(r.driver_id, r.driver_name ?? t("common.unknown"));
       return map;
     }, new Map<string, string>()).entries(),
   ).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -561,12 +545,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
       <div className="rp-wrap">
         {/* LEFT PANEL */}
         <div className="rp-panel">
-          <div className="rp-panel-title">Source</div>
+          <div className="rp-panel-title">{t("reports.source")}</div>
           <button
             className={`rp-filter-btn${source === "drivers" ? " active" : ""}`}
             onClick={() => setSource("drivers")}
           >
-            <span>Driver reports</span>
+            <span>{t("reports.driverReports")}</span>
             <span className={`rp-filter-count${openCount > 0 ? " urgent" : ""}`}>
               {openCount}
             </span>
@@ -575,7 +559,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
             className={`rp-filter-btn${source === "escalations" ? " active" : ""}`}
             onClick={() => setSource("escalations")}
           >
-            <span>Ride escalations</span>
+            <span>{t("reports.rideEscalations")}</span>
             <span className={`rp-filter-count${escOpenCount > 0 ? " urgent" : ""}`}>
               {escOpenCount}
             </span>
@@ -584,7 +568,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
 
           {source === "drivers" && (
           <>
-          <div className="rp-panel-title">Filter</div>
+          <div className="rp-panel-title">{t("reports.filter")}</div>
 
           {(["all", "open", "reviewed", "dismissed"] as const).map((s) => {
             const count = s === "all" ? reports.length : reports.filter((r) => r.status === s).length;
@@ -594,7 +578,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                 className={`rp-filter-btn${statusFilter === s ? " active" : ""}`}
                 onClick={() => setStatusFilter(s)}
               >
-                <span>{s === "all" ? "All reports" : STATUS_LABELS[s]}</span>
+                <span>{s === "all" ? t("reports.allReports") : statusLabel(s)}</span>
                 <span className={`rp-filter-count${s === "open" && count > 0 ? " urgent" : ""}`}>
                   {count}
                 </span>
@@ -605,12 +589,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
           {driverOptions.length > 0 && (
             <>
               <div className="rp-panel-divider" />
-              <div className="rp-panel-subtitle">By driver</div>
+              <div className="rp-panel-subtitle">{t("reports.byDriver")}</div>
               <button
                 className={`rp-driver-btn${driverFilter === "all" ? " active" : ""}`}
                 onClick={() => setDriverFilter("all")}
               >
-                <span className="rp-driver-btn-name">All drivers</span>
+                <span className="rp-driver-btn-name">{t("reports.allDrivers")}</span>
               </button>
               {driverOptions.map((d) => {
                 const dCount = reports.filter((r) => r.driver_id === d.id).length;
@@ -639,23 +623,23 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
         <div className="rp-content">
           <div className="rp-header">
             <div>
-              <div className="rp-title">Ride Escalations</div>
+              <div className="rp-title">{t("reports.rideEscalationsTitle")}</div>
               <div className="rp-subtitle-text">
-                Raised by passengers during a live ride · {escalations.length} total
+                {t("reports.escSubtitle", { count: escalations.length })}
               </div>
             </div>
           </div>
           {escLoading ? (
-            <div className="rp-empty">Loading…</div>
+            <div className="rp-empty">{t("common.loading")}</div>
           ) : escalations.length === 0 ? (
-            <div className="rp-empty">No passenger has flagged a ride yet.</div>
+            <div className="rp-empty">{t("reports.noEscalations")}</div>
           ) : (
             <>
               {escalations.map((e) => {
                 const open = !e.passenger_flag_resolved_at;
                 const codes: string[] = [...(e.passenger_flag_reasons ?? [])].sort(
                   (a, b) =>
-                    ESC_REASON_ORDER.indexOf(a) - ESC_REASON_ORDER.indexOf(b),
+                    FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
                 );
                 return (
                   <div
@@ -688,10 +672,10 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                           color: open ? "#F87171" : "#6B7280",
                         }}
                       >
-                        {open ? "Unresolved" : "Resolved"}
+                        {open ? t("reports.unresolved") : t("reports.resolved")}
                       </span>
                       <span style={{ fontSize: 11, color: "#6B7280" }}>
-                        {new Date(e.passenger_flagged_at).toLocaleString("en-CA", {
+                        {fmtDateTime(e.passenger_flagged_at, {
                           dateStyle: "medium",
                           timeStyle: "short",
                         })}
@@ -706,11 +690,11 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       }}
                     >
                       {codes
-                        .map((c) => ESC_REASON_LABELS[c] ?? c)
-                        .join(" · ") || "Problem reported"}
+                        .map((c) => (ESC_REASON_KEYS[c] ? t(ESC_REASON_KEYS[c]) : c))
+                        .join(" · ") || t("flagReason.other")}
                     </div>
                     <div style={{ fontSize: 12, color: "#9CA3AF" }}>
-                      {e.passenger_name ?? "Passenger"} · {e.pickup_address}
+                      {e.passenger_name ?? t("reports.passenger")} · {e.pickup_address}
                       {e.dropoff_address ? ` → ${e.dropoff_address}` : ""}
                     </div>
                     {e.passenger_flag_note && (
@@ -732,16 +716,17 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                         style={{ marginTop: 10 }}
                         onClick={() => resolveEscalation(e.id)}
                       >
-                        Mark resolved
+                        {t("reports.markResolved")}
                       </button>
                     )}
                     {!open && (
                       <div style={{ fontSize: 11, color: "#6B7280", marginTop: 6 }}>
-                        Resolved{" "}
-                        {new Date(e.passenger_flag_resolved_at).toLocaleString(
-                          "en-CA",
-                          { dateStyle: "medium", timeStyle: "short" },
-                        )}
+                        {t("reports.resolvedAt", {
+                          when: fmtDateTime(e.passenger_flag_resolved_at, {
+                            dateStyle: "medium",
+                            timeStyle: "short",
+                          }),
+                        })}
                       </div>
                     )}
                     </div>
@@ -755,9 +740,9 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
         <div className="rp-content">
           <div className="rp-header">
             <div>
-              <div className="rp-title">Driver Reports</div>
+              <div className="rp-title">{t("reports.driverReportsTitle")}</div>
               <div className="rp-subtitle-text">
-                {filtered.length} report{filtered.length !== 1 ? "s" : ""}
+                {t("reports.reportCount", { count: filtered.length })}
                 {driverFilter !== "all" && ` · ${driverOptions.find((d) => d.id === driverFilter)?.name}`}
               </div>
             </div>
@@ -766,35 +751,35 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
           {/* Summary strip */}
           <div className="rp-summary">
             <div className="rp-summary-card">
-              <div className="rp-summary-label">Open</div>
+              <div className="rp-summary-label">{t("reports.statusOpen")}</div>
               <div className="rp-summary-value" style={{ color: openCount > 0 ? "#F59E0B" : "#F1F5F9" }}>
                 {openCount}
               </div>
               {highOpen > 0 && (
                 <div className="rp-summary-sub" style={{ color: "#F87171" }}>
-                  {highOpen} high severity
+                  {t("reports.nHighSeverity", { count: highOpen })}
                 </div>
               )}
             </div>
             <div className="rp-summary-card">
-              <div className="rp-summary-label">Reviewed</div>
+              <div className="rp-summary-label">{t("reports.statusReviewed")}</div>
               <div className="rp-summary-value" style={{ color: "#1D9E75" }}>{reviewedCount}</div>
             </div>
             <div className="rp-summary-card">
-              <div className="rp-summary-label">Dismissed</div>
+              <div className="rp-summary-label">{t("reports.statusDismissed")}</div>
               <div className="rp-summary-value">{dismissedCount}</div>
             </div>
             <div className="rp-summary-card">
-              <div className="rp-summary-label">Total</div>
+              <div className="rp-summary-label">{t("reports.total")}</div>
               <div className="rp-summary-value">{reports.length}</div>
             </div>
           </div>
 
           {loading ? (
-            <div className="rp-loading">Loading…</div>
+            <div className="rp-loading">{t("common.loading")}</div>
           ) : filtered.length === 0 ? (
             <div className="rp-empty">
-              {statusFilter === "open" ? "No open reports — all clear." : "No reports match these filters."}
+              {statusFilter === "open" ? t("reports.noOpen") : t("reports.noMatches")}
             </div>
           ) : (
             filtered.map((r) => {
@@ -811,10 +796,10 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                   <div className="rp-card-accent" style={{ background: accentColor + "60" }} />
                   <div className="rp-card-body">
                     {isHigh && r.status === "open" && (
-                      <div className="rp-severity-inline">⚠ High severity</div>
+                      <div className="rp-severity-inline">⚠ {t("reports.highSeverity")}</div>
                     )}
                     <div className="rp-card-row1">
-                      <div className="rp-card-reason">{REASON_LABELS[r.reason] ?? r.reason}</div>
+                      <div className="rp-card-reason">{reasonLabel(r.reason)}</div>
                       <span
                         className="rp-status-badge"
                         style={{
@@ -823,16 +808,16 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                           border: `1px solid ${STATUS_COLORS[r.status]}30`,
                         }}
                       >
-                        {STATUS_LABELS[r.status]}
+                        {statusLabel(r.status)}
                       </span>
                     </div>
 
                     <div className="rp-card-row2">
                       <div className="rp-card-person">
-                        <span>Driver: </span>{r.driver_name ?? "—"}
+                        <span>{t("reports.driver")}: </span>{r.driver_name ?? "—"}
                       </div>
                       <div className="rp-card-person">
-                        <span>Reported by: </span>{r.passenger_name ?? "—"}
+                        <span>{t("reports.reportedBy")}: </span>{r.passenger_name ?? "—"}
                       </div>
                     </div>
 
@@ -848,15 +833,13 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
 
                     <div className="rp-card-footer">
                       <div className="rp-card-date">
-                        {new Date(r.created_at).toLocaleDateString("en-CA", {
+                        {fmtDate(r.created_at, {
                           month: "short", day: "numeric", year: "numeric",
                         })}
                         {" · "}
-                        {new Date(r.created_at).toLocaleTimeString("en-CA", {
-                          hour: "numeric", minute: "2-digit",
-                        })}
+                        {fmtTime(r.created_at, { hour: "numeric", minute: "2-digit" })}
                       </div>
-                      <div className="rp-card-view-hint">View details →</div>
+                      <div className="rp-card-view-hint">{t("reports.viewDetails")}</div>
                     </div>
                   </div>
                 </div>
@@ -879,32 +862,30 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
               <div className="rp-modal-header">
                 <div className="rp-modal-header-left">
                   <div className="rp-modal-title">
-                    {REASON_LABELS[selected.reason] ?? selected.reason}
+                    {reasonLabel(selected.reason)}
                     {/* Selectable so a dispatcher can copy it straight into an
                         email to Vellon — the printed PDF carries the same
                         value, so the two can be matched up later. */}
                     <span className="rp-ref">{selected.report_ref}</span>
                   </div>
                   <div className="rp-modal-subtitle">
-                    {new Date(selected.created_at).toLocaleDateString("en-CA", {
+                    {fmtDate(selected.created_at, {
                       weekday: "short", month: "short", day: "numeric", year: "numeric",
                     })}
                     {" · "}
-                    {new Date(selected.created_at).toLocaleTimeString("en-CA", {
-                      hour: "numeric", minute: "2-digit",
-                    })}
+                    {fmtTime(selected.created_at, { hour: "numeric", minute: "2-digit" })}
                     {" · "}
                     <span style={{ color: STATUS_COLORS[selected.status] }}>
-                      {STATUS_LABELS[selected.status]}
+                      {statusLabel(selected.status)}
                     </span>
                     {isHigh && (
-                      <span style={{ color: "#F87171", marginLeft: 8 }}>⚠ High severity</span>
+                      <span style={{ color: "#F87171", marginLeft: 8 }}>⚠ {t("reports.highSeverity")}</span>
                     )}
                   </div>
                 </div>
                 <div className="rp-modal-header-actions">
                   <button className="rp-print-btn" onClick={() => printReport(selected)}>
-                    ↓ Print
+                    {t("reports.print")}
                   </button>
                   <button className="rp-modal-close" onClick={() => setSelected(null)}>×</button>
                 </div>
@@ -913,38 +894,38 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
               {/* Body */}
               <div className="rp-modal-body">
                 {/* Parties */}
-                <div className="rp-modal-section">Parties</div>
+                <div className="rp-modal-section">{t("reports.parties")}</div>
                 <div className="rp-detail-row">
-                  <div className="rp-detail-label">Driver</div>
+                  <div className="rp-detail-label">{t("reports.driver")}</div>
                   <div className="rp-detail-value">
                     <div style={{ fontWeight: 600 }}>{selected.driver_name ?? "—"}</div>
                     {driverCount > 1 ? (
                       <div className="rp-driver-history-note">
-                        ⚠ {driverCount} total reports on file
+                        ⚠ {t("reports.totalOnFile", { count: driverCount })}
                       </div>
                     ) : (
                       <div className="rp-driver-history-ok">
-                        ✓ First report for this driver
+                        ✓ {t("reports.firstReport")}
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="rp-detail-row">
-                  <div className="rp-detail-label">Reported by</div>
+                  <div className="rp-detail-label">{t("reports.reportedBy")}</div>
                   <div className="rp-detail-value">{selected.passenger_name ?? "—"}</div>
                 </div>
 
                 {/* Incident */}
-                <div className="rp-modal-section">Incident</div>
+                <div className="rp-modal-section">{t("reports.incident")}</div>
                 <div className="rp-detail-row">
-                  <div className="rp-detail-label">Reason</div>
+                  <div className="rp-detail-label">{t("reports.reason")}</div>
                   <div className="rp-detail-value" style={{ fontWeight: 600 }}>
-                    {REASON_LABELS[selected.reason] ?? selected.reason}
+                    {reasonLabel(selected.reason)}
                   </div>
                 </div>
                 {selected.comment && (
                   <div className="rp-detail-row" style={{ flexDirection: "column", gap: 6 }}>
-                    <div className="rp-detail-label">Passenger comment</div>
+                    <div className="rp-detail-label">{t("reports.passengerComment")}</div>
                     <div className="rp-comment-block">"{selected.comment}"</div>
                   </div>
                 )}
@@ -952,12 +933,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                 {/* Ride context */}
                 {selected.ride_id && (
                   <>
-                    <div className="rp-modal-section">Associated Ride</div>
+                    <div className="rp-modal-section">{t("reports.associatedRide")}</div>
                     {selected.ride_date && (
                       <div className="rp-detail-row">
-                        <div className="rp-detail-label">Ride date</div>
+                        <div className="rp-detail-label">{t("reports.rideDate")}</div>
                         <div className="rp-detail-value">
-                          {new Date(selected.ride_date).toLocaleDateString("en-CA", {
+                          {fmtDate(selected.ride_date, {
                             weekday: "short", month: "short", day: "numeric", year: "numeric",
                           })}
                         </div>
@@ -965,19 +946,19 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                     )}
                     {selected.ride_pickup && (
                       <div className="rp-detail-row">
-                        <div className="rp-detail-label">Pickup</div>
+                        <div className="rp-detail-label">{t("reports.pickup")}</div>
                         <div className="rp-detail-value">{selected.ride_pickup}</div>
                       </div>
                     )}
                     {selected.ride_dropoff && (
                       <div className="rp-detail-row">
-                        <div className="rp-detail-label">Drop-off</div>
+                        <div className="rp-detail-label">{t("reports.dropoff")}</div>
                         <div className="rp-detail-value">{selected.ride_dropoff}</div>
                       </div>
                     )}
                     {selected.ride_fare != null && (
                       <div className="rp-detail-row">
-                        <div className="rp-detail-label">Fare</div>
+                        <div className="rp-detail-label">{t("reports.fare")}</div>
                         <div className="rp-detail-value" style={{ fontWeight: 600, color: "#1D9E75" }}>
                           ${Number(selected.ride_fare).toFixed(2)}
                         </div>
@@ -987,27 +968,27 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                 )}
 
                 {/* Resolution */}
-                <div className="rp-modal-section">Resolution</div>
+                <div className="rp-modal-section">{t("reports.resolution")}</div>
                 {isOpen ? (
                   <>
                     <div className="rp-notes-label">
-                      Action notes <span style={{ color: "#4B5563" }}>(optional — appears on printed report)</span>
+                      {t("reports.actionNotes")} <span style={{ color: "#4B5563" }}>{t("reports.actionNotesHint")}</span>
                     </div>
                     <textarea
                       ref={notesRef}
                       className="rp-notes-textarea"
-                      placeholder="e.g. Warning issued to driver, counseling scheduled…"
+                      placeholder={t("reports.actionNotesPlaceholder")}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
                     />
                   </>
                 ) : (
                   <div className="rp-detail-row" style={{ flexDirection: "column", gap: 6 }}>
-                    <div className="rp-detail-label">Resolution notes</div>
+                    <div className="rp-detail-label">{t("reports.resolutionNotes")}</div>
                     {selected.resolution_notes ? (
                       <div className="rp-notes-display">{selected.resolution_notes}</div>
                     ) : (
-                      <div className="rp-detail-value muted">No notes recorded.</div>
+                      <div className="rp-detail-value muted">{t("reports.noNotes")}</div>
                     )}
                   </div>
                 )}
@@ -1022,23 +1003,23 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       disabled={updating}
                       onClick={() => updateStatus(selected.id, "reviewed")}
                     >
-                      {updating ? "Saving…" : "✓ Mark reviewed"}
+                      {updating ? t("common.saving") : t("reports.markReviewed")}
                     </button>
                     <button
                       className="rp-btn rp-btn-dismissed"
                       disabled={updating}
                       onClick={() => updateStatus(selected.id, "dismissed")}
                     >
-                      Dismiss
+                      {t("reports.dismiss")}
                     </button>
                   </>
                 ) : (
                   <span style={{ fontSize: 12, color: "#6B7280", alignSelf: "center" }}>
-                    {selected.status === "reviewed" ? "✓ Marked reviewed" : "Dismissed"}
+                    {selected.status === "reviewed" ? t("reports.markedReviewed") : t("reports.statusDismissed")}
                   </span>
                 )}
                 <button className="rp-btn rp-btn-close" onClick={() => setSelected(null)}>
-                  Close
+                  {t("common.close")}
                 </button>
               </div>
             </div>

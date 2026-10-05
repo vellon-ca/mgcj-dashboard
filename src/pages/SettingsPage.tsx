@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import { fmtDate } from "../i18n/format";
+import { useLocale } from "../i18n/LocaleContext";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { invokeFunction } from "../lib/invokeFunction";
@@ -17,6 +20,7 @@ type Section =
   | "vehicle_classes"
   | "service_areas"
   | "numbering"
+  | "language"
   | "support"
   | "team";
 
@@ -30,15 +34,21 @@ interface DispatchReport {
   admin_name: string | null;
 }
 
-const REPORT_CATEGORIES: { id: string; label: string }[] = [
-  { id: "bug", label: "Bug / technical issue" },
-  { id: "driver_issue", label: "Driver issue" },
-  { id: "billing", label: "Payment / billing" },
-  { id: "feature_request", label: "Feature request" },
-  { id: "other", label: "Other" },
+// `labelKey`, not `label`. This array is module scope, so it is evaluated
+// before any language is active — storing English here would freeze it, and
+// storing a t() call would resolve against whatever locale happened to boot.
+// The convention of putting KEYS in these maps is also what keeps them
+// greppable: check-i18n.mjs can only see literal t("…") calls, so a dynamic
+// t(c.labelKey) is invisible to it and the key has to be findable by eye.
+const REPORT_CATEGORIES: { id: string; labelKey: string }[] = [
+  { id: "bug", labelKey: "settings.reportCategory.bug" },
+  { id: "driver_issue", labelKey: "settings.reportCategory.driverIssue" },
+  { id: "billing", labelKey: "settings.reportCategory.billing" },
+  { id: "feature_request", labelKey: "settings.reportCategory.featureRequest" },
+  { id: "other", labelKey: "settings.reportCategory.other" },
 ];
-const REPORT_CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  REPORT_CATEGORIES.map(c => [c.id, c.label])
+const REPORT_CATEGORY_KEYS: Record<string, string> = Object.fromEntries(
+  REPORT_CATEGORIES.map(c => [c.id, c.labelKey])
 );
 
 interface StaffMember {
@@ -55,17 +65,23 @@ interface StaffMember {
 }
 
 export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
+  const { t } = useTranslation();
+  const { localeMode, setLocaleMode, available } = useLocale();
   const SECTIONS: { id: Section; label: string }[] = isAdmin
     ? [
-        { id: "pricing", label: "Pricing" },
-        { id: "contact", label: "Contact" },
-        { id: "vehicle_classes", label: "Vehicle Classes" },
-        { id: "service_areas", label: "Service Areas" },
-        { id: "numbering", label: "Numbering" },
-        { id: "team", label: "Team" },
-        { id: "support", label: "Support" },
+        { id: "pricing", label: t("settings.sections.pricing") },
+        { id: "contact", label: t("settings.sections.contact") },
+        { id: "vehicle_classes", label: t("settings.sections.vehicleClasses") },
+        { id: "service_areas", label: t("settings.sections.serviceAreas") },
+        { id: "numbering", label: t("settings.sections.numbering") },
+        { id: "language", label: t("language.title") },
+        { id: "team", label: t("settings.sections.team") },
+        { id: "support", label: t("settings.sections.support") },
       ]
-    : [{ id: "support", label: "Support" }];
+    : [
+        { id: "language", label: t("language.title") },
+        { id: "support", label: t("settings.sections.support") },
+      ];
 
   // Bound to /settings/<section>. The allowed list is the role-filtered one, so
   // a dispatcher who deep-links /settings/pricing lands on Support rather than
@@ -203,8 +219,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
   async function addStaff() {
     setStaffError(null);
-    if (!newStaffName.trim()) { setStaffError("Name is required."); return; }
-    if (!newStaffEmail.trim()) { setStaffError("Email address is required."); return; }
+    if (!newStaffName.trim()) { setStaffError(t("settings.errNameRequired")); return; }
+    if (!newStaffEmail.trim()) { setStaffError(t("settings.errEmailRequired")); return; }
     setStaffSaving(true);
     // invokeFunction, not supabase.functions.invoke: a non-2xx RESOLVES INTO A
     // THROW with `data: null`, so reading `err.message` shows the dispatcher
@@ -213,7 +229,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     // "Forbidden -- admin only" -- sits unread in `err.context`.
     const { error: err } = await invokeFunction("create-staff-account", {
       name: newStaffName.trim(), email: newStaffEmail.trim(),
-    }, "Failed to create account.");
+    }, t("settings.errCreateFailed"));
     setStaffSaving(false);
     if (err) { setStaffError(err); return; }
     setAddingStaff(false);
@@ -231,13 +247,13 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   async function saveStaffEdit() {
     if (!editingStaffId) return;
     setEditStaffError(null);
-    if (!editStaffName.trim()) { setEditStaffError("Name is required."); return; }
-    if (!editStaffEmail.trim()) { setEditStaffError("Email address is required."); return; }
+    if (!editStaffName.trim()) { setEditStaffError(t("settings.errNameRequired")); return; }
+    if (!editStaffEmail.trim()) { setEditStaffError(t("settings.errEmailRequired")); return; }
     setEditStaffSaving(true);
     // Same reason as addStaff above -- the server's message lives in err.context.
     const { error: err } = await invokeFunction("update-staff-account", {
       staff_id: editingStaffId, name: editStaffName.trim(), email: editStaffEmail.trim(),
-    }, "Failed to save changes.");
+    }, t("settings.errSaveFailed"));
     setEditStaffSaving(false);
     if (err) { setEditStaffError(err); return; }
     // Optimistic local patch so the edited name/phone shows immediately.
@@ -262,7 +278,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     setStaffBusyId(null);
     if (err) { setStaffError(err.message); return; }
     if (!updated?.length) {
-      setStaffError("No rows updated — you can only manage dispatchers at your own company.");
+      setStaffError(t("settings.errNoRowsUpdated"));
       return;
     }
     // Optimistic local patch so the badge flips immediately (same as the driver
@@ -297,7 +313,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   async function submitReport() {
     setReportError(null);
     setReportSent(false);
-    if (!reportMessage.trim()) { setReportError("Please describe the problem."); return; }
+    if (!reportMessage.trim()) { setReportError(t("settings.errDescribeProblem")); return; }
     setReportSubmitting(true);
     const { error: err } = await supabase.from("dispatch_reports").insert({
       company_id: companyId,
@@ -370,9 +386,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     const before = vehicleClasses.find(v => v.id === editingClassId);
     const cap = parseInt(editCapacity);
     const sur = parseFloat(editSurcharge);
-    if (!editName.trim()) { setEditError("Name is required."); return; }
-    if (isNaN(cap) || cap < 1) { setEditError("Capacity must be at least 1."); return; }
-    if (isNaN(sur) || sur < 0) { setEditError("Surcharge must be 0 or greater."); return; }
+    if (!editName.trim()) { setEditError(t("settings.errNameRequired")); return; }
+    if (isNaN(cap) || cap < 1) { setEditError(t("settings.errCapacityMin")); return; }
+    if (isNaN(sur) || sur < 0) { setEditError(t("settings.errSurchargeMin")); return; }
     setEditSaving(true);
     const { error: err } = await supabase
       .from("vehicle_classes")
@@ -414,9 +430,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   async function addVehicleClass() {
     const cap = parseInt(newCapacity);
     const sur = parseFloat(newSurcharge);
-    if (!newName.trim()) { setAddError("Name is required."); return; }
-    if (isNaN(cap) || cap < 1) { setAddError("Capacity must be at least 1."); return; }
-    if (isNaN(sur) || sur < 0) { setAddError("Surcharge must be 0 or greater."); return; }
+    if (!newName.trim()) { setAddError(t("settings.errNameRequired")); return; }
+    if (isNaN(cap) || cap < 1) { setAddError(t("settings.errCapacityMin")); return; }
+    if (isNaN(sur) || sur < 0) { setAddError(t("settings.errSurchargeMin")); return; }
     setAddSaving(true);
     const nextOrder = Math.max(...vehicleClasses.map(v => v.display_order), -1) + 1;
     const { error: err } = await supabase.from("vehicle_classes").insert({
@@ -445,8 +461,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     setSaved(false);
     const base = parseFloat(baseFare);
     const rate = parseFloat(ratePerKm);
-    if (isNaN(base) || base < 0) { setError("Base fare must be a valid number."); return; }
-    if (isNaN(rate) || rate < 0) { setError("Rate per km must be a valid number."); return; }
+    if (isNaN(base) || base < 0) { setError(t("settings.errBaseFare")); return; }
+    if (isNaN(rate) || rate < 0) { setError(t("settings.errRatePerKm")); return; }
     setSaving(true);
     const { error: err } = await supabase
       .from("companies")
@@ -508,9 +524,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     const cp = parseInt(carPad, 10);
     const cs = parseInt(carStart, 10);
     const dp = parseInt(driverPad, 10);
-    if (isNaN(cp) || cp < 0 || cp > 6) { setNumError("Car padding must be between 0 and 6."); return; }
-    if (isNaN(dp) || dp < 0 || dp > 6) { setNumError("Driver padding must be between 0 and 6."); return; }
-    if (isNaN(cs) || cs < 0) { setNumError("Starting car number must be 0 or more."); return; }
+    if (isNaN(cp) || cp < 0 || cp > 6) { setNumError(t("settings.errCarPad")); return; }
+    if (isNaN(dp) || dp < 0 || dp > 6) { setNumError(t("settings.errDriverPad")); return; }
+    if (isNaN(cs) || cs < 0) { setNumError(t("settings.errCarStart")); return; }
     setNumSaving(true);
     const { error: err } = await supabase
       .from("companies")
@@ -670,7 +686,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
       <div className="st-wrap">
         <div className="st-panel">
-          <p className="st-panel-title">Settings</p>
+          <p className="st-panel-title">{t("settings.title")}</p>
           {SECTIONS.map(s => (
             <button
               key={s.id}
@@ -687,25 +703,23 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Vehicle Classes</div>
-                  <div className="st-subtitle">
-                    Define the vehicle types your fleet offers. Passengers choose a class at booking; the surcharge is applied on top of your base rate per km.
-                  </div>
+                  <div className="st-title">{t("settings.sections.vehicleClasses")}</div>
+                  <div className="st-subtitle">{t("settings.vcSubtitle")}</div>
                 </div>
               </div>
 
               {vcLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <>
                   <table className="vc-table" style={{ marginBottom: 4 }}>
                     <thead>
                       <tr>
-                        <th className="vc-th">Class</th>
-                        <th className="vc-th">Seats</th>
-                        <th className="vc-th">Surcharge</th>
-                        <th className="vc-th">Effective rate /km</th>
-                        <th className="vc-th">Status</th>
+                        <th className="vc-th">{t("settings.vcClass")}</th>
+                        <th className="vc-th">{t("settings.vcSeats")}</th>
+                        <th className="vc-th">{t("settings.vcSurcharge")}</th>
+                        <th className="vc-th">{t("settings.vcEffectiveRate")}</th>
+                        <th className="vc-th">{t("common.status")}</th>
                         <th className="vc-th" />
                       </tr>
                     </thead>
@@ -740,26 +754,26 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                             </td>
                             <td className="vc-td">
                               {isEditing
-                                ? <span className="vc-rate-preview">${previewRate.toFixed(2)}/km</span>
-                                : <span className={vc.is_active ? "vc-rate-preview" : "vc-td muted"}>${effectiveRate.toFixed(2)}/km</span>}
+                                ? <span className="vc-rate-preview">${previewRate.toFixed(2)}{t("common.perKm")}</span>
+                                : <span className={vc.is_active ? "vc-rate-preview" : "vc-td muted"}>${effectiveRate.toFixed(2)}{t("common.perKm")}</span>}
                             </td>
                             <td className="vc-td">
                               <span className={vc.is_active ? "vc-badge-active" : "vc-badge-inactive"}>
-                                {vc.is_active ? "Active" : "Inactive"}
+                                {vc.is_active ? t("common.active") : t("common.inactive")}
                               </span>
                             </td>
                             <td className="vc-td right" style={{ whiteSpace: 'nowrap' }}>
                               {isEditing ? (
                                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                  <button className="vc-btn" onClick={() => { setEditingClassId(null); setEditError(null); }}>Cancel</button>
-                                  <button className="vc-btn-save" onClick={saveEditClass} disabled={editSaving}>{editSaving ? '…' : 'Save'}</button>
+                                  <button className="vc-btn" onClick={() => { setEditingClassId(null); setEditError(null); }}>{t("common.cancel")}</button>
+                                  <button className="vc-btn-save" onClick={saveEditClass} disabled={editSaving}>{editSaving ? '…' : t("common.save")}</button>
                                 </div>
                               ) : (
                                 <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                  <button className="vc-btn" onClick={() => openEditClass(vc)}>Edit</button>
+                                  <button className="vc-btn" onClick={() => openEditClass(vc)}>{t("common.edit")}</button>
                                   {vehicleClasses.length > 1 && (
                                     <button className="vc-btn" onClick={() => toggleClassActive(vc)}>
-                                      {vc.is_active ? 'Deactivate' : 'Activate'}
+                                      {vc.is_active ? t("common.deactivate") : t("common.activate")}
                                     </button>
                                   )}
                                 </div>
@@ -776,15 +790,15 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     <div className="vc-add-row">
                       <div className="vc-add-grid">
                         <div className="vc-add-field">
-                          <div className="vc-add-label">Class name</div>
-                          <input className="vc-input" placeholder="e.g. SUV" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+                          <div className="vc-add-label">{t("settings.vcClassName")}</div>
+                          <input className="vc-input" placeholder={t("settings.vcClassNamePlaceholder")} value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
                         </div>
                         <div className="vc-add-field">
-                          <div className="vc-add-label">Seats</div>
+                          <div className="vc-add-label">{t("settings.vcSeats")}</div>
                           <input className="vc-input" type="number" min="1" placeholder="5" value={newCapacity} onChange={e => setNewCapacity(e.target.value)} />
                         </div>
                         <div className="vc-add-field">
-                          <div className="vc-add-label">Surcharge %</div>
+                          <div className="vc-add-label">{t("settings.vcSurchargePct")}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <input className="vc-input" type="number" min="0" step="0.5" placeholder="0" value={newSurcharge} onChange={e => setNewSurcharge(e.target.value)} />
                             <span style={{ color: '#6B7280', fontSize: 12, flexShrink: 0 }}>%</span>
@@ -793,18 +807,18 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                       </div>
                       {newSurcharge && !isNaN(parseFloat(newSurcharge)) && (
                         <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
-                          Effective rate: <span className="vc-rate-preview">${((parseFloat(savedRatePerKm) || 0) * (1 + parseFloat(newSurcharge) / 100)).toFixed(2)}/km</span>
+                          {t("settings.vcEffectiveRateInline")} <span className="vc-rate-preview">${((parseFloat(savedRatePerKm) || 0) * (1 + parseFloat(newSurcharge) / 100)).toFixed(2)}{t("common.perKm")}</span>
                         </div>
                       )}
                       {addError && <div className="vc-error">{addError}</div>}
                       <div className="vc-add-actions">
-                        <button className="vc-add-cancel" onClick={() => { setAddingClass(false); setNewName(''); setNewCapacity(''); setNewSurcharge('0'); setAddError(null); }}>Cancel</button>
-                        <button className="vc-add-save" onClick={addVehicleClass} disabled={addSaving}>{addSaving ? 'Saving…' : 'Add class'}</button>
+                        <button className="vc-add-cancel" onClick={() => { setAddingClass(false); setNewName(''); setNewCapacity(''); setNewSurcharge('0'); setAddError(null); }}>{t("common.cancel")}</button>
+                        <button className="vc-add-save" onClick={addVehicleClass} disabled={addSaving}>{addSaving ? t("common.saving") : t("settings.vcAddClass")}</button>
                       </div>
                     </div>
                   ) : (
                     <button className="vc-add-class-btn" onClick={() => setAddingClass(true)}>
-                      <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add vehicle class
+                      <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("settings.vcAddVehicleClass")}
                     </button>
                   )}
                 </>
@@ -816,9 +830,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Pricing</div>
+                  <div className="st-title">{t("settings.sections.pricing")}</div>
                   <div className="st-subtitle">
-                    Fare estimates shown to passengers: <strong style={{ color: "#E2E8F0" }}>base fare + (km × rate)</strong>
+                    <Trans
+                      i18nKey="settings.pricingSubtitle"
+                      components={{ s: <strong style={{ color: "#E2E8F0" }} /> }}
+                    />
                   </div>
                 </div>
                 <button
@@ -826,20 +843,20 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   onClick={save}
                   disabled={saving || loading}
                 >
-                  {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+                  {saving ? t("common.saving") : saved ? t("common.saved") : t("common.save")}
                 </button>
               </div>
 
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <div className="st-card">
-                  <p className="st-card-label">Fare formula</p>
+                  <p className="st-card-label">{t("settings.fareFormula")}</p>
 
                   <div className="st-field-row">
                     <div className="st-field-text">
-                      <span className="st-field-label">Base fare</span>
-                      <span className="st-field-hint">Flat fee at the start of every ride</span>
+                      <span className="st-field-label">{t("settings.baseFare")}</span>
+                      <span className="st-field-hint">{t("settings.baseFareHint")}</span>
                     </div>
                     <div className="st-input-wrap">
                       <span className="st-prefix">$</span>
@@ -858,8 +875,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                   <div className="st-field-row">
                     <div className="st-field-text">
-                      <span className="st-field-label">Rate per km</span>
-                      <span className="st-field-hint">Applied to the routed distance</span>
+                      <span className="st-field-label">{t("settings.ratePerKm")}</span>
+                      <span className="st-field-hint">{t("settings.ratePerKmHint")}</span>
                     </div>
                     <div className="st-input-wrap">
                       <span className="st-prefix">$</span>
@@ -871,7 +888,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         value={ratePerKm}
                         onChange={e => { setRatePerKm(e.target.value); setSaved(false); }}
                       />
-                      <span className="st-suffix">/km</span>
+                      <span className="st-suffix">{t("common.perKm")}</span>
                     </div>
                   </div>
 
@@ -886,9 +903,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Contact</div>
+                  <div className="st-title">{t("settings.sections.contact")}</div>
                   <div className="st-subtitle">
-                    How passengers and drivers reach <strong style={{ color: "#E2E8F0" }}>you</strong> from the apps — not how you reach Vellon, which is under Support
+                    <Trans
+                      i18nKey="settings.contactSubtitle"
+                      components={{ s: <strong style={{ color: "#E2E8F0" }} /> }}
+                    />
                   </div>
                 </div>
                 <button
@@ -896,7 +916,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   onClick={saveContact}
                   disabled={contactSaving || loading}
                 >
-                  {contactSaving ? "Saving…" : contactSaved ? "Saved ✓" : "Save"}
+                  {contactSaving ? t("common.saving") : contactSaved ? t("common.saved") : t("common.save")}
                 </button>
               </div>
 
@@ -906,17 +926,14 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   app renders no card at all rather than a dead one — so this is
                   worth filling in at onboarding. */}
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <div className="st-card">
-                  <p className="st-card-label">Shown in the apps</p>
+                  <p className="st-card-label">{t("settings.shownInApps")}</p>
                   <div className="st-field-row st-field-row--wide">
                     <div className="st-field-text">
-                      <span className="st-field-label">Phone number</span>
-                      <span className="st-field-hint">
-                        Shown to passengers who flag a problem during a ride, and
-                        on the Help screen in both apps
-                      </span>
+                      <span className="st-field-label">{t("settings.phoneNumber")}</span>
+                      <span className="st-field-hint">{t("settings.phoneNumberHint")}</span>
                     </div>
                     <div className="st-input-wrap st-input-wrap--grow">
                       <input
@@ -934,17 +951,14 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                       dead one. */}
                   <div className="st-field-row st-field-row--wide">
                     <div className="st-field-text">
-                      <span className="st-field-label">Support email</span>
-                      <span className="st-field-hint">
-                        Where passengers and drivers email you from the app's
-                        Help screen. Not your billing address.
-                      </span>
+                      <span className="st-field-label">{t("settings.supportEmail")}</span>
+                      <span className="st-field-hint">{t("settings.supportEmailHint")}</span>
                     </div>
                     <div className="st-input-wrap st-input-wrap--grow">
                       <input
                         className="st-input st-input--text"
                         type="email"
-                        placeholder="dispatch@yourcompany.ca"
+                        placeholder={t("settings.supportEmailPlaceholder")}
                         value={supportEmail}
                         onChange={e => { setSupportEmail(e.target.value); setContactSaved(false); }}
                       />
@@ -965,43 +979,40 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Numbering</div>
-                  <div className="st-subtitle">
-                    How car and driver numbers are written. Formatting only —
-                    changing these never renumbers anyone.
-                  </div>
+                  <div className="st-title">{t("settings.sections.numbering")}</div>
+                  <div className="st-subtitle">{t("settings.numberingSubtitle")}</div>
                 </div>
                 <button
                   className={`st-save-btn${numSaved ? " st-saved" : ""}`}
                   onClick={saveNumbering}
                   disabled={numSaving || loading}
                 >
-                  {numSaving ? "Saving…" : numSaved ? "Saved ✓" : "Save"}
+                  {numSaving ? t("common.saving") : numSaved ? t("common.saved") : t("common.save")}
                 </button>
               </div>
 
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <>
                   <div className="st-card">
                     <p className="st-card-label">
-                      Car numbers &nbsp;·&nbsp; next: <strong style={{ color: "#E2E8F0" }}>
+                      {t("settings.carNumbersNext")} <strong style={{ color: "#E2E8F0" }}>
                         {preview(carPrefix, carPad, parseInt(carStart, 10) || 1)}
                       </strong>
                     </p>
 
                     <div className="st-field-row">
                       <div className="st-field-text">
-                        <span className="st-field-label">Prefix</span>
-                        <span className="st-field-hint">Leave blank for plain numbers</span>
+                        <span className="st-field-label">{t("settings.prefix")}</span>
+                        <span className="st-field-hint">{t("settings.prefixHint")}</span>
                       </div>
                       <div className="st-input-wrap">
                         <input
                           className="st-input"
                           type="text"
                           maxLength={8}
-                          placeholder="none"
+                          placeholder={t("settings.nonePlaceholder")}
                           value={carPrefix}
                           onChange={e => { setCarPrefix(e.target.value); setNumSaved(false); }}
                         />
@@ -1012,8 +1023,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                     <div className="st-field-row">
                       <div className="st-field-text">
-                        <span className="st-field-label">Digits</span>
-                        <span className="st-field-hint">Pad with leading zeros — 3 gives 007, 0 gives 7</span>
+                        <span className="st-field-label">{t("settings.digits")}</span>
+                        <span className="st-field-hint">{t("settings.digitsHint")}</span>
                       </div>
                       <div className="st-input-wrap">
                         <input
@@ -1031,11 +1042,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                     <div className="st-field-row">
                       <div className="st-field-text">
-                        <span className="st-field-label">Start at</span>
-                        <span className="st-field-hint">
-                          Where a new car number is suggested from. Numbers are reused —
-                          when a car is retired its number becomes free again.
-                        </span>
+                        <span className="st-field-label">{t("settings.startAt")}</span>
+                        <span className="st-field-hint">{t("settings.startAtHint")}</span>
                       </div>
                       <div className="st-input-wrap">
                         <input
@@ -1051,22 +1059,22 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                   <div className="st-card">
                     <p className="st-card-label">
-                      Driver numbers &nbsp;·&nbsp; example: <strong style={{ color: "#E2E8F0" }}>
+                      {t("settings.driverNumbersExample")} <strong style={{ color: "#E2E8F0" }}>
                         {preview(driverPrefix, driverPad, 7)}
                       </strong>
                     </p>
 
                     <div className="st-field-row">
                       <div className="st-field-text">
-                        <span className="st-field-label">Prefix</span>
-                        <span className="st-field-hint">Leave blank for plain numbers</span>
+                        <span className="st-field-label">{t("settings.prefix")}</span>
+                        <span className="st-field-hint">{t("settings.prefixHint")}</span>
                       </div>
                       <div className="st-input-wrap">
                         <input
                           className="st-input"
                           type="text"
                           maxLength={8}
-                          placeholder="none"
+                          placeholder={t("settings.nonePlaceholder")}
                           value={driverPrefix}
                           onChange={e => { setDriverPrefix(e.target.value); setNumSaved(false); }}
                         />
@@ -1077,8 +1085,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                     <div className="st-field-row">
                       <div className="st-field-text">
-                        <span className="st-field-label">Digits</span>
-                        <span className="st-field-hint">Pad with leading zeros — 3 gives 007, 0 gives 7</span>
+                        <span className="st-field-label">{t("settings.digits")}</span>
+                        <span className="st-field-hint">{t("settings.digitsHint")}</span>
                       </div>
                       <div className="st-input-wrap">
                         <input
@@ -1093,9 +1101,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     </div>
 
                     <p className="st-field-hint" style={{ marginTop: 12, display: "block" }}>
-                      Driver numbers are issued in order as drivers join and are never
-                      reused — a number always points at the same person, which is what
-                      lets an old ride record still resolve correctly.
+                      {t("settings.driverNumbersNote")}
                     </p>
 
                     {numError && <p className="st-error">{numError}</p>}
@@ -1109,15 +1115,15 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Team</div>
+                  <div className="st-title">{t("settings.sections.team")}</div>
                   <div className="st-subtitle">
-                    Add and manage dispatchers, who handle day-to-day ride ops. Admin accounts (pricing, discounts, staff) are managed by Vellon — contact us to add or change one.
+                    {t("settings.teamSubtitle")}
                   </div>
                 </div>
               </div>
 
               {staffLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <table className="tm-table" style={{ marginBottom: 4 }}>
                   <tbody>
@@ -1130,18 +1136,18 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                             <td className="tm-td" colSpan={5}>
                               <div className="vc-add-grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 10 }}>
                                 <div className="vc-add-field">
-                                  <div className="vc-add-label">Name</div>
+                                  <div className="vc-add-label">{t("common.name")}</div>
                                   <input className="vc-input" value={editStaffName} onChange={e => setEditStaffName(e.target.value)} autoFocus />
                                 </div>
                                 <div className="vc-add-field">
-                                  <div className="vc-add-label">Email</div>
+                                  <div className="vc-add-label">{t("common.email")}</div>
                                   <input className="vc-input" type="email" value={editStaffEmail} onChange={e => setEditStaffEmail(e.target.value)} />
                                 </div>
                               </div>
                               {editStaffError && <div className="vc-error" style={{ marginBottom: 8 }}>{editStaffError}</div>}
                               <div className="vc-add-actions">
-                                <button className="vc-add-cancel" onClick={() => { setEditingStaffId(null); setEditStaffError(null); }}>Cancel</button>
-                                <button className="vc-add-save" onClick={saveStaffEdit} disabled={editStaffSaving}>{editStaffSaving ? 'Saving…' : 'Save'}</button>
+                                <button className="vc-add-cancel" onClick={() => { setEditingStaffId(null); setEditStaffError(null); }}>{t("common.cancel")}</button>
+                                <button className="vc-add-save" onClick={saveStaffEdit} disabled={editStaffSaving}>{editStaffSaving ? t("common.saving") : t("common.save")}</button>
                               </div>
                             </td>
                           </tr>
@@ -1150,35 +1156,39 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                       return (
                         <tr key={member.id} className="tm-row">
                           <td className="tm-td" style={{ minWidth: 140 }}>
-                            <strong>{member.name ?? "Unnamed"}</strong>
-                            {member.id === adminId && <span className="tm-td muted"> (you)</span>}
+                            <strong>{member.name ?? t("common.unnamed")}</strong>
+                            {member.id === adminId && <span className="tm-td muted"> {t("settings.you")}</span>}
                           </td>
                           <td className="tm-td muted">
-                            {member.email || <span style={{ opacity: 0.6 }}>No email — cannot sign in</span>}
+                            {member.email || <span style={{ opacity: 0.6 }}>{t("settings.noEmail")}</span>}
                             {member.phone && (
                               <div style={{ fontSize: 11, opacity: 0.7 }}>{member.phone}</div>
                             )}
                           </td>
                           <td className="tm-td">
-                            <span className="tm-badge-role">{member.role}</span>
+                            {/* The raw column value renders as English ("admin",
+                                "dispatcher") and is not a copy string, so no
+                                scanner can see it — the same hazard class as a
+                                hardcoded locale tag. */}
+                            <span className="tm-badge-role">{t(`settings.role.${member.role}`)}</span>
                           </td>
                           <td className="tm-td">
                             <span className={member.is_active ? "vc-badge-active" : "vc-badge-inactive"}>
-                              {member.is_active ? "Active" : "Deactivated"}
+                              {member.is_active ? t("common.active") : t("common.deactivated")}
                             </span>
                           </td>
                           <td className="tm-td right" style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                             {isAdminRow ? (
-                              <span className="tm-td muted" style={{ fontSize: 11 }}>Managed by Vellon</span>
+                              <span className="tm-td muted" style={{ fontSize: 11 }}>{t("settings.managedByVellon")}</span>
                             ) : (
                               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                                <button className="vc-btn" onClick={() => openEditStaff(member)}>Edit</button>
+                                <button className="vc-btn" onClick={() => openEditStaff(member)}>{t("common.edit")}</button>
                                 <button
                                   className="vc-btn"
                                   onClick={() => toggleStaffActive(member)}
                                   disabled={staffBusyId === member.id}
                                 >
-                                  {staffBusyId === member.id ? '…' : member.is_active ? 'Deactivate' : 'Reactivate'}
+                                  {staffBusyId === member.id ? '…' : member.is_active ? t("common.deactivate") : t("common.reactivate")}
                                 </button>
                               </div>
                             )}
@@ -1193,24 +1203,67 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               {addingStaff ? (
                 <div className="vc-add-row">
                   <div className="vc-add-field" style={{ marginBottom: 10 }}>
-                    <div className="vc-add-label">Name</div>
-                    <input className="vc-input" placeholder="Full name" value={newStaffName} onChange={e => setNewStaffName(e.target.value)} autoFocus />
+                    <div className="vc-add-label">{t("common.name")}</div>
+                    <input className="vc-input" placeholder={t("settings.fullNamePlaceholder")} value={newStaffName} onChange={e => setNewStaffName(e.target.value)} autoFocus />
                   </div>
                   <div className="vc-add-field" style={{ marginBottom: 10 }}>
-                    <div className="vc-add-label">Email</div>
-                    <input className="vc-input" type="email" placeholder="dispatcher@company.ca" value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} />
+                    <div className="vc-add-label">{t("common.email")}</div>
+                    <input className="vc-input" type="email" placeholder={t("settings.staffEmailPlaceholder")} value={newStaffEmail} onChange={e => setNewStaffEmail(e.target.value)} />
                   </div>
                   {staffError && <div className="vc-error">{staffError}</div>}
                   <div className="vc-add-actions">
-                    <button className="vc-add-cancel" onClick={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffEmail(''); setStaffError(null); }}>Cancel</button>
-                    <button className="vc-add-save" onClick={addStaff} disabled={staffSaving}>{staffSaving ? 'Adding…' : 'Add dispatcher'}</button>
+                    <button className="vc-add-cancel" onClick={() => { setAddingStaff(false); setNewStaffName(''); setNewStaffEmail(''); setStaffError(null); }}>{t("common.cancel")}</button>
+                    <button className="vc-add-save" onClick={addStaff} disabled={staffSaving}>{staffSaving ? t("settings.adding") : t("settings.addDispatcher")}</button>
                   </div>
                 </div>
               ) : (
                 <button className="vc-add-class-btn" onClick={() => setAddingStaff(true)}>
-                  <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add dispatcher
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> {t("settings.addDispatcher")}
                 </button>
               )}
+            </>
+          )}
+
+          {section === "language" && (
+            <>
+              <div className="st-header">
+                <div>
+                  <div className="st-title">{t("language.title")}</div>
+                  <div className="st-subtitle">{t("language.description")}</div>
+                </div>
+              </div>
+
+              <div className="st-card">
+                {/* "Automatic" is listed first and is the DEFAULT, not a reset:
+                    it means "nothing chosen in this browser", which is what
+                    lets `profiles.locale` — a choice made at another desk —
+                    take effect here. Picking a language explicitly outranks it.
+                    See src/i18n/LocaleContext.tsx for the full precedence. */}
+                <button
+                  className={`st-section-btn${localeMode === "system" ? " active" : ""}`}
+                  style={{ width: "100%", textAlign: "left" }}
+                  onClick={() => setLocaleMode("system")}
+                >
+                  {t("language.system")}
+                  <span className="st-field-hint" style={{ display: "block" }}>
+                    {t("language.systemHint")}
+                  </span>
+                </button>
+                {available.map(l => (
+                  <button
+                    key={l.tag}
+                    className={`st-section-btn${localeMode === l.tag ? " active" : ""}`}
+                    style={{ width: "100%", textAlign: "left" }}
+                    onClick={() => setLocaleMode(l.tag)}
+                    lang={l.tag}
+                  >
+                    {/* The endonym, never a translated language name: this list
+                        has to be readable to someone who cannot read the
+                        language the dashboard is currently in. */}
+                    {l.endonym}
+                  </button>
+                ))}
+              </div>
             </>
           )}
 
@@ -1218,15 +1271,15 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             <>
               <div className="st-header">
                 <div>
-                  <div className="st-title">Support</div>
+                  <div className="st-title">{t("settings.sections.support")}</div>
                   <div className="st-subtitle">
-                    Report a bug, a driver issue, or anything else — this goes straight to the Vellon team.
+                    {t("settings.supportSubtitle")}
                   </div>
                 </div>
               </div>
 
               <div className="st-card">
-                <p className="st-card-label">New report</p>
+                <p className="st-card-label">{t("settings.newReport")}</p>
 
                 <select
                   className="st-select"
@@ -1234,13 +1287,13 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   onChange={e => setReportCategory(e.target.value)}
                 >
                   {REPORT_CATEGORIES.map(c => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
+                    <option key={c.id} value={c.id}>{t(c.labelKey)}</option>
                   ))}
                 </select>
 
                 <textarea
                   className="st-textarea"
-                  placeholder="Describe the problem…"
+                  placeholder={t("settings.describeProblem")}
                   value={reportMessage}
                   onChange={e => { setReportMessage(e.target.value); setReportSent(false); }}
                 />
@@ -1253,30 +1306,30 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     onClick={submitReport}
                     disabled={reportSubmitting}
                   >
-                    {reportSubmitting ? "Sending…" : reportSent ? "Sent ✓" : "Send report"}
+                    {reportSubmitting ? t("settings.sending") : reportSent ? t("settings.sent") : t("settings.sendReport")}
                   </button>
                 </div>
               </div>
 
-              <p className="st-card-label" style={{ marginTop: 24 }}>Company reports</p>
+              <p className="st-card-label" style={{ marginTop: 24 }}>{t("settings.companyReports")}</p>
               {reportsLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>Loading…</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
               ) : reports.length === 0 ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>No reports yet.</div>
+                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("settings.noReports")}</div>
               ) : (
                 <table className="rp-table">
                   <tbody>
                     {reports.map(r => (
                       <tr key={r.id} className="rp-row">
                         <td className="rp-td" style={{ width: "60%" }}>
-                          <div className="rp-cat">{REPORT_CATEGORY_LABELS[r.category] ?? r.category}</div>
+                          <div className="rp-cat">{REPORT_CATEGORY_KEYS[r.category] ? t(REPORT_CATEGORY_KEYS[r.category]) : r.category}</div>
                           <div className="rp-msg">{r.message}</div>
                         </td>
-                        <td className="rp-td muted">{r.admin_name ?? "Unknown"}</td>
-                        <td className="rp-td muted">{new Date(r.created_at).toLocaleDateString()}</td>
+                        <td className="rp-td muted">{r.admin_name ?? t("common.unknown")}</td>
+                        <td className="rp-td muted">{fmtDate(r.created_at)}</td>
                         <td className="rp-td">
                           <span className={r.status === "resolved" ? "rp-badge-resolved" : "rp-badge-open"}>
-                            {r.status === "resolved" ? "Resolved" : "Open"}
+                            {r.status === "resolved" ? t("settings.resolved") : t("settings.open")}
                           </span>
                         </td>
                       </tr>

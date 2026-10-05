@@ -9,7 +9,7 @@ This is the React / Vite / TypeScript web dispatch dashboard for the M&G C&J tax
 ## Repo-Specific Stack Details
 
 - Deployed at: `vellon-dispatch.vercel.app`
-- Hosting: Vercel, auto-deploy on push to `main` (the repo has no other branches and no CI config — no GitHub Actions, no `vercel.json`).
+- Hosting: Vercel, auto-deploy on push to `main`. **This line used to say the repo has no CI and no `vercel.json`; both are now false** — see the CI section below (`build.yml`, `secret-scan.yml`) and the committed `vercel.json`.
 - Env vars / secrets managed: locally via a gitignored `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_KEY`), read through `import.meta.env` in `src/lib/supabase.ts` and `src/pages/DashboardPage.tsx`. Where the production values live (presumably Vercel project settings) isn't configured anywhere in this repo — can't confirm from the code alone.
 
 ---
@@ -72,8 +72,9 @@ There's no router — `App.tsx` switches screens purely on auth state, and `Dash
 ## Local Conventions
 
 - **New top-level sections are added as overlay pages inside `DashboardPage`, not new routes.** `AnalyticsPage` and `ReportsPage` both follow the same pattern: a standalone component permanently mounted inside `DashboardPage`'s JSX, toggled visible via a `showX` boolean and `display: showX ? "flex" : "none"` (never conditionally rendered/unmounted) so internal state and the map underneath survive switching. Follow this precedent for any new dashboard-level section rather than introducing a router.
-- **Per-page scoped CSS-in-template-string, no shared design tokens.** Every page defines its own `<style>{\`...\`}</style>` block with hand-prefixed class names (`db-`, `an-`, `rp-`, `login-`, `dd-`). Hex colors (brand orange `#E8500A`, panel bg `#1E2A3A`, page bg `#111827`, danger `#F87171`/`#E24B4A`, success `#1D9E75`, etc.) and `STATUS_COLORS`/`STATUS_LABELS` ride-status maps are **copy-pasted independently into `DashboardPage.tsx`, `AnalyticsPage.tsx`, and `ReportsPage.tsx`** (the latter has its own distinct map for report statuses). There's no shared constants/theme file — if you change a status color or label, you currently have to change it in multiple places by hand.
-- **`cancelled_reason` display** (added 2026-07-11, both `DashboardPage.tsx` and `AnalyticsPage.tsx`): the status badge itself stays plain red/"Cancelled" regardless of reason — the reason is never baked into the badge. Instead it's added as one more row in each page's existing `[label, value][]` detail-row list (same plain pattern as "Pickup"/"Payment"/etc, no special styling): a `"Cancelled reason"` row is conditionally appended — after "Scheduled" in `DashboardPage.tsx`'s ride-detail modal, at the end of the list in `AnalyticsPage.tsx`'s ride-detail modal (which has no "Scheduled" row to key off) — only when `status === 'cancelled' && cancelled_reason` is set. Both pages independently define their own `CANCEL_REASON_LABELS` map, same copy-paste-per-page convention as `STATUS_LABELS`/`STATUS_COLORS`. Four reasons currently exist, covering both immediate and scheduled rides: `timeout` and `missed_window` are system auto-cancels from the mobile-app backend's `expire-pending-rides` (immediate ride with no driver found in 5 min, and scheduled ride whose pickup time passed 20+ min with no driver ever engaged, respectively); `passenger_cancelled` is stamped client-side wherever the passenger app cancels a ride (`ScheduledRidesScreen.tsx` for scheduled, `PassengerHomeScreen.tsx::cancelRide()` for whatever ride is currently active/tracked — immediate or scheduled); `dispatch_cancelled` is stamped by this dashboard's own `cancelRide()`. Any new cancel-mutation call site (either repo) should stamp a `cancelled_reason` — a bare `{ status: 'cancelled' }` update with no reason silently falls back to the plain "Cancelled" badge with no detail row. Note: neither reason can ever appear in the driver-detail panel's ride history, since both only apply to rides that never got a `driver_id` assigned, and that panel's query is scoped to a specific driver's rides. Any query feeding a ride-detail modal must select `cancelled_reason` (`AnalyticsPage.tsx`'s `RideRow` type and `fetchRideHistory()` mapping were updated to carry it through).
+- **Per-page scoped CSS-in-template-string, no shared design tokens.** Every page defines its own `<style>{\`...\`}</style>` block with hand-prefixed class names (`db-`, `an-`, `rp-`, `login-`, `dd-`). Hex colors (brand orange `#E8500A`, panel bg `#1E2A3A`, page bg `#111827`, danger `#F87171`/`#E24B4A`, success `#1D9E75`, etc.) and the `STATUS_COLORS` maps are **still copy-pasted independently into `DashboardPage.tsx`, `AnalyticsPage.tsx` and `ReportsPage.tsx`** — if you change a status colour you change it in several places by hand. **The LABEL maps are no longer duplicated**: `STATUS_LABELS`, `CANCEL_REASON_LABELS`, `SETTLEMENT_ROUTE_LABELS`, `REFUND_REASON_LABELS`, the driver-report reasons, the flag reasons and `noShowEvidence()` all moved to **`src/lib/labels.ts`** on 2026-10-04 when they became translation keys. i18n is what forced that: three verbatim copies of one list are survivable in English and become three parallel key sets in every added language, each able to drift silently in a language the person editing cannot read. Colours stayed put because they are styling, not copy.
+
+- **`cancelled_reason` display** (added 2026-07-11, both `DashboardPage.tsx` and `AnalyticsPage.tsx`): the status badge itself stays plain red/"Cancelled" regardless of reason — the reason is never baked into the badge. Instead it's added as one more row in each page's existing `[label, value][]` detail-row list (same plain pattern as "Pickup"/"Payment"/etc, no special styling): a `"Cancelled reason"` row is conditionally appended — after "Scheduled" in `DashboardPage.tsx`'s ride-detail modal, at the end of the list in `AnalyticsPage.tsx`'s ride-detail modal (which has no "Scheduled" row to key off) — only when `status === 'cancelled' && cancelled_reason` is set. Both pages now read one `CANCEL_REASON_KEYS` map from `src/lib/labels.ts` (it was a per-page copy until 2026-10-04). Four reasons currently exist, covering both immediate and scheduled rides: `timeout` and `missed_window` are system auto-cancels from the mobile-app backend's `expire-pending-rides` (immediate ride with no driver found in 5 min, and scheduled ride whose pickup time passed 20+ min with no driver ever engaged, respectively); `passenger_cancelled` is stamped client-side wherever the passenger app cancels a ride (`ScheduledRidesScreen.tsx` for scheduled, `PassengerHomeScreen.tsx::cancelRide()` for whatever ride is currently active/tracked — immediate or scheduled); `dispatch_cancelled` is stamped by this dashboard's own `cancelRide()`. Any new cancel-mutation call site (either repo) should stamp a `cancelled_reason` — a bare `{ status: 'cancelled' }` update with no reason silently falls back to the plain "Cancelled" badge with no detail row. Note: neither reason can ever appear in the driver-detail panel's ride history, since both only apply to rides that never got a `driver_id` assigned, and that panel's query is scoped to a specific driver's rides. Any query feeding a ride-detail modal must select `cancelled_reason` (`AnalyticsPage.tsx`'s `RideRow` type and `fetchRideHistory()` mapping were updated to carry it through).
 - **Modals are plain conditionally-rendered overlay divs** (`{x && <div className="*-modal-overlay">...}`), not a shared `<Modal>` component — each page reimplements its own overlay/modal/close-button markup.
 - **CSV export**: a small local `downloadCSV(filename, headers, rows)` helper in `AnalyticsPage.tsx` builds a CSV string client-side and triggers a download via a `Blob` + temporary `<a>` click — no server endpoint involved.
 - **PDF export** is actually a `window.open()` + `document.write()` of styled HTML followed by `win.print()` (see `printReport()` in `AnalyticsPage.tsx`) — relies on the user choosing "Save as PDF" in the browser print dialog, there's no real PDF generation library.
@@ -82,10 +83,148 @@ There's no router — `App.tsx` switches screens purely on auth state, and `Dash
 
 ---
 
+## Multi-language (i18n) — shipped 2026-10-04
+
+The dashboard is bilingual (en + fr), the same shape as `mgcj-app`'s client half
+and deliberately parallel to it: `src/i18n/` holds the runtime, `src/i18n/locales/{en,fr}.json`
+the bundles (**954 keys each**), and `npm run check:i18n` is the gate. en+fr is a
+**pause, not the final list** — see the tier table in
+`mgcj-app/.claude/notes/i18n-design.md`, which prices a language by its script,
+not its word count.
+
+**This reopened a scope decision.** That design note recorded `mgcj-dashboard` as
+out of scope ("staff-facing, small known audience"); Victor reversed it on
+2026-10-04 and the note now says so. Don't re-close it from the old line.
+
+### Precedence: explicit pick > `profiles.locale` > `navigator.languages`
+
+Three sources, not the app's two, and the order is load-bearing — the full
+reasoning is at the top of `src/i18n/LocaleContext.tsx`. Two rules from it:
+
+- **`"system"` means "nothing chosen in THIS browser"**, not "follow the OS". It
+  is what lets a choice made at another desk take effect here.
+- **The mirror-write fires only on an explicit pick** (`src/i18n/useLocaleSync.ts`,
+  mounted in `App.tsx` — never in the provider, which must not touch the Supabase
+  client; see that file for the `onAuthStateChange` deadlock it avoids).
+  Stamping `profiles.locale` from browser detection would make a detected
+  language indistinguishable from a deliberate one, forever.
+
+`locale` is in `PROFILE_COLUMNS` (edit 3 of the `profiles` three-edit rule). The
+grant already exists — `mgcj-app` migration `20261003000000`, applied and verified
+on both projects — so no migration was needed here. **A `profiles` column with no
+grant reads EMPTY rather than failing**, so if source 2 ever appears dead, check
+`has_column_privilege` before suspecting this code.
+
+### What the scanner cannot see, and what was wrong because of it
+
+`node scripts/find-strings.mjs src` (also `npm run find:strings`) is the app's AST
+scanner, ported. Its RULES ARE SCAR TISSUE — the header in that file lists nine
+shapes a regex version shipped English through. Three findings specific to here:
+
+- **68 `toLocale*` calls, 66 of them with a hardcoded `"en-CA"`.** A hardcoded tag
+  survives a translation sweep intact and wrong: French labels above English
+  dates, nothing failing, no string for a scanner to find. All now go through
+  **`src/i18n/format.ts`**. The two that passed `[]`/`undefined` were worse —
+  they followed the browser and so ignored an explicit pick too.
+- **Labels COMPUTED from identifiers.** `tab.charAt(0).toUpperCase() + tab.slice(1)`
+  and `p.charAt(0).toUpperCase() + p.slice(1)` rendered "Rides"/"Today" that
+  existed as no string anywhere. Flagged as `DERIVED`; the fix is a key map.
+  **The `DERIVED` rule was DEAD from the day it was written** (found 2026-10-05):
+  it tested the callee's source text for `.toUpperCase()` *with parens*, and a
+  callee's own text never contains the trailing `()` of its own call —
+  `p.charAt(0).toUpperCase()` has the callee `p.charAt(0).toUpperCase`. It could
+  not fire on any input, so the two sites it was credited with finding were found
+  by eye, and a third survived in the Drivers section. It is now in the control.
+- **`label === "Settlement"`** gated the warning styling on a detail row. A
+  translation turns that into never-true, silently. Both sides now read one
+  `const settlementLabel = t(…)`, and the receipt's `lbl === "Total"` the same
+  way. Note the first pass "fixed" only the comparison while the row's label
+  stayed a raw literal inside an array the scanner skipped — consistent, English,
+  and one translation away from the bug it was supposed to close.
+- **Month and weekday names were three hardcoded arrays** (`["Jan".."Dec"]`,
+  `["Sun".."Sat"]` twice) driving chart axes. They are `monthShort()` /
+  `weekdayShort()` in `format.ts` now, NOT nineteen translation keys: `Intl`
+  already knows every locale's names and cannot drift, whereas a key only moves
+  when a human remembers it. Nineteen keys would have recreated the hardcoded-
+  `"en-CA"` bug one layer up. One of the two weekday arrays was also the Map KEY
+  its chart bucketed on, so localising it in place would have silently re-keyed
+  the buckets; that chart now buckets by day index and formats at the edge.
+
+### The gate read 0 while six surfaces were English — read before trusting a count
+
+On 2026-10-04 this section said "1469 candidate strings → 0, control-verified."
+The next morning Victor opened the dashboard in French and found English table
+headers in Ride History, Settlements, Receipts and Drivers, English filter chips
+(`All/Open/Resolved`), English period chips in Drivers, and English chart axes —
+in about two minutes. **What the count measures is "no string literal in a
+position the scanner covers", which is not "no English."** Treat a clean scan as
+one input, never as the verification.
+
+Two rules compounded into the hole, and the shape is worth remembering because
+both looked individually reasonable:
+
+- **`inDataArray`** silenced any anonymous array of 4+ string literals as a data
+  list — written for the vehicle make/model tables, and a table-header row
+  (`{["Date","Ride","Passenger",…].map(h => <th>{h}</th>)}`) is exactly that
+  shape. Count is NOT the discriminator; both are arrays of words.
+- **The two-word gate** in `hasWords` then hid every single-word element —
+  `"Date"`, `"Resolved"`, `"Drop-off"` — because an array element was in no
+  vouched-for position.
+
+The fix is one new vouched-for position, `inMappedJsxArray`: an array element
+reached by `.map()`/`.flatMap()` whose result renders in JSX reports single words
+like JSX text does, and `inDataArray` is consulted only when that is false. It
+walks up through nested arrays so tuple chips (`[["open","Open"],…]`) report too,
+which over-reports the enum half of each tuple — the right direction, since an
+enum takes one `i18n-ok` and a missed label takes a customer noticing.
+
+**`scripts/control-i18n.mjs` (`npm run control:i18n`, and it runs inside
+`check:i18n`) is the real lesson.** The first control seeded two strings into
+positions the scanner ALREADY covered, so it tested the plumbing and proved
+nothing about coverage — it passed throughout. A scanner control must seed **one
+case per rule** and assert the expected `kind`, plus a silent half so coverage
+cannot be bought by reporting everything. 13 cases today. Verified by reverting
+both bugs: the three new cases fail and the old scanner prints "0 candidates",
+which is precisely the false-clean it shipped.
+
+**Currency is deliberately NOT localized** (Victor, 2026-10-04): money stays
+`$4.86` in every language, so the ~140 hand-built `` `$${n.toFixed(2)}` `` sites
+are correct as they are. `fr-CA` renders `4,86 $`, whose decimal comma breaks CSV
+parsing against a comma delimiter — revisit the two together or neither.
+
+### Conventions that keep the gate honest
+
+- **Key maps hold KEYS, never English.** Module scope is evaluated before a
+  language is active, so English there freezes and a `t()` there resolves against
+  whatever locale booted. ~133 such values exist; `check:i18n` resolves all of
+  them (they are invisible to the literal-`t()` scan, which is why that check
+  was added).
+- **`// i18n-ok`** opts a vetted non-copy site out, on its own line or the line
+  directly ABOVE the reported line — a marker three lines up does nothing.
+  There are a handful: an SVG path, a plate/phone format example, EWKT, CSS
+  media queries, export filenames, and `MessagesPage`'s day-GROUPING key (which
+  keeps `en-CA` on purpose, for YYYY-MM-DD).
+- **Mid-sentence labels get their own key.** `periodLabel.toLowerCase()` is an
+  English-only trick; `analytics.periodPhrase.*` exists because "ce mois-ci"
+  cannot be produced by case-folding "Month".
+- **Markup in a template literal is filtered structurally**, by stripping tags —
+  so `printReport()`'s document reports nothing while real copy inside markup
+  still does. Verified by control, both directions.
+- **Server error strings stay English.** `err.message` from PostgREST or an Edge
+  Function is surfaced as-is: staff are out of scope for server-composed copy
+  (the two skipped `notify-*` functions in the app's design note). Our own
+  fallbacks are translated.
+
+**Report a clean scan only with a control.** "0 across 0 files" and a tool
+measuring nothing look identical. Drop a known English string plus a
+`toLocaleDateString("en-CA")` into a temp file under `src/`, confirm both are
+found, delete it. Ran 2026-10-04: 2 found, then 0.
+
+
 ## Known Local Issues / WIP
 
 - **`coverageDisplay()` (~line 780) masks real coverage state beyond 24h out** — flagged 2026-07-12, not yet fixed. It hardcodes "Healthy"/green for any ride scheduled >24h ahead regardless of the actual `ride.coverage_status`, and the realtime toast/rollup bar are likewise gated to the next 24h. Agreed direction (not yet implemented): the override should stay for `at_risk` (transient — drivers exist but none are online right now, meaningless noise weeks out) but **not** for `uncovered` (structural — the company owns zero drivers of that vehicle class at all, doesn't self-resolve, worth surfacing no matter how far out the ride is booked). Related: the corresponding admin push notifications on `uncovered`/`at_risk` transitions were removed from the mobile-app backend on 2026-07-12 (dispatch only uses this dashboard, never the mobile app) — see `mgcj-app/CLAUDE.md`'s Edge Functions section — so this dashboard-side indicator is now the *only* way dispatch finds out, making the >24h masking more consequential than before.
-- **`STATUS_COLORS`/`STATUS_LABELS` duplication** across `DashboardPage.tsx`, `AnalyticsPage.tsx`, and `ReportsPage.tsx` (see Local Conventions above) — a real risk of the three drifting out of sync if one is edited without the others.
+- **`STATUS_COLORS` duplication** across `DashboardPage.tsx`, `AnalyticsPage.tsx`, and `ReportsPage.tsx` (see Local Conventions above) — a real risk of the three drifting out of sync if one is edited without the others. The matching *label* maps were hoisted into `src/lib/labels.ts` on 2026-10-04; the colours are what is left.
 - **Ride address edits don't re-geocode unless the dispatcher picks a new autocomplete suggestion.** Editing a ride's pickup/drop-off via the detail modal updates `pickup_lat`/`pickup_lng`/`dropoff_lat`/`dropoff_lng` only when `editPickupCoords`/`editDropoffCoords` are set from a selected place; a manually-typed address with no matching suggestion silently leaves the old coordinates in place (and the fare auto-recalculation effect, gated on `editAddressChanged`, won't fire either).
 - No automated tests of any kind in this repo (no test runner configured, no `*.test.*`/`*.spec.*` files).
 - No router and no code-splitting — `AnalyticsPage` and `ReportsPage` (each 2000+ lines) are always mounted and bundled into the initial `DashboardPage` render regardless of whether the dispatcher ever opens them.
@@ -95,7 +234,10 @@ There's no router — `App.tsx` switches screens purely on auth state, and `Dash
 ## CI (`.github/workflows/`)
 
 - **`secret-scan.yml`** — gitleaks over full history.
-- **`build.yml`** — `npm ci` + `npm run build` (`tsc -b && vite build`, so it typechecks too).
+- **`build.yml`** — `npm ci` + `npm run check:event-types` + `npm run check:i18n` + `npm run build`
+  (`tsc -b && vite build`, so it typechecks too). Both checks are text-to-text and
+  credential-free, which is why they ride in this job; both run before the build
+  because they are the faster and more specific failure.
   Runs with **dummy** `VITE_*` values and needs no secrets: Vite substitutes
   `import.meta.env.*` as literal strings at build time and nothing reaches the network, so
   fake credentials compile identically to real ones.

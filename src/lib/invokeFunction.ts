@@ -1,3 +1,4 @@
+import i18next from "i18next";
 import { supabase } from "./supabase";
 
 export interface InvokeResult<T = any> {
@@ -18,7 +19,11 @@ export interface InvokeResult<T = any> {
 export async function invokeFunction<T = any>(
   name: string,
   body: Record<string, unknown>,
-  fallback = "Something went wrong. Please try again.",
+  // Resolved at CALL time, not module load: a default parameter expression is
+  // evaluated per call, so this picks up a language change without the module
+  // needing to re-evaluate. (A module-level `const FALLBACK = t(…)` would
+  // freeze whatever language the tab booted in.)
+  fallback = i18next.t("common.error"),
 ): Promise<InvokeResult<T>> {
   const { data, error } = await supabase.functions.invoke(name, { body });
 

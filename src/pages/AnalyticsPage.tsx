@@ -8,6 +8,30 @@ import {
 import type { Ride } from "../types";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import i18next from "i18next";
+import { useTranslation } from "react-i18next";
+import { fmtDate, fmtDateTime, fmtMonthYear, fmtTime, monthShort, weekdayShort } from "../i18n/format";
+import {
+  CANCEL_REASON_KEYS,
+  noShowEvidence,
+  REFUND_REASON_KEYS,
+  REPORT_REASON_KEYS,
+  rideStatusLabel,
+  SETTLEMENT_ROUTE_KEYS,
+} from "../lib/labels";
+
+// Module-scope wrappers, because half this file's label lookups live in
+// non-component helpers (the CSV builders, the print-HTML builders, the
+// activity-feed summariser) that cannot hold a hook. Each falls back to the
+// raw column value, as the maps they replaced did.
+const reportReasonLabel = (reason: string) =>
+  REPORT_REASON_KEYS[reason] ? i18next.t(REPORT_REASON_KEYS[reason]) : reason;
+const settlementRouteLabel = (route: string | null | undefined) =>
+  route && SETTLEMENT_ROUTE_KEYS[route] ? i18next.t(SETTLEMENT_ROUTE_KEYS[route]) : (route ?? "—");
+const refundReasonLabel = (reason: string) =>
+  REFUND_REASON_KEYS[reason] ? i18next.t(REFUND_REASON_KEYS[reason]) : reason;
+const cancelReasonLabel = (reason: string) =>
+  CANCEL_REASON_KEYS[reason] ? i18next.t(CANCEL_REASON_KEYS[reason]) : reason;
 
 const esc = (s: string | null | undefined) =>
   (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -124,63 +148,58 @@ interface ReceiptRow {
   sent_at: string;
 }
 
-const REASON_LABELS: Record<string, string> = {
-  unsafe_driving: "Unsafe driving",
-  rude_behavior: "Rude or unprofessional behavior",
-  wrong_vehicle: "Different vehicle than expected",
-  wrong_driver: "Different driver than expected",
-  vehicle_condition: "Vehicle condition / cleanliness",
-  cash_request: "Asked for cash to bypass the app",
-  harassment: "Felt unsafe / harassed",
-  smoking: "Smoking in vehicle",
-  other: "Other",
-};
+// REASON_LABELS, STATUS_LABELS, CANCEL_REASON_LABELS, SETTLEMENT_ROUTE_LABELS,
+// REFUND_REASON_LABELS and noShowEvidence() moved to src/lib/labels.ts when
+// they became translation keys — all six were copy-pasted from DashboardPage
+// verbatim. The COLOR maps and the terse SETTLEMENT_ROUTE_SHORT stay here:
+// colors are styling, and the short labels have no second reader.
 
-const EVENT_LABELS: Record<string, string> = {
-  "ride.created": "Created ride",
-  "ride.cancelled": "Cancelled ride",
-  "ride.assigned": "Assigned ride",
-  "ride.reassigned": "Reassigned ride",
-  "ride.scheduled_modified": "Edited ride",
-  "ride.route_modified": "Changed route",
-  "ride.notes_added": "Added ride notes",
-  "ride.fare_changed": "Changed fare",
-  "driver.suspended": "Suspended driver",
-  "driver.reactivated": "Reactivated driver",
-  "driver.deleted": "Deleted driver",
-  "driver.vehicle_updated": "Updated vehicle",
-  "invite.created": "Created invite",
-  "invite.revoked": "Revoked invite",
-  "discount.created": "Created discount",
-  "discount.deactivated": "Deactivated discount",
-  "discount.deleted": "Deleted discount",
-  "report.reviewed": "Reviewed report",
-  "report.dismissed": "Dismissed report",
-  "report.printed": "Printed report",
-  "announcement.drivers": "Driver announcement",
-  "announcement.passengers": "Passenger announcement",
-  "escalation.acknowledged": "Escalation acknowledged",
-  "export.csv": "Exported CSV",
-  "export.pdf": "Exported PDF",
-  "invoice.printed": "Printed receipt",
-  "settings.pricing_updated": "Updated pricing",
-  "settings.contact_updated": "Updated contact details",
-  "settings.numbering_updated": "Updated numbering",
-  "ride.flag_resolved": "Resolved ride flag",
-  "settings.vehicle_class_created": "Added vehicle class",
-  "settings.vehicle_class_updated": "Edited vehicle class",
-  "settings.vehicle_class_status_changed": "Vehicle class status changed",
-  "staff.created": "Added team member",
-  "staff.updated": "Edited team member",
-  "staff.deactivated": "Deactivated team member",
-  "staff.reactivated": "Reactivated team member",
-  "dispatch_report.submitted": "Submitted support report",
-  "settlement.resolved": "Resolved settlement",
-  // Declared and allowed, but nothing emits these yet — listed so the feed
-  // never renders a raw string the day something does.
-  "driver.number_changed": "Changed driver number",
-  "driver.car_number_changed": "Changed car number",
+// Keys, not English. Resolved at the render site via eventLabel().
+const EVENT_LABEL_KEYS: Record<string, string> = {
+  "ride.created": "event.rideCreated",
+  "ride.cancelled": "event.rideCancelled",
+  "ride.assigned": "event.rideAssigned",
+  "ride.reassigned": "event.rideReassigned",
+  "ride.scheduled_modified": "event.rideScheduledModified",
+  "ride.route_modified": "event.rideRouteModified",
+  "ride.notes_added": "event.rideNotesAdded",
+  "ride.fare_changed": "event.rideFareChanged",
+  "driver.suspended": "event.driverSuspended",
+  "driver.reactivated": "event.driverReactivated",
+  "driver.deleted": "event.driverDeleted",
+  "driver.vehicle_updated": "event.driverVehicleUpdated",
+  "invite.created": "event.inviteCreated",
+  "invite.revoked": "event.inviteRevoked",
+  "discount.created": "event.discountCreated",
+  "discount.deactivated": "event.discountDeactivated",
+  "discount.deleted": "event.discountDeleted",
+  "report.reviewed": "event.reportReviewed",
+  "report.dismissed": "event.reportDismissed",
+  "report.printed": "event.reportPrinted",
+  "announcement.drivers": "event.announcementDrivers",
+  "announcement.passengers": "event.announcementPassengers",
+  "escalation.acknowledged": "event.escalationAcknowledged",
+  "export.csv": "event.exportCsv",
+  "export.pdf": "event.exportPdf",
+  "invoice.printed": "event.invoicePrinted",
+  "settings.pricing_updated": "event.settingsPricingUpdated",
+  "settings.contact_updated": "event.settingsContactUpdated",
+  "settings.numbering_updated": "event.settingsNumberingUpdated",
+  "ride.flag_resolved": "event.rideFlagResolved",
+  "settings.vehicle_class_created": "event.settingsVehicleClassCreated",
+  "settings.vehicle_class_updated": "event.settingsVehicleClassUpdated",
+  "settings.vehicle_class_status_changed": "event.settingsVehicleClassStatusChanged",
+  "staff.created": "event.staffCreated",
+  "staff.updated": "event.staffUpdated",
+  "staff.deactivated": "event.staffDeactivated",
+  "staff.reactivated": "event.staffReactivated",
+  "dispatch_report.submitted": "event.dispatchReportSubmitted",
+  "settlement.resolved": "event.settlementResolved",
+  "driver.number_changed": "event.driverNumberChanged",
+  "driver.car_number_changed": "event.driverCarNumberChanged",
 };
+const eventLabel = (ev: string) =>
+  EVENT_LABEL_KEYS[ev] ? i18next.t(EVENT_LABEL_KEYS[ev]) : ev;
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
   "ride.cancelled": "#E24B4A",
@@ -276,11 +295,15 @@ function formatEventDetails(type: string, details: any): string {
       return parts.join(" · ") || "—";
     }
     case "invite.created":
-      return `Code: ${details.code}${details.name ? ` · ${details.name}` : ""}`;
+      return `${i18next.t("activity.code")}: ${details.code}${details.name ? ` · ${details.name}` : ""}`;
     case "invite.revoked":
-      return `Code: ${details.code}${details.name ? ` (${details.name})` : ""}`;
+      return `${i18next.t("activity.code")}: ${details.code}${details.name ? ` (${details.name})` : ""}`;
     case "discount.created":
-      return `${details.code}${details.label ? ` — ${details.label}` : ""} · ${details.amount_type === "percent" ? `${details.amount}%` : `$${details.amount}`} off`;
+      return `${details.code}${details.label ? ` — ${details.label}` : ""} · ${
+        details.amount_type === "percent"
+          ? i18next.t("booking.percentOff", { n: details.amount })
+          : i18next.t("booking.amountOff", { amount: details.amount })
+      }`;
     case "discount.deactivated":
     case "discount.deleted":
       return `${details.code}${details.label ? ` — ${details.label}` : ""}`;
@@ -289,7 +312,7 @@ function formatEventDetails(type: string, details: any): string {
     case "report.printed":
       return [
         details.driver_name,
-        details.reason ? (REASON_LABELS[details.reason as string] ?? details.reason) : null,
+        details.reason ? (reportReasonLabel(details.reason as string)) : null,
       ].filter(Boolean).join(" · ");
     case "announcement.drivers":
     case "announcement.passengers":
@@ -303,10 +326,16 @@ function formatEventDetails(type: string, details: any): string {
     case "settings.pricing_updated":
       return [
         details.base_fare_from != null && details.base_fare_to != null
-          ? `Base $${Number(details.base_fare_from).toFixed(2)} → $${Number(details.base_fare_to).toFixed(2)}`
+          ? i18next.t("activity.baseFareChange", {
+              from: Number(details.base_fare_from).toFixed(2),
+              to: Number(details.base_fare_to).toFixed(2),
+            })
           : null,
         details.rate_per_km_from != null && details.rate_per_km_to != null
-          ? `Rate $${Number(details.rate_per_km_from).toFixed(2)} → $${Number(details.rate_per_km_to).toFixed(2)}/km`
+          ? i18next.t("activity.rateChange", {
+              from: Number(details.rate_per_km_from).toFixed(2),
+              to: Number(details.rate_per_km_to).toFixed(2),
+            })
           : null,
       ].filter(Boolean).join(" · ");
     // Deliberately reports set/cleared rather than the values: this feed is
@@ -314,27 +343,44 @@ function formatEventDetails(type: string, details: any): string {
     // but the row does not need to be a second copy of it.
     case "settings.contact_updated":
       return [
-        `Phone ${details.phone_set ? "set" : "cleared"}`,
-        `support email ${details.support_email_set ? "set" : "cleared"}`,
+        details.phone_set ? i18next.t("activity.phoneSet") : i18next.t("activity.phoneCleared"),
+        details.support_email_set
+          ? i18next.t("activity.supportEmailSet")
+          : i18next.t("activity.supportEmailCleared"),
       ].join(" · ");
     case "settings.numbering_updated":
       return [
         details.car_number_prefix != null || details.car_number_pad != null
-          ? `Car ${details.car_number_prefix ?? ""}${"0".repeat(Number(details.car_number_pad ?? 0))}${details.car_number_start != null ? ` from ${details.car_number_start}` : ""}`
+          ? i18next.t("activity.carFormat", {
+              format: `${details.car_number_prefix ?? ""}${"0".repeat(Number(details.car_number_pad ?? 0))}`,
+            }) +
+            (details.car_number_start != null
+              ? ` ${i18next.t("activity.fromN", { n: details.car_number_start })}`
+              : "")
           : null,
         details.driver_number_prefix != null || details.driver_number_pad != null
-          ? `Driver ${details.driver_number_prefix ?? ""}${"0".repeat(Number(details.driver_number_pad ?? 0))}`
+          ? i18next.t("activity.driverFormat", {
+              format: `${details.driver_number_prefix ?? ""}${"0".repeat(Number(details.driver_number_pad ?? 0))}`,
+            })
           : null,
       ].filter(Boolean).join(" · ") || "—";
     case "settings.vehicle_class_created":
-      return `${details.name ?? "—"} · ${details.capacity ?? "?"} seats · +${details.surcharge_percent ?? 0}%`;
+      return `${details.name ?? "—"} · ${i18next.t("drivers.seats", {
+        count: Number(details.capacity ?? 0),
+      })} · +${details.surcharge_percent ?? 0}%`;
     case "settings.vehicle_class_updated": {
       const parts = [details.name];
       if (details.capacity_from != null && details.capacity_to != null && details.capacity_from !== details.capacity_to) {
-        parts.push(`Seats ${details.capacity_from} → ${details.capacity_to}`);
+        parts.push(i18next.t("activity.seatsChange", {
+          from: details.capacity_from,
+          to: details.capacity_to,
+        }));
       }
       if (details.surcharge_percent_from != null && details.surcharge_percent_to != null && details.surcharge_percent_from !== details.surcharge_percent_to) {
-        parts.push(`Surcharge ${details.surcharge_percent_from}% → ${details.surcharge_percent_to}%`);
+        parts.push(i18next.t("activity.surchargeChange", {
+          from: details.surcharge_percent_from,
+          to: details.surcharge_percent_to,
+        }));
       }
       if (details.name_from != null && details.name_to != null && details.name_from !== details.name_to) {
         parts[0] = `${details.name_from} → ${details.name_to}`;
@@ -342,11 +388,15 @@ function formatEventDetails(type: string, details: any): string {
       return parts.filter(Boolean).join(" · ") || "—";
     }
     case "settings.vehicle_class_status_changed":
-      return `${details.name ?? "—"} · ${details.is_active ? "Activated" : "Deactivated"}`;
+      return `${details.name ?? "—"} · ${
+        details.is_active ? i18next.t("activity.activated") : i18next.t("common.deactivated")
+      }`;
     case "staff.created":
       return [
         details.name,
-        details.role ? (details.role === "admin" ? "Admin" : "Dispatcher") : null,
+        details.role
+          ? i18next.t(details.role === "admin" ? "settings.role.admin" : "settings.role.dispatcher")
+          : null,
       ].filter(Boolean).join(" · ") || "—";
     case "staff.updated": {
       const parts: string[] = [];
@@ -364,30 +414,31 @@ function formatEventDetails(type: string, details: any): string {
     case "staff.reactivated":
       return details.name ?? "—";
     case "dispatch_report.submitted": {
-      const categoryLabels: Record<string, string> = {
-        bug: "Bug",
-        driver_issue: "Driver issue",
-        billing: "Billing",
-        feature_request: "Feature request",
-        other: "Other",
+      const categoryKeys: Record<string, string> = {
+        bug: "activity.categoryBug",
+        driver_issue: "settings.reportCategory.driverIssue",
+        billing: "activity.categoryBilling",
+        feature_request: "settings.reportCategory.featureRequest",
+        other: "settings.reportCategory.other",
       };
-      return details.category
-        ? (categoryLabels[details.category as string] ?? details.category)
-        : "—";
+      const cat = details.category as string | undefined;
+      return cat ? (categoryKeys[cat] ? i18next.t(categoryKeys[cat]) : cat) : "—";
     }
     case "export.csv":
     case "export.pdf": {
-      const sectionLabels: Record<string, string> = {
-        revenue: "Revenue",
-        ride_history: "Ride History",
-        drivers: "Drivers",
-        reviews: "Reviews",
-        activity_log: "Activity Log",
+      const sectionKeys: Record<string, string> = {
+        revenue: "analytics.sections.revenue",
+        ride_history: "analytics.sections.rides",
+        drivers: "analytics.sections.drivers",
+        reviews: "analytics.sections.reviews",
+        activity_log: "analytics.sections.activity",
       };
-      const sectionLabel = sectionLabels[details.section as string] ?? details.section ?? "";
+      const sec = details.section as string | undefined;
+      const sectionLabel = sec && sectionKeys[sec] ? i18next.t(sectionKeys[sec]) : (sec ?? "");
       const parts = [sectionLabel];
       if (details.period) parts.push(String(details.period));
-      if (details.row_count != null) parts.push(`${details.row_count} rows`);
+      if (details.row_count != null)
+        parts.push(i18next.t("activity.rowCount", { count: Number(details.row_count) }));
       return parts.filter(Boolean).join(" · ");
     }
     default:
@@ -396,14 +447,15 @@ function formatEventDetails(type: string, details: any): string {
 }
 
 type Section = "revenue" | "rides" | "reviews" | "drivers" | "activity" | "receipts" | "settlements";
-const SECTION_ITEMS: { id: Section; label: string }[] = [
-  { id: "revenue", label: "Revenue" },
-  { id: "rides", label: "Ride History" },
-  { id: "settlements", label: "Settlements" },
-  { id: "reviews", label: "Reviews" },
-  { id: "drivers", label: "Drivers" },
-  { id: "activity", label: "Activity Log" },
-  { id: "receipts", label: "Receipts" },
+// Keys, not English — module scope runs before any language is active.
+const SECTION_ITEMS: { id: Section; labelKey: string }[] = [
+  { id: "revenue", labelKey: "analytics.sections.revenue" },
+  { id: "rides", labelKey: "analytics.sections.rides" },
+  { id: "settlements", labelKey: "analytics.sections.settlements" },
+  { id: "reviews", labelKey: "analytics.sections.reviews" },
+  { id: "drivers", labelKey: "analytics.sections.drivers" },
+  { id: "activity", labelKey: "analytics.sections.activity" },
+  { id: "receipts", labelKey: "analytics.sections.receipts" },
 ];
 // Bound to /analytics/<section>. No section here is role-gated, so every id is
 // reachable by anyone who can open Analytics at all.
@@ -422,11 +474,11 @@ const SETTLEMENT_ACTIONABLE_ROUTES = [
   "retransfer_failed",
 ] as const;
 
-const SETTLEMENT_ACTION_HINTS: Record<string, string> = {
-  platform_invoiced: "No driver/company Connect account was available at capture -- funds are sitting on Vellon's balance. Coordinate with Vellon to collect this amount, then pay the driver directly.",
-  transfer_failed: "The automatic payout to the driver/company never went through. Pay them manually, then mark this resolved.",
-  reversal_failed: "A refund or dispute pulled the fare back, but Vellon couldn't claw the payout back from the driver/company's account (commonly: already paid out to their bank). Collect this amount from them directly, then mark resolved.",
-  retransfer_failed: "Vellon won this ride's dispute, but re-sending the driver/company's share failed. Pay them manually, then mark this resolved.",
+const SETTLEMENT_ACTION_HINT_KEYS: Record<string, string> = {
+  platform_invoiced: "settlementHint.platformInvoiced",
+  transfer_failed: "settlementHint.transferFailed",
+  reversal_failed: "settlementHint.reversalFailed",
+  retransfer_failed: "settlementHint.retransferFailed",
 };
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -437,80 +489,29 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "#E24B4A",
   scheduled: "#A855F7",
 };
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  assigned: "Assigned",
-  driver_arriving: "Arriving",
-  in_progress: "In progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  scheduled: "Scheduled",
-};
-const CANCEL_REASON_LABELS: Record<string, string> = {
-  timeout: "No drivers found in time",
-  missed_window: "Missed scheduled window — no driver engaged",
-  passenger_cancelled: "Cancelled by passenger",
-  dispatch_cancelled: "Cancelled by dispatch",
-  passenger_no_show: "Passenger no-show — driver waited at pickup",
-  system_cancelled: "Cancelled automatically by the system",
-};
 
-// A driver-filed no-show is the one cancellation where dispatch has to arbitrate
-// between two people who disagree, so the detail modal shows the evidence rather
-// than the verdict. Both timestamps are stamped server-side by the lifecycle
-// trigger (mgcj-app migration 20260741), not written by the driver's app, and
-// settle-ride will not accept a no-show until 5 minutes after arrived_at with
-// the driver inside the pickup geofence — so this row is a record of what
-// happened, not a restatement of the driver's claim.
-function noShowEvidence(
-  arrivedAt: string | null,
-  noShowAt: string | null,
-): string | null {
-  if (!noShowAt) return null;
-  const time = (d: Date) =>
-    d.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" });
-  const filed = new Date(noShowAt);
-  if (!arrivedAt) return `Reported ${time(filed)} (arrival time not recorded)`;
-  const arrived = new Date(arrivedAt);
-  const mins = Math.round((filed.getTime() - arrived.getTime()) / 60_000);
-  return `${time(arrived)} → ${time(filed)} (${mins} min at pickup)`;
-}
 
-const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
-  driver_transfer: "Paid directly to the driver",
-  company_transfer: "Routed to your company account",
-  platform_invoiced: "Held by Vellon — pending invoice",
-  transfer_failed: "Transfer failed — contact Vellon support",
-  transfer_reversed: "Payout reversed — charge was disputed",
-  refund_reversed: "Payout reversed — ride was refunded",
-  refund_review: "Refunded — payout under review by Vellon",
-  reversal_failed: "Payout reversal failed — contact Vellon support",
-  retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
-  unsettled: "Not yet settled — capture still pending",
-};
-
-const REFUND_REASON_LABELS: Record<string, string> = {
-  driver_fault: "driver/company at fault",
-  platform_mistake: "platform mistake — Vellon absorbed",
-  goodwill: "goodwill — Vellon absorbed",
-};
 
 // Terse labels for the dispatch-internal settlement tables/chips. The long
 // SETTLEMENT_ROUTE_LABELS copy above reads as a sentence, which is right for
 // a single ride-detail row or a printed receipt but unreadable as a table
 // cell or a filter chip repeated eight times down a column.
-const SETTLEMENT_ROUTE_SHORT: Record<string, string> = {
-  driver_transfer: "Driver paid",
-  company_transfer: "Company paid",
-  platform_invoiced: "Held by Vellon",
-  transfer_failed: "Transfer failed",
-  transfer_reversed: "Reversed (dispute)",
-  refund_reversed: "Reversed (refund)",
-  refund_review: "Refund — under review",
-  reversal_failed: "Reversal failed",
-  retransfer_failed: "Re-payout failed",
-  unsettled: "Unsettled",
+const SETTLEMENT_ROUTE_SHORT_KEYS: Record<string, string> = {
+  driver_transfer: "settlementShort.driverTransfer",
+  company_transfer: "settlementShort.companyTransfer",
+  platform_invoiced: "settlementShort.platformInvoiced",
+  transfer_failed: "settlementShort.transferFailed",
+  transfer_reversed: "settlementShort.transferReversed",
+  refund_reversed: "settlementShort.refundReversed",
+  refund_review: "settlementShort.refundReview",
+  reversal_failed: "settlementShort.reversalFailed",
+  retransfer_failed: "settlementShort.retransferFailed",
+  unsettled: "settlementShort.unsettled",
 };
+const settlementShort = (route: string | null | undefined) =>
+  route && SETTLEMENT_ROUTE_SHORT_KEYS[route]
+    ? i18next.t(SETTLEMENT_ROUTE_SHORT_KEYS[route])
+    : (route ?? "—");
 
 const SETTLEMENT_ROUTE_COLORS: Record<string, string> = {
   driver_transfer: "#1D9E75",
@@ -582,21 +583,24 @@ const ROLLUP_PROBLEM_ROUTES = [
 ];
 
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
-const APPROVAL_BLOCK = `
+// A function, not a constant: a module-scope template literal is evaluated at
+// import time, which would freeze whatever language the tab booted in. Every
+// call site reads it at render/print time instead.
+const approvalBlock = () => `
   <div style="margin-top:36px;padding-top:18px;border-top:1px solid #e5e7eb;">
-    <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:18px;">Authorization</div>
+    <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:18px;">${esc(i18next.t("reports.authorization"))}</div>
     <div style="display:flex;gap:40px;">
       <div>
         <div style="width:210px;border-bottom:1px solid #374151;height:26px;"></div>
-        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Authorized by (print name)</div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">${esc(i18next.t("reports.authorizedBy"))}</div>
       </div>
       <div>
         <div style="width:160px;border-bottom:1px solid #374151;height:26px;"></div>
-        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Signature</div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">${esc(i18next.t("reports.signature"))}</div>
       </div>
       <div>
         <div style="width:110px;border-bottom:1px solid #374151;height:26px;"></div>
-        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">Date</div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:4px;">${esc(i18next.t("reports.date"))}</div>
       </div>
     </div>
   </div>`;
@@ -633,7 +637,12 @@ function printReport(title: string, html: string, companyLabel = "M&G C&J") {
         .pg-spacer-sm td { height: 36px; }
       }
     </style>
-  </head><body>${html}<div class="footer">Generated by ${companyLabel} Dispatch · ${new Date().toLocaleString("en-CA")}</div></body></html>`);
+  </head><body>${html}<div class="footer">${esc(
+    i18next.t("analytics.printFooter", {
+      company: companyLabel,
+      when: fmtDateTime(new Date()),
+    }),
+  )}</div></body></html>`);
   win.document.close();
   setTimeout(() => {
     win.print();
@@ -663,10 +672,10 @@ function getMonthKey(dateStr: string) {
 }
 function getMonthLabel(key: string) {
   const [year, month] = key.split("-");
-  return new Date(Number(year), Number(month) - 1, 1).toLocaleDateString(
-    "en-CA",
-    { month: "long", year: "numeric" },
-  );
+  // fmtMonthYear, not a hardcoded tag: these headings are DERIVED from a
+  // YYYY-MM key, so the English month names appear nowhere as a string and no
+  // scanner of literals could ever have found them.
+  return fmtMonthYear(Number(year), Number(month));
 }
 function getCurrentMonthKey() {
   const now = new Date();
@@ -683,6 +692,13 @@ export default function AnalyticsPage({
   companyId: string;
   dispatcherId: string;
 }) {
+  const { t } = useTranslation();
+  // These two are rendered AND compared against (the receipt's total row gets
+  // emphasis, the settlement row gets a warning style). Comparing a rendered
+  // label against a raw English literal is true in English and never true in
+  // any other language, so both sides read the same t() call through one const.
+  const totalLabel = t("receipt.total");
+  const settlementLabel = t("rideDetail.settlement");
   const label = companyName ?? "M&G C&J";
   const [section, setSection] = useSubView<Section>("analytics", SECTION_IDS, "revenue");
   const [period, setPeriod] = useState<"today" | "week" | "month" | "year">(
@@ -904,6 +920,7 @@ export default function AnalyticsPage({
     }
     if (
       typeof matchMedia !== "undefined" &&
+      // i18n-ok — a CSS media query.
       matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
       setSettleChartsReady(true);
@@ -1112,10 +1129,7 @@ export default function AnalyticsPage({
 
       const dayMap = new Map<string, { revenue: number; rides: number }>();
       completedPeriod.forEach((r: any) => {
-        const day = new Date(r.created_at).toLocaleDateString("en-CA", {
-          month: "short",
-          day: "numeric",
-        });
+        const day = fmtDate(r.created_at, { month: "short", day: "numeric" });
         const ex = dayMap.get(day) ?? { revenue: 0, rides: 0 };
         dayMap.set(day, {
           revenue: ex.revenue + (r.fare_final ?? r.fare_estimate ?? 0),
@@ -1194,7 +1208,7 @@ export default function AnalyticsPage({
             : null;
           return {
             id: d.id,
-            name: profileMap.get(d.id) ?? "Unknown",
+            name: profileMap.get(d.id) ?? t("common.unknown"),
             avatarUrl: avatarMap.get(d.id) ?? null,
             rides: comp.length,
             ridesTotal: dr.length,
@@ -1623,17 +1637,17 @@ export default function AnalyticsPage({
     ? { main: "#4a9eff", bright: "#6cb2ff", cls: " paid-company" }
     : { main: "#1D9E75", bright: "#2fce9a", cls: "" };
   const leadPaidLabel = isCompanySettles
-    ? settlementBasis === "net" ? "Paid to your account" : "Routed to your account"
-    : settlementBasis === "net" ? "Paid to drivers" : "Routed to drivers";
-  const leadPaidSub = isCompanySettles ? "to your Stripe account" : "to drivers / company";
+    ? settlementBasis === "net" ? t("settle.paidToYourAccount") : t("settle.routedToYourAccount")
+    : settlementBasis === "net" ? t("settle.paidToDrivers") : t("settle.routedToDrivers");
+  const leadPaidSub = isCompanySettles ? t("settle.toYourStripe") : t("settle.toDriversCompany");
   // Cash strip labels (the driver-owns vs company-owns distinction).
-  const cashLeadNetLabel = isCompanySettles ? "Your cash, net of fee" : "Drivers keep";
-  const cashLeadGrossLabel = isCompanySettles ? "Cash collected by drivers" : "Cash fares collected";
-  const cashGrossShort = isCompanySettles ? "Cash collected" : "Cash fares";
-  const cashGrossTail = isCompanySettles ? "collected by drivers" : "collected at the door";
+  const cashLeadNetLabel = isCompanySettles ? t("settle.yourCashNet") : t("settle.driversKeep");
+  const cashLeadGrossLabel = isCompanySettles ? t("settle.cashCollectedByDrivers") : t("settle.cashFaresCollected");
+  const cashGrossShort = isCompanySettles ? t("settle.cashCollected") : t("settle.cashFares");
+  const cashGrossTail = isCompanySettles ? t("settle.collectedByDrivers") : t("settle.collectedAtDoor");
   const cashScopeNote = isCompanySettles
-    ? "Cash is collected by your drivers and reconciled with them directly — only Vellon's fee is invoiced to you monthly"
-    : "Cash is settled driver-to-passenger directly — only Vellon's fee is invoiced to you monthly";
+    ? t("settle.cashScopeCompany")
+    : t("settle.cashScopeDriver");
 
   // Flow chart series: paid-to-drivers vs held, in the active basis. The RPC
   // returns sparse per-(day, bucket) rows; we pivot to a dense, ordered series.
@@ -1656,13 +1670,11 @@ export default function AnalyticsPage({
       // hero's "Failed or reversed" tile and the Needs-attention list instead.
       map.set(k, slot);
     }
-    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const label = (k: string) => {
-      if (byMonth) return MON[Number(k.slice(5, 7)) - 1] ?? k;
+      if (byMonth) return monthShort(Number(k.slice(5, 7))) || k;
       const [y, m, d] = k.split("-").map(Number);
       if (period === "week")
-        return DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+        return weekdayShort(new Date(Date.UTC(y, m - 1, d)).getUTCDay());
       return String(d); // today / month → day-of-month
     };
     const buckets = [...map.entries()]
@@ -1768,19 +1780,19 @@ export default function AnalyticsPage({
       },
     });
     downloadCSV(
+      // i18n-ok — a filename.
       `settlements-${period}-${settlementRouteFilter}.csv`,
-      ["Date", "Ride ref", "Ride ID", "Driver", "Fare", "Settlement route", "Dispute", "Resolved at"],
+      [t("csv.date"), t("csv.rideRef"), t("csv.rideId"), t("csv.driver"), t("csv.fare"),
+       t("csv.settlementRoute"), t("csv.dispute"), t("csv.resolvedAt")],
       filteredSettlementRides.map((r) => [
-        new Date(r.completed_at ?? r.created_at).toLocaleDateString("en-CA"),
+        fmtDate(r.completed_at ?? r.created_at),
         r.ride_ref,
         r.id,
         r.driver_name,
         r.fare_final != null ? r.fare_final.toFixed(2) : "",
-        SETTLEMENT_ROUTE_SHORT[r.settlement_route] ?? r.settlement_route,
+        settlementShort(r.settlement_route),
         r.stripe_dispute_id ?? "",
-        r.settlement_resolved_at
-          ? new Date(r.settlement_resolved_at).toLocaleDateString("en-CA")
-          : "",
+        r.settlement_resolved_at ? fmtDate(r.settlement_resolved_at) : "",
       ]),
     );
   }
@@ -1858,13 +1870,14 @@ export default function AnalyticsPage({
         );
       if (fetchId !== peakFetchId.current || !rides) return;
       const hourMap = new Map<number, number>();
-      const dayMap = new Map<string, number>();
-      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      // Bucketed by day INDEX, not by name: the name was doing double duty as
+      // the Map key and the rendered axis label, so localising it would have
+      // re-keyed the buckets as a side effect.
+      const dayMap = new Map<number, number>();
       rides.forEach((r: any) => {
         const d = new Date(r.created_at);
         hourMap.set(d.getHours(), (hourMap.get(d.getHours()) ?? 0) + 1);
-        const dn = dayNames[d.getDay()];
-        dayMap.set(dn, (dayMap.get(dn) ?? 0) + 1);
+        dayMap.set(d.getDay(), (dayMap.get(d.getDay()) ?? 0) + 1);
       });
       if (fetchId === peakFetchId.current) {
         setHourStats(
@@ -1875,7 +1888,10 @@ export default function AnalyticsPage({
           })),
         );
         setDayStats(
-          dayNames.map((d) => ({ day: d, rides: dayMap.get(d) ?? 0 })),
+          Array.from({ length: 7 }, (_, i) => ({
+            day: weekdayShort(i),
+            rides: dayMap.get(i) ?? 0,
+          })),
         );
       }
     } catch (e) {
@@ -1899,7 +1915,7 @@ export default function AnalyticsPage({
       if (fetchId !== activityFetchId.current) return;
       if (error) {
         console.error("[fetchActivityLog]", error.code, error.message);
-        setActivityError(`Fetch error: ${error.message} (${error.code})`);
+        setActivityError(t("analytics.fetchError", { message: error.message, code: error.code }));
         return;
       }
       setActivityError(null);
@@ -1956,41 +1972,49 @@ export default function AnalyticsPage({
     const subtotal = inv.fare / 1.15;
     const hst = inv.fare - subtotal;
     const hasDiscount = !!(inv.discount_amount && inv.pre_discount_fare != null);
-    const date = new Date(inv.sent_at).toLocaleString("en-CA", {
+    const date = fmtDateTime(inv.sent_at, {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
       hour: "numeric", minute: "2-digit",
     });
     const html = `
       <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
         <div style="text-align: center; padding: 24px 0;">
-          <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${esc(inv.company_name) || "Your Taxi"}</h1>
-          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">Ride Receipt · ${esc(inv.receipt_number)}</p>
+          <h1 style="font-size: 20px; margin: 0; color: #1a1a1a;">${esc(inv.company_name) || esc(t("receipt.fallbackCompany"))}</h1>
+          <p style="color: #6B7280; font-size: 13px; margin-top: 4px;">${esc(t("receipt.title"))} · ${esc(inv.receipt_number)}</p>
         </div>
         <div style="background: #f7f7f7; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
           ${hasDiscount ? `
-          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Original fare</p>
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.originalFare"))}</p>
           <p style="margin: 0 0 8px; font-size: 15px; color: #9CA3AF; text-decoration: line-through;">$${inv.pre_discount_fare!.toFixed(2)}</p>
-          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Discount${inv.discount_label ? ` — ${esc(inv.discount_label)}` : ""}</p>
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.discount"))}${inv.discount_label ? ` — ${esc(inv.discount_label)}` : ""}</p>
           <p style="margin: 0 0 12px; font-size: 15px; color: #1D9E75;">-$${inv.discount_amount!.toFixed(2)}</p>
           ` : ""}
-          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">Total fare</p>
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.totalFare"))}</p>
           <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${inv.fare.toFixed(2)}</p>
-          <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280; text-transform: capitalize;">Paid by ${inv.payment_method ?? "—"}</p>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280;">${esc(
+            t("receipt.paidBy", {
+              method: inv.payment_method
+                ? t(inv.payment_method === "cash" ? "rideDetail.cash" : "rideDetail.card")
+                : "—",
+            }),
+          )}</p>
         </div>
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; width: 110px;">Date</td><td style="padding: 8px 0; font-size: 13px;">${date}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Pickup</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.pickup_address) || "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">Drop-off</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.dropoff_address) || "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Passenger</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.passenger_name) || "—"}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Driver</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.driver_name) || "—"}</td></tr>
-          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST Reg</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.hst_number)}</td></tr>` : ""}
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">Subtotal</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">HST (15%)</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; width: 110px;">${esc(t("receipt.date"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(date)}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">${esc(t("reports.pickup"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.pickup_address) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">${esc(t("reports.dropoff"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.dropoff_address) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("rideDetail.passenger"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.passenger_name) || "—"}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("rideDetail.driver"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.driver_name) || "—"}</td></tr>
+          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.hstReg"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.hst_number)}</td></tr>` : ""}
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.subtotal"))}</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
+          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.hst"))}</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
         </table>
         ${opts?.extraHtml ?? ""}
         <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
-          ${inv.passenger_name ? `Thanks for riding with us, ${esc(inv.passenger_name)}!` : "Thank you for your business."}<br/>
-          ${esc(inv.company_name) || "Your Taxi"}
+          ${inv.passenger_name
+            ? esc(t("receipt.thanksNamed", { name: inv.passenger_name }))
+            : esc(t("receipt.thanks"))}<br/>
+          ${esc(inv.company_name) || esc(t("receipt.fallbackCompany"))}
         </p>
         ${opts?.footerHtml ?? ""}
       </div>
@@ -2063,7 +2087,7 @@ export default function AnalyticsPage({
         ? `
         <div style="margin-bottom: 16px;">
           <p style="font-size: 13px; font-weight: 600; color: #1a1a1a; margin: 0 0 8px;">
-            Review${review.rating <= 2 ? ` <span style="font-weight: 600; color: #B45309; background: #FEF3C7; border-radius: 4px; padding: 1px 6px; font-size: 11px;">⚠ Low rating</span>` : ""}
+            ${esc(t("receipt.review"))}${review.rating <= 2 ? ` <span style="font-weight: 600; color: #B45309; background: #FEF3C7; border-radius: 4px; padding: 1px 6px; font-size: 11px;">⚠ ${esc(t("receipt.lowRating"))}</span>` : ""}
           </p>
           <div style="background: #f7f7f7; border-radius: 10px; padding: 14px;">
             <p style="margin: 0 0 ${review.comment ? "6px" : "0"}; font-size: 16px; color: #F59E0B; letter-spacing: 2px;">
@@ -2082,17 +2106,17 @@ export default function AnalyticsPage({
         ride.payment_method === "card" && ride.settlement_route
           ? `
         <div style="margin-bottom: 16px; background: #FFF7ED; border: 1px dashed #FDBA74; border-radius: 10px; padding: 14px;">
-          <p style="font-size: 11px; font-weight: 600; color: #9A3412; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">Internal — settlement (not shown to passenger)</p>
+          <p style="font-size: 11px; font-weight: 600; color: #9A3412; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">${esc(t("receipt.internalSettlement"))}</p>
           <table style="width: 100%; border-collapse: collapse;">
-            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">Vellon fee</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
+            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.vellonFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
               ride.fare_final != null && ride.platform_fee_percent_at_completion != null
                 ? `$${(ride.fare_final * (ride.platform_fee_percent_at_completion / 100)).toFixed(2)} (${ride.platform_fee_percent_at_completion}%)`
                 : "—"
             }</td></tr>
-            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">Card processing fee</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
-              ride.stripe_fee != null ? `$${ride.stripe_fee.toFixed(2)}` : "Pending"
+            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.cardFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
+              ride.stripe_fee != null ? `$${ride.stripe_fee.toFixed(2)}` : esc(t("rideDetail.pending"))
             }</td></tr>
-            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px; font-weight: 700;">Net settled</td><td style="padding: 3px 0; font-size: 12px; text-align: right; font-weight: 700;">${
+            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px; font-weight: 700;">${esc(t("rideDetail.netSettled"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right; font-weight: 700;">${
               ride.fare_final != null &&
               ride.platform_fee_percent_at_completion != null &&
               ride.stripe_fee != null
@@ -2105,14 +2129,14 @@ export default function AnalyticsPage({
             }</td></tr>
           </table>
           <p style="font-size: 11px; color: #9A3412; margin: 8px 0 0;">${esc(
-            SETTLEMENT_ROUTE_LABELS[ride.settlement_route] ?? ride.settlement_route,
+            settlementRouteLabel(ride.settlement_route),
           )}</p>
         </div>`
           : "";
 
       const footerHtml = `
         <p style="font-size: 11px; color: #9CA3AF; text-align: center; margin-top: 16px; border-top: 1px solid #f3f4f6; padding-top: 12px;">
-          Generated by ${esc(label)} Dispatch · ${new Date().toLocaleString("en-CA")}
+          ${esc(t("analytics.printFooter", { company: label, when: fmtDateTime(new Date()) }))}
         </p>`;
 
       printReceipt(data as ReceiptRow, { extraHtml: extraHtml + settlementHtml, footerHtml });
@@ -2232,52 +2256,51 @@ export default function AnalyticsPage({
           `<tr><td>${esc(d.name)}</td><td>${d.rides}</td><td>$${d.earnings.toFixed(2)}</td><td>$${d.cashEarnings.toFixed(2)}</td><td>$${d.cardEarnings.toFixed(2)}</td><td>$${d.avgFare.toFixed(2)}</td><td>${d.cancelRate.toFixed(1)}%</td><td>${d.avgRating?.toFixed(1) ?? "—"}</td></tr>`,
       )
       .join("");
-    const periodLabel =
-      period === "today"
-        ? "Today"
-        : period === "week"
-          ? "Last 7 days"
-          : period === "month"
-            ? "This month"
-            : "This year";
+    const periodLabel = t(`analytics.period.${period}`);
     const chartSVG = buildRevenueSVG();
     printReport(
-      `Revenue Report — ${label}`,
+      t("analytics.revenueReportTitle", { company: label }),
       `
-      <h1>${label} — Revenue Report</h1>
-      <p class="sub">${periodLabel} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+      <h1>${esc(t("analytics.revenueReportHeading", { company: label }))}</h1>
+      <p class="sub">${esc(periodLabel)} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Today</div><div class="kpi-value">$${totals.revenueToday.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-label">This week</div><div class="kpi-value">$${totals.revenueWeek.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-label">This month</div><div class="kpi-value">$${totals.revenueMonth.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-label">This year</div><div class="kpi-value">$${totals.revenueYear.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-label">Cash rides</div><div class="kpi-value">$${totals.cashRevenue.toFixed(2)}</div></div>
-        <div class="kpi"><div class="kpi-label">Card rides</div><div class="kpi-value">$${totals.cardRevenue.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("stats.today"))}</div><div class="kpi-value">$${totals.revenueToday.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.thisWeek"))}</div><div class="kpi-value">$${totals.revenueWeek.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.thisMonth"))}</div><div class="kpi-value">$${totals.revenueMonth.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.thisYear"))}</div><div class="kpi-value">$${totals.revenueYear.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.cashRides"))}</div><div class="kpi-value">$${totals.cashRevenue.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.cardRides"))}</div><div class="kpi-value">$${totals.cardRevenue.toFixed(2)}</div></div>
       </div>
-      ${chartSVG ? `<div class="section-title">Revenue over time${period === "today" ? " · by hour" : ""}</div><div style="margin-bottom:24px">${chartSVG}</div>` : ""}
-      <div class="section-title">Driver Earnings — ${periodLabel}</div>
-      <table><thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>Driver</th><th>Rides</th><th>Earnings</th><th>Cash</th><th>Card</th><th>Avg Fare</th><th>Cancel Rate</th><th>Avg Rating</th></tr></thead>
-      <tbody>${rows || "<tr><td colspan='8' style='color:#9ca3af'>No data for this period</td></tr>"}</tbody>
+      ${chartSVG ? `<div class="section-title">${esc(t("analytics.revenueOverTime"))}${period === "today" ? ` · ${esc(t("analytics.byHour"))}` : ""}</div><div style="margin-bottom:24px">${chartSVG}</div>` : ""}
+      <div class="section-title">${esc(t("analytics.driverEarningsFor", { period: periodLabel }))}</div>
+      <table><thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelRate"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan='8' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
       <tfoot><tr class="pg-spacer-foot"><td colspan="8"></td></tr></tfoot></table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `,
       label,
     );
   }
 
   function downloadMonthReport(group: MonthGroup) {
-    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "ride_history", period: group.label, row_count: group.rides.length } });
+    // `group.key` (YYYY-MM), not `group.label`: the label is now rendered in
+    // the exporter's language, and an audit row that reads "octobre 2026" for
+    // one dispatcher and "October 2026" for another is not groupable and not
+    // comparable. Same principle as `completed_at` and
+    // `platform_fee_percent_at_completion` in mgcj-app — a recorded fact must
+    // not be stored in whoever-was-looking's language.
+    logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "ride_history", period: group.key, row_count: group.rides.length } });
     const rows = group.rides
       .map(
         (r) => `
       <tr>
-        <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
+        <td>${esc(fmtDate(r.created_at, { month: "short", day: "numeric" }))}</td>
         <td style="font-family:monospace;font-size:11px">${esc(formatRideRef(r.ride_ref))}</td>
         <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
         <td style="font-size:11px">${esc(r.pickup_address)}</td>
         <td style="font-size:11px">${esc(r.dropoff_address)}</td>
         <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
-        <td>${STATUS_LABELS[r.status] ?? r.status}</td>
+        <td>${rideStatusLabel(r.status)}</td>
         <td>${esc(r.payment_method)}</td>
         <td style="font-family:monospace;font-size:11px">${esc(r.receipt_number) || "—"}</td>
       </tr>`,
@@ -2285,19 +2308,19 @@ export default function AnalyticsPage({
       .join("");
     const completed = group.rides.filter((r) => r.status === "completed");
     printReport(
-      `Ride History ${group.label} — ${label}`,
+      t("analytics.rideHistoryTitle", { period: group.label, company: label }),
       `
-      <h1>${label} — Ride History</h1>
-      <p class="sub">${group.label} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+      <h1>${esc(t("analytics.rideHistoryHeading", { company: label }))}</h1>
+      <p class="sub">${esc(group.label)} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Total rides</div><div class="kpi-value">${group.rides.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value">${completed.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">$${group.totalRevenue.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalRides"))}</div><div class="kpi-value">${group.rides.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("rideStatus.completed"))}</div><div class="kpi-value">${completed.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("stats.revenue"))}</div><div class="kpi-value">$${group.totalRevenue.toFixed(2)}</div></div>
       </div>
-      <table><thead><tr class="pg-spacer"><td colspan="10"></td></tr><tr><th>Date</th><th>Ride</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr></thead>
-      <tbody>${rows || "<tr><td colspan='10' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
+      <table><thead><tr class="pg-spacer"><td colspan="10"></td></tr><tr><th>${esc(t("csv.date"))}</th><th>${esc(t("csv.ride"))}</th><th>${esc(t("rideDetail.passenger"))}</th><th>${esc(t("csv.driver"))}</th><th>${esc(t("reports.pickup"))}</th><th>${esc(t("reports.dropoff"))}</th><th>${esc(t("csv.fare"))}</th><th>${esc(t("common.status"))}</th><th>${esc(t("rideDetail.payment"))}</th><th>${esc(t("csv.receiptNo"))}</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan='10' style='color:#9ca3af'>${esc(t("analytics.noRides"))}</td></tr>`}</tbody>
       <tfoot><tr class="pg-spacer-foot"><td colspan="10"></td></tr></tfoot></table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `,
       label,
     );
@@ -2318,41 +2341,41 @@ export default function AnalyticsPage({
           .map(
             (r) => `
         <tr>
-          <td>${new Date(r.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</td>
+          <td>${esc(fmtDate(r.created_at, { month: "short", day: "numeric" }))}</td>
           <td style="font-family:monospace;font-size:11px">${esc(formatRideRef(r.ride_ref))}</td>
           <td>${esc(r.passenger_name)}</td><td>${esc(r.driver_name)}</td>
           <td style="font-size:11px">${esc(r.pickup_address)}</td>
           <td style="font-size:11px">${esc(r.dropoff_address)}</td>
           <td>${r.fare_final ? `$${r.fare_final.toFixed(2)}` : r.fare_estimate ? `$${r.fare_estimate.toFixed(2)}` : "—"}</td>
-          <td>${STATUS_LABELS[r.status] ?? r.status}</td>
+          <td>${rideStatusLabel(r.status)}</td>
           <td>${esc(r.payment_method)}</td>
           <td style="font-family:monospace;font-size:11px">${esc(r.receipt_number) || "—"}</td>
         </tr>`,
           )
           .join("");
         return `<div class="month-section">
-        <div class="month-heading-row">${group.label} · ${group.rides.length} rides · $${group.totalRevenue.toFixed(2)}</div>
+        <div class="month-heading-row">${esc(group.label)} · ${esc(t("analytics.ridesCount", { count: group.rides.length }))} · $${group.totalRevenue.toFixed(2)}</div>
         <table><thead>
           <tr class="pg-spacer-sm"><td colspan="10"></td></tr>
-          <tr><th>Date</th><th>Ride</th><th>Passenger</th><th>Driver</th><th>Pickup</th><th>Drop-off</th><th>Fare</th><th>Status</th><th>Payment</th><th>Receipt #</th></tr>
+          <tr><th>${esc(t("csv.date"))}</th><th>${esc(t("csv.ride"))}</th><th>${esc(t("rideDetail.passenger"))}</th><th>${esc(t("csv.driver"))}</th><th>${esc(t("reports.pickup"))}</th><th>${esc(t("reports.dropoff"))}</th><th>${esc(t("csv.fare"))}</th><th>${esc(t("common.status"))}</th><th>${esc(t("rideDetail.payment"))}</th><th>${esc(t("csv.receiptNo"))}</th></tr>
         </thead>
-        <tbody>${rows || "<tr><td colspan='10' style='color:#9ca3af'>No rides</td></tr>"}</tbody>
+        <tbody>${rows || `<tr><td colspan='10' style='color:#9ca3af'>${esc(t("analytics.noRides"))}</td></tr>`}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="10"></td></tr></tfoot>
         </table>
-        ${APPROVAL_BLOCK}
+        ${approvalBlock()}
         </div>`;
       })
       .join("");
     printReport(
-      `Ride History ${year} — ${label}`,
+      t("analytics.rideHistoryTitle", { period: String(year), company: label }),
       `
-      <h1>${label} — Ride History ${year}</h1>
-      <p class="sub">Full year · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+      <h1>${esc(t("analytics.rideHistoryYearHeading", { company: label, year }))}</h1>
+      <p class="sub">${esc(t("analytics.fullYear"))} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Total rides</div><div class="kpi-value">${allYearRides.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value">${completed.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Cancelled</div><div class="kpi-value">${cancelled.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">$${totalRevenue.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalRides"))}</div><div class="kpi-value">${allYearRides.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("rideStatus.completed"))}</div><div class="kpi-value">${completed.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("rideStatus.cancelled"))}</div><div class="kpi-value">${cancelled.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("stats.revenue"))}</div><div class="kpi-value">$${totalRevenue.toFixed(2)}</div></div>
       </div>
       ${monthSections}
     `,
@@ -2366,19 +2389,19 @@ export default function AnalyticsPage({
     downloadCSV(
       filename,
       [
-        "Date",
-        "Ride ref",
-        "Passenger",
-        "Driver",
-        "Pickup",
-        "Drop-off",
-        "Fare",
-        "Status",
-        "Payment",
-        "Receipt #",
+        t("csv.date"),
+        t("csv.rideRef"),
+        t("rideDetail.passenger"),
+        t("csv.driver"),
+        t("reports.pickup"),
+        t("reports.dropoff"),
+        t("csv.fare"),
+        t("common.status"),
+        t("rideDetail.payment"),
+        t("csv.receiptNo"),
       ],
       rides.map((r) => [
-        new Date(r.created_at).toLocaleDateString("en-CA"),
+        fmtDate(r.created_at),
         r.ride_ref,
         r.passenger_name,
         r.driver_name,
@@ -2389,7 +2412,7 @@ export default function AnalyticsPage({
           : r.fare_estimate
             ? `$${r.fare_estimate.toFixed(2)}`
             : "",
-        STATUS_LABELS[r.status] ?? r.status,
+        rideStatusLabel(r.status),
         r.payment_method,
         r.receipt_number ?? "",
       ]),
@@ -2398,26 +2421,23 @@ export default function AnalyticsPage({
 
   function exportDriverStatsCSV() {
     logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "drivers", period, row_count: driverStats.length } });
-    const periodLabel =
-      period === "today"
-        ? "today"
-        : period === "week"
-          ? "week"
-          : period === "month"
-            ? "month"
-            : "year";
     downloadCSV(
-      `driver-performance-${periodLabel}.csv`,
+      // i18n-ok — a FILENAME. Kept in the code's own vocabulary ("today",
+      // "week") rather than translated: these land in a shared Downloads
+      // folder and get sorted and re-sent, so a stable name is worth more
+      // than a localised one.
+      // i18n-ok — a filename.
+      `driver-performance-${period}.csv`,
       [
-        "Driver",
-        "Rides",
-        "Earnings",
-        "Cash",
-        "Card",
-        "Avg Fare",
-        "Cancel Rate",
-        "Avg Rating",
-        "Ratings Count",
+        t("csv.driver"),
+        t("csv.rides"),
+        t("csv.earnings"),
+        t("rideDetail.cash"),
+        t("rideDetail.card"),
+        t("csv.avgFare"),
+        t("csv.cancelRate"),
+        t("csv.avgRating"),
+        t("csv.ratingsCount"),
       ],
       driverStats.map((d) => [
         d.name,
@@ -2438,19 +2458,22 @@ export default function AnalyticsPage({
     downloadCSV(
       "reviews.csv",
       [
-        "Date",
-        "Driver",
-        "Passenger",
-        "Rating",
-        "Comment",
-        "Reviewed by dispatch",
+        t("csv.date"),
+        t("csv.driver"),
+        t("rideDetail.passenger"),
+        t("csv.rating"),
+        t("csv.comment"),
+        t("csv.reviewedByDispatch"),
       ],
       filteredReviews.map((rv) => [
-        new Date(rv.created_at).toLocaleDateString("en-CA"),
+        fmtDate(rv.created_at),
         rv.driver_name ?? "",
         rv.passenger_name ?? "",
         String(rv.rating),
         rv.comment ?? "",
+        // i18n-ok — a CSV CELL. Money and CSV stay in the code's own language
+        // by decision (see format.ts); a localised boolean here would break a
+        // spreadsheet filter that a dispatcher built against "Yes".
         rv.reviewed_by_dispatch ? "Yes" : "No",
       ]),
     );
@@ -2470,12 +2493,13 @@ export default function AnalyticsPage({
       },
     });
     downloadCSV(
+      // i18n-ok — a filename.
       `activity-log-${activityDateFrom}-${activityDateTo}.csv`,
-      ["Date/Time", "Dispatcher", "Event", "Details", "Ride ID"],
+      [t("csv.dateTime"), t("settings.role.dispatcher"), t("csv.event"), t("csv.details"), t("csv.rideId")],
       rows.map((e) => [
-        new Date(e.created_at).toLocaleString("en-CA", { dateStyle: "short", timeStyle: "short" } as any),
+        fmtDateTime(e.created_at, { dateStyle: "short", timeStyle: "short" }),
         e.dispatcher_name ?? "—",
-        EVENT_LABELS[e.event_type] ?? e.event_type,
+        eventLabel(e.event_type),
         formatEventDetails(e.event_type, e.details),
         e.ride_id ?? "",
       ]),
@@ -2497,8 +2521,8 @@ export default function AnalyticsPage({
     });
     let lastDateKey = "";
     const tableRows = rows.map((e) => {
-      const dateKey = new Date(e.created_at).toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric", year: "numeric" } as any);
-      const timeStr = new Date(e.created_at).toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" } as any);
+      const dateKey = fmtDate(e.created_at, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      const timeStr = fmtTime(e.created_at, { hour: "numeric", minute: "2-digit" });
       let sep = "";
       if (dateKey !== lastDateKey) {
         lastDateKey = dateKey;
@@ -2507,7 +2531,7 @@ export default function AnalyticsPage({
       return sep + `<tr>
         <td style="white-space:nowrap;color:#6b7280">${timeStr}</td>
         <td>${e.dispatcher_name ?? "—"}</td>
-        <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${EVENT_COLORS[e.event_type] ?? "#6B7280"}22;color:${EVENT_COLORS[e.event_type] ?? "#6B7280"}">${EVENT_LABELS[e.event_type] ?? e.event_type}</span></td>
+        <td><span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:${EVENT_COLORS[e.event_type] ?? "#6B7280"}22;color:${EVENT_COLORS[e.event_type] ?? "#6B7280"}">${eventLabel(e.event_type)}</span></td>
         <td>${formatEventDetails(e.event_type, e.details)}</td>
       </tr>`;
     }).join("");
@@ -2515,22 +2539,22 @@ export default function AnalyticsPage({
     const driverActions = rows.filter((e) => e.event_type.startsWith("driver.")).length;
     const announcements = rows.filter((e) => e.event_type.startsWith("announcement.")).length;
     printReport(
-      `Activity Log — ${label}`,
+      t("analytics.activityLogTitle", { company: label }),
       `
-      <h1>${label} — Dispatcher Activity Log</h1>
-      <p class="sub">${activityDateFrom} to ${activityDateTo} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+      <h1>${esc(t("analytics.activityLogHeading", { company: label }))}</h1>
+      <p class="sub">${esc(t("analytics.dateRange", { from: activityDateFrom, to: activityDateTo }))} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Total events</div><div class="kpi-value">${rows.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Cancellations</div><div class="kpi-value">${cancels}</div></div>
-        <div class="kpi"><div class="kpi-label">Driver actions</div><div class="kpi-value">${driverActions}</div></div>
-        <div class="kpi"><div class="kpi-label">Announcements</div><div class="kpi-value">${announcements}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalEvents"))}</div><div class="kpi-value">${rows.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.cancellations"))}</div><div class="kpi-value">${cancels}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.driverActions"))}</div><div class="kpi-value">${driverActions}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("nav.announcements"))}</div><div class="kpi-value">${announcements}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="4"></td></tr><tr><th>Time</th><th>Dispatcher</th><th>Event</th><th>Details</th></tr></thead>
-        <tbody>${tableRows || "<tr><td colspan='4' style='color:#9ca3af'>No events in this period</td></tr>"}</tbody>
+        <thead><tr class="pg-spacer"><td colspan="4"></td></tr><tr><th>${esc(t("csv.time"))}</th><th>${esc(t("settings.role.dispatcher"))}</th><th>${esc(t("csv.event"))}</th><th>${esc(t("csv.details"))}</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan='4' style='color:#9ca3af'>${esc(t("analytics.noEvents"))}</td></tr>`}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="4"></td></tr></tfoot>
       </table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `,
       label,
     );
@@ -2538,40 +2562,40 @@ export default function AnalyticsPage({
 
   function exportReviewsPDF() {
     logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "reviews", row_count: filteredReviews.length } });
-    const driverLabel = reviewDriverFilter === "all" ? "All Drivers" : (reviewDriverOptions.find((d) => d.id === reviewDriverFilter)?.name ?? "Unknown");
+    const driverLabel = reviewDriverFilter === "all" ? t("reports.allDrivers") : (reviewDriverOptions.find((d) => d.id === reviewDriverFilter)?.name ?? t("common.unknown"));
     const starLabel = reviewStarFilter !== null ? ` · ${reviewStarFilter}★` : "";
     const avg = filteredReviews.length
       ? (filteredReviews.reduce((s, rv) => s + rv.rating, 0) / filteredReviews.length).toFixed(1)
       : "—";
     const tableRows = filteredReviews.map((rv) => `
       <tr>
-        <td style="white-space:nowrap">${new Date(rv.created_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</td>
+        <td style="white-space:nowrap">${esc(fmtDate(rv.created_at, { month: "short", day: "numeric", year: "numeric" }))}</td>
         <td>${rv.driver_name ?? "—"}</td>
         <td>${rv.passenger_name ?? "—"}</td>
         <td style="font-weight:700;letter-spacing:0.05em">${"★".repeat(rv.rating)}${"☆".repeat(5 - rv.rating)}</td>
         <td style="font-size:12px">${rv.comment ?? "—"}</td>
-        <td>${rv.reviewed_by_dispatch ? "Yes" : "—"}</td>
+        <td>${rv.reviewed_by_dispatch ? esc(t("common.yes")) : "—"}</td>
       </tr>`).join("");
-    printReport(`Reviews — ${label}`, `
-      <h1>${label} — Ride Reviews</h1>
-      <p class="sub">${driverLabel}${starLabel} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+    printReport(t("analytics.reviewsReportTitle", { company: label }), `
+      <h1>${esc(t("analytics.reviewsReportHeading", { company: label }))}</h1>
+      <p class="sub">${esc(driverLabel)}${esc(starLabel)} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Reviews</div><div class="kpi-value">${filteredReviews.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Avg rating</div><div class="kpi-value">${avg}</div></div>
-        <div class="kpi"><div class="kpi-label">Flagged (≤2★)</div><div class="kpi-value">${filteredReviews.filter((rv) => rv.rating <= 2).length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.sections.reviews"))}</div><div class="kpi-value">${filteredReviews.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("drivers.avgRating"))}</div><div class="kpi-value">${avg}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.flaggedLow"))}</div><div class="kpi-value">${filteredReviews.filter((rv) => rv.rating <= 2).length}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="6"></td></tr><tr><th>Date</th><th>Driver</th><th>Passenger</th><th>Rating</th><th>Comment</th><th>Reviewed</th></tr></thead>
-        <tbody>${tableRows || "<tr><td colspan='6' style='color:#9ca3af'>No reviews</td></tr>"}</tbody>
+        <thead><tr class="pg-spacer"><td colspan="6"></td></tr><tr><th>${esc(t("csv.date"))}</th><th>${esc(t("csv.driver"))}</th><th>${esc(t("rideDetail.passenger"))}</th><th>${esc(t("csv.rating"))}</th><th>${esc(t("csv.comment"))}</th><th>${esc(t("csv.reviewed"))}</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan='6' style='color:#9ca3af'>${esc(t("analytics.noReviews"))}</td></tr>`}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="6"></td></tr></tfoot>
       </table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `, label);
   }
 
   function exportDriversPDF() {
     logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "drivers", period, row_count: driverStats.length } });
-    const pl = period === "today" ? "Today" : period === "week" ? "Last 7 days" : period === "month" ? "This month" : "This year";
+    const pl = t(`analytics.period.${period}`);
     const totalEarnings = driverStats.reduce((s, d) => s + d.earnings, 0);
     const totalRides = driverStats.reduce((s, d) => s + d.rides, 0);
     const tableRows = driverStats.map((d) => `
@@ -2585,20 +2609,20 @@ export default function AnalyticsPage({
         <td>${d.cancelRate.toFixed(1)}%</td>
         <td>${d.avgRating?.toFixed(1) ?? "—"}</td>
       </tr>`).join("");
-    printReport(`Driver Performance — ${label}`, `
-      <h1>${label} — Driver Performance</h1>
-      <p class="sub">${pl} · Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+    printReport(t("analytics.driversReportTitle", { company: label }), `
+      <h1>${esc(t("analytics.driversReportHeading", { company: label }))}</h1>
+      <p class="sub">${esc(pl)} · ${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Drivers</div><div class="kpi-value">${driverStats.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Total rides</div><div class="kpi-value">${totalRides}</div></div>
-        <div class="kpi"><div class="kpi-label">Total earnings</div><div class="kpi-value">$${totalEarnings.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("nav.drivers"))}</div><div class="kpi-value">${driverStats.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalRides"))}</div><div class="kpi-value">${totalRides}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalEarnings"))}</div><div class="kpi-value">$${totalEarnings.toFixed(2)}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>Driver</th><th>Rides</th><th>Earnings</th><th>Cash</th><th>Card</th><th>Avg Fare</th><th>Cancel %</th><th>Avg Rating</th></tr></thead>
-        <tbody>${tableRows || "<tr><td colspan='8' style='color:#9ca3af'>No data for this period</td></tr>"}</tbody>
+        <thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelPct"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan='8' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="8"></td></tr></tfoot>
       </table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `, label);
   }
 
@@ -2608,26 +2632,26 @@ export default function AnalyticsPage({
     const tableRows = filteredReceipts.map((inv) => `
       <tr>
         <td style="font-family:monospace;font-size:11px;font-weight:700">${inv.receipt_number}</td>
-        <td style="white-space:nowrap">${new Date(inv.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</td>
+        <td style="white-space:nowrap">${esc(fmtDate(inv.sent_at, { month: "short", day: "numeric", year: "numeric" }))}</td>
         <td>${inv.passenger_name ?? "—"}</td>
         <td>${inv.driver_name ?? "—"}</td>
         <td style="font-size:11px">${inv.pickup_address && inv.dropoff_address ? `${inv.pickup_address} → ${inv.dropoff_address}` : inv.pickup_address ?? "—"}</td>
         <td style="color:#15803d;font-weight:600">$${inv.fare.toFixed(2)}</td>
-        <td style="text-transform:capitalize">${inv.payment_method ?? "—"}</td>
+        <td>${inv.payment_method ? esc(t(inv.payment_method === "cash" ? "rideDetail.cash" : "rideDetail.card")) : "—"}</td>
       </tr>`).join("");
-    printReport(`Receipts — ${label}`, `
-      <h1>${label} — Receipts</h1>
-      <p class="sub">Generated ${new Date().toLocaleDateString("en-CA", { dateStyle: "long" })}</p>
+    printReport(t("analytics.receiptsReportTitle", { company: label }), `
+      <h1>${esc(t("analytics.receiptsReportHeading", { company: label }))}</h1>
+      <p class="sub">${esc(t("analytics.generatedOn", { when: fmtDate(new Date(), { dateStyle: "long" }) }))}</p>
       <div class="kpi-row">
-        <div class="kpi"><div class="kpi-label">Receipts</div><div class="kpi-value">${filteredReceipts.length}</div></div>
-        <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">$${total.toFixed(2)}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("analytics.sections.receipts"))}</div><div class="kpi-value">${filteredReceipts.length}</div></div>
+        <div class="kpi"><div class="kpi-label">${esc(t("reports.total"))}</div><div class="kpi-value">$${total.toFixed(2)}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="7"></td></tr><tr><th>Receipt #</th><th>Date</th><th>Passenger</th><th>Driver</th><th>Route</th><th>Amount</th><th>Payment</th></tr></thead>
-        <tbody>${tableRows || "<tr><td colspan='7' style='color:#9ca3af'>No receipts</td></tr>"}</tbody>
+        <thead><tr class="pg-spacer"><td colspan="7"></td></tr><tr><th>${esc(t("csv.receiptNo"))}</th><th>${esc(t("csv.date"))}</th><th>${esc(t("rideDetail.passenger"))}</th><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.route"))}</th><th>${esc(t("csv.amount"))}</th><th>${esc(t("rideDetail.payment"))}</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan='7' style='color:#9ca3af'>${esc(t("analytics.noReceipts"))}</td></tr>`}</tbody>
         <tfoot><tr class="pg-spacer-foot"><td colspan="7"></td></tr></tfoot>
       </table>
-      ${APPROVAL_BLOCK}
+      ${approvalBlock()}
     `, label);
   }
 
@@ -2635,10 +2659,11 @@ export default function AnalyticsPage({
     logDispatchEvent({ companyId, dispatcherId, eventType: "export.csv", details: { section: "receipts", row_count: filteredReceipts.length } });
     downloadCSV(
       "receipts.csv",
-      ["Receipt #", "Date", "Passenger", "Driver", "Pickup", "Drop-off", "Amount", "Payment"],
+      [t("csv.receiptNo"), t("csv.date"), t("rideDetail.passenger"), t("csv.driver"),
+       t("reports.pickup"), t("reports.dropoff"), t("csv.amount"), t("rideDetail.payment")],
       filteredReceipts.map((inv) => [
         inv.receipt_number,
-        new Date(inv.sent_at).toLocaleDateString("en-CA"),
+        fmtDate(inv.sent_at),
         inv.passenger_name ?? "",
         inv.driver_name ?? "",
         inv.pickup_address ?? "",
@@ -2723,7 +2748,7 @@ export default function AnalyticsPage({
     reviews
       .reduce((map, rv) => {
         if (!map.has(rv.driver_id))
-          map.set(rv.driver_id, rv.driver_name ?? "Unknown");
+          map.set(rv.driver_id, rv.driver_name ?? t("common.unknown"));
         return map;
       }, new Map<string, string>())
       .entries(),
@@ -2754,14 +2779,12 @@ export default function AnalyticsPage({
     (rv) => rv.rating <= 2,
   ).length;
 
-  const periodLabel =
-    period === "today"
-      ? "Today"
-      : period === "week"
-        ? "Week"
-        : period === "month"
-          ? "Month"
-          : "Year";
+
+  // The mid-sentence form, as its OWN key rather than periodLabel.toLowerCase().
+  // Lowercasing a label to drop it into a sentence is an English-only trick:
+  // French needs an article and agreement ("ce mois-ci", "cette année"), and
+  // some languages do not case-fold at all.
+  const periodPhrase = t(`analytics.periodPhrase.${period}`);
 
   function RevenueTooltip({ active, payload, label }: any) {
     if (!active || !payload?.length) return null;
@@ -2780,7 +2803,7 @@ export default function AnalyticsPage({
           ${payload[0].value.toFixed(2)}
         </div>
         <div style={{ color: "#6B7280", marginTop: 3 }}>
-          {d.rides} ride{d.rides !== 1 ? "s" : ""}
+          {t("analytics.ridesCount", { count: d.rides })}
         </div>
       </div>
     );
@@ -2802,7 +2825,7 @@ export default function AnalyticsPage({
       }}>
         <div style={{ color: "#9CA3AF", marginBottom: 4 }}>{lbl}</div>
         <div style={{ fontSize: 17, fontWeight: 700, color: "#E8500A" }}>
-          {count} ride{count !== 1 ? "s" : ""}
+          {t("analytics.ridesCount", { count })}
         </div>
       </div>
     );
@@ -3061,7 +3084,7 @@ export default function AnalyticsPage({
       <div className="an-wrap">
         {/* LEFT PANEL */}
         <div className="an-panel">
-          <div className="an-panel-title">Analytics</div>
+          <div className="an-panel-title">{t("nav.analytics")}</div>
           {SECTION_ITEMS.map((s) => {
             const unreviewedLow =
               s.id === "reviews"
@@ -3076,7 +3099,7 @@ export default function AnalyticsPage({
                 onClick={() => setSection(s.id)}
                 style={{ position: "relative" }}
               >
-                {s.label}
+                {t(s.labelKey)}
                 {unreviewedLow > 0 && (
                   <span
                     style={{
@@ -3103,7 +3126,7 @@ export default function AnalyticsPage({
           {section === "revenue" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Revenue</div>
+                <div className="an-section-title">{t("stats.revenue")}</div>
                 <div className="an-controls">
                   <div className="an-period-btns">
                     {(["today", "week", "month", "year"] as const).map((p) => (
@@ -3112,7 +3135,10 @@ export default function AnalyticsPage({
                         className={`an-period-btn${period === p ? " active" : ""}`}
                         onClick={() => setPeriod(p)}
                       >
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                        {/* Was `p.charAt(0).toUpperCase() + p.slice(1)` — a
+                            label computed from a code identifier, invisible to
+                            any scanner of string literals. */}
+                        {t(`analytics.period.${p}`)}
                       </button>
                     ))}
                   </div>
@@ -3120,22 +3146,22 @@ export default function AnalyticsPage({
                     className="an-download-btn"
                     onClick={downloadRevenueReport}
                   >
-                    ↓ PDF
+                    {t("analytics.pdf")}
                   </button>
                   <button className="an-csv-btn" onClick={exportDriverStatsCSV}>
-                    ↓ CSV
+                    {t("analytics.csv")}
                   </button>
                 </div>
               </div>
 
               {revenueLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : (
                 <>
                   {/* Always-visible strip */}
                   <div className="an-revenue-strip">
                     <div className="an-revenue-mini">
-                      <div className="an-revenue-mini-label">Today</div>
+                      <div className="an-revenue-mini-label">{t("stats.today")}</div>
                       <div
                         className="an-revenue-mini-value"
                         style={{
@@ -3146,7 +3172,7 @@ export default function AnalyticsPage({
                       </div>
                     </div>
                     <div className="an-revenue-mini">
-                      <div className="an-revenue-mini-label">This week</div>
+                      <div className="an-revenue-mini-label">{t("analytics.thisWeek")}</div>
                       <div
                         className="an-revenue-mini-value"
                         style={{
@@ -3157,7 +3183,7 @@ export default function AnalyticsPage({
                       </div>
                     </div>
                     <div className="an-revenue-mini">
-                      <div className="an-revenue-mini-label">This month</div>
+                      <div className="an-revenue-mini-label">{t("analytics.thisMonth")}</div>
                       <div
                         className="an-revenue-mini-value"
                         style={{
@@ -3168,7 +3194,7 @@ export default function AnalyticsPage({
                       </div>
                     </div>
                     <div className="an-revenue-mini">
-                      <div className="an-revenue-mini-label">This year</div>
+                      <div className="an-revenue-mini-label">{t("analytics.thisYear")}</div>
                       <div
                         className="an-revenue-mini-value"
                         style={{
@@ -3183,7 +3209,7 @@ export default function AnalyticsPage({
                   {/* Period KPIs */}
                   <div className="an-kpi-grid">
                     <div className="an-kpi-card">
-                      <div className="an-kpi-label">Revenue</div>
+                      <div className="an-kpi-label">{t("stats.revenue")}</div>
                       <div
                         className="an-kpi-value"
                         style={{ color: "#1D9E75" }}
@@ -3191,22 +3217,22 @@ export default function AnalyticsPage({
                         ${totals.revenue.toFixed(2)}
                       </div>
                       <div className="an-kpi-sub">
-                        {periodLabel.toLowerCase()}
+                        {periodPhrase}
                       </div>
                     </div>
                     <div className="an-kpi-card">
-                      <div className="an-kpi-label">Completed</div>
+                      <div className="an-kpi-label">{t("rideStatus.completed")}</div>
                       <div className="an-kpi-value">{totals.rides}</div>
-                      <div className="an-kpi-sub">rides</div>
+                      <div className="an-kpi-sub">{t("analytics.ridesWord")}</div>
                     </div>
                     <div className="an-kpi-card">
-                      <div className="an-kpi-label">Avg fare</div>
+                      <div className="an-kpi-label">{t("csv.avgFare")}</div>
                       <div className="an-kpi-value">
                         ${totals.avgFare.toFixed(2)}
                       </div>
                     </div>
                     <div className="an-kpi-card">
-                      <div className="an-kpi-label">Cancel rate</div>
+                      <div className="an-kpi-label">{t("csv.cancelRate")}</div>
                       <div
                         className="an-kpi-value"
                         style={{
@@ -3221,7 +3247,7 @@ export default function AnalyticsPage({
                   {/* Cash vs card split */}
                   <div className="an-chart-card" style={{ marginBottom: 16 }}>
                     <div className="an-chart-title">
-                      Cash vs card · {periodLabel.toLowerCase()}
+                      {t("analytics.cashVsCard")} · {periodPhrase}
                     </div>
                     <div
                       style={{
@@ -3248,7 +3274,7 @@ export default function AnalyticsPage({
                             marginBottom: 6,
                           }}
                         >
-                          Cash
+                          {t("rideDetail.cash")}
                         </div>
                         <div
                           style={{
@@ -3266,8 +3292,7 @@ export default function AnalyticsPage({
                             marginTop: 4,
                           }}
                         >
-                          {totals.cashRides} ride
-                          {totals.cashRides !== 1 ? "s" : ""}
+                          {t("analytics.ridesCount", { count: totals.cashRides })}
                         </div>
                         {totals.cashRevenue > 0 && (
                           <div
@@ -3278,7 +3303,7 @@ export default function AnalyticsPage({
                               fontWeight: 600,
                             }}
                           >
-                            ⚠ Collect from drivers
+                            ⚠ {t("analytics.collectFromDrivers")}
                           </div>
                         )}
                       </div>
@@ -3300,7 +3325,7 @@ export default function AnalyticsPage({
                             marginBottom: 6,
                           }}
                         >
-                          Card (Stripe)
+                          {t("analytics.cardStripe")}
                         </div>
                         <div
                           style={{
@@ -3318,8 +3343,7 @@ export default function AnalyticsPage({
                             marginTop: 4,
                           }}
                         >
-                          {totals.cardRides} ride
-                          {totals.cardRides !== 1 ? "s" : ""}
+                          {t("analytics.ridesCount", { count: totals.cardRides })}
                         </div>
                         <div
                           style={{
@@ -3328,7 +3352,7 @@ export default function AnalyticsPage({
                             marginTop: 6,
                           }}
                         >
-                          Processed via Stripe
+                          {t("analytics.viaStripe")}
                         </div>
                       </div>
                     </div>
@@ -3337,11 +3361,11 @@ export default function AnalyticsPage({
                   {/* Revenue chart */}
                   <div className="an-chart-card">
                     <div className="an-chart-title">
-                      Revenue over time{period === "today" ? " · by hour" : ""}
+                      {t("analytics.revenueOverTime")}{period === "today" ? ` · ${t("analytics.byHour")}` : ""}
                     </div>
                     {(period === "today" ? hourlyData : dailyData).length === 0 ? (
                       <div className="an-no-data">
-                        No completed rides in this period
+                        {t("analytics.noCompletedRides")}
                       </div>
                     ) : period === "today" ? (
                       <ResponsiveContainer width="100%" height={200}>
@@ -3406,26 +3430,26 @@ export default function AnalyticsPage({
 
                   {/* Driver earnings */}
                   <div className="an-chart-card">
-                    <div className="an-chart-title">Driver earnings</div>
+                    <div className="an-chart-title">{t("analytics.driverEarnings")}</div>
                     {driverStats.length === 0 ? (
                       <div className="an-no-data">
-                        No driver data for this period
+                        {t("analytics.noDriverData")}
                       </div>
                     ) : (
                       <table className="an-table">
                         <thead>
                           <tr>
                             {[
-                              "Driver",
-                              "Rides",
-                              "Earnings",
-                              "Cash",
-                              "Card",
-                              "Avg Fare",
-                              "Cancel Rate",
+                              "csv.driver",
+                              "csv.rides",
+                              "csv.earnings",
+                              "rideDetail.cash",
+                              "rideDetail.card",
+                              "csv.avgFare",
+                              "csv.cancelRate",
                             ].map((h) => (
                               <th key={h} className="an-th">
-                                {h}
+                                {t(h)}
                               </th>
                             ))}
                           </tr>
@@ -3471,19 +3495,22 @@ export default function AnalyticsPage({
                   {/* Peak activity */}
                   <div className="an-chart-card">
                     <div className="an-chart-title">
-                      Peak activity · this year
+                      {t("analytics.peakActivity")}
                     </div>
                     {peakLoading ? (
-                      <div className="an-no-data">Loading…</div>
+                      <div className="an-no-data">{t("common.loading")}</div>
                     ) : (
                       <div className="an-peak-row">
                         {/* By hour */}
                         <div className="an-bar-chart-wrap" style={{ flex: 2 }}>
                           <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
-                            By hour of day
+                            {t("analytics.byHourOfDay")}
                             {peakHour && peakHour.rides > 0 && (
                               <span style={{ color: "#E8500A", marginLeft: 8 }}>
-                                Peak: {fmtHour(peakHour.hour)} · {peakHour.rides} ride{peakHour.rides !== 1 ? "s" : ""}
+                                {t("analytics.peakAt", {
+                          when: fmtHour(peakHour.hour),
+                          rides: t("analytics.ridesCount", { count: peakHour.rides }),
+                        })}
                               </span>
                             )}
                           </div>
@@ -3513,10 +3540,13 @@ export default function AnalyticsPage({
                         {/* By day */}
                         <div className="an-bar-chart-wrap" style={{ flex: 1 }}>
                           <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
-                            By day of week
+                            {t("analytics.byDayOfWeek")}
                             {peakDay && peakDay.rides > 0 && (
                               <span style={{ color: "#E8500A", marginLeft: 8 }}>
-                                Busiest: {peakDay.day} · {peakDay.rides} ride{peakDay.rides !== 1 ? "s" : ""}
+                                {t("analytics.busiestOn", {
+                          when: peakDay.day,
+                          rides: t("analytics.ridesCount", { count: peakDay.rides }),
+                        })}
                               </span>
                             )}
                           </div>
@@ -3554,7 +3584,7 @@ export default function AnalyticsPage({
           {section === "rides" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Ride History</div>
+                <div className="an-section-title">{t("analytics.sections.rides")}</div>
                 <div className="an-controls">
                   {availableYears.length > 0 && (
                     <select
@@ -3573,7 +3603,7 @@ export default function AnalyticsPage({
                       downloadYearReport(selectedYear, monthGroups)
                     }
                   >
-                    ↓ PDF {selectedYear}
+                    {t("analytics.pdf")} {selectedYear}
                   </button>
                   <button
                     className="an-csv-btn"
@@ -3584,16 +3614,17 @@ export default function AnalyticsPage({
                             new Date(r.created_at).getFullYear() ===
                             selectedYear,
                         ),
-                        `rides-${selectedYear}.csv`,
+                        // i18n-ok — a filename.
+      `rides-${selectedYear}.csv`,
                       )
                     }
                   >
-                    ↓ CSV
+                    {t("analytics.csv")}
                   </button>
                 </div>
               </div>
               {ridesLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : (
                 <>
                   <div className="an-filter-row">
@@ -3603,24 +3634,24 @@ export default function AnalyticsPage({
                         className={`an-filter-btn${rideFilter === s ? " active" : ""}`}
                         onClick={() => setRideFilter(s)}
                       >
-                        {s === "all" ? "All" : STATUS_LABELS[s]}
+                        {s === "all" ? t("analytics.filterAll") : rideStatusLabel(s)}
                       </button>
                     ))}
                     <span className="an-filter-count">
-                      {filteredRides.length} rides
+                      {t("analytics.ridesCount", { count: filteredRides.length })}
                     </span>
                   </div>
                   <div className="inv-search-row">
                     <input
                       className="inv-search"
-                      placeholder="Search by passenger, driver, address, or receipt #…"
+                      placeholder={t("analytics.ridesSearchPlaceholder")}
                       value={rideSearch}
                       onChange={(e) => setRideSearch(e.target.value)}
                     />
                   </div>
                   {monthGroups.length === 0 ? (
                     <div className="an-no-data" style={{ padding: "48px 0" }}>
-                      {rideSearch ? "No rides match your search" : "No rides found"}
+                      {rideSearch ? t("analytics.noRidesMatch") : t("analytics.noRidesFound")}
                     </div>
                   ) : (
                     monthGroups.map((group) => {
@@ -3642,7 +3673,7 @@ export default function AnalyticsPage({
                                 {group.label}
                               </span>
                               <span className="an-month-meta">
-                                {group.rides.length} ride
+                                {t("analytics.ridesCount", { count: group.rides.length })}
                                 {group.rides.length !== 1 ? "s" : ""}
                               </span>
                             </div>
@@ -3663,7 +3694,7 @@ export default function AnalyticsPage({
                                   downloadMonthReport(group);
                                 }}
                               >
-                                ↓ PDF
+                                {t("analytics.pdf")}
                               </button>
                               <button
                                 className="an-csv-btn"
@@ -3676,11 +3707,12 @@ export default function AnalyticsPage({
                                   e.stopPropagation();
                                   exportRidesCSV(
                                     group.rides,
-                                    `rides-${group.key}.csv`,
+                                    // i18n-ok — a filename.
+      `rides-${group.key}.csv`,
                                   );
                                 }}
                               >
-                                ↓ CSV
+                                {t("analytics.csv")}
                               </button>
                             </div>
                           </div>
@@ -3689,24 +3721,24 @@ export default function AnalyticsPage({
                               <table className="an-table">
                                 <thead>
                                   <tr>
-                                    {[
-                                      "Date",
-                                      "Ride",
-                                      "Passenger",
-                                      "Driver",
-                                      "Pickup",
-                                      "Drop-off",
-                                      "Fare",
-                                      "Status",
-                                      "Payment",
-                                      "Receipt",
-                                    ].map((h) => (
+                                    {([
+                                      "date",
+                                      "ride",
+                                      "passenger",
+                                      "driver",
+                                      "pickup",
+                                      "dropoff",
+                                      "fare",
+                                      "status",
+                                      "payment",
+                                      "receipt",
+                                    ] as const).map((h) => (
                                       <th
                                         key={h}
                                         className="an-th"
                                         style={{ padding: "10px 14px" }}
                                       >
-                                        {h}
+                                        {t(`analytics.col.${h}`)}
                                       </th>
                                     ))}
                                   </tr>
@@ -3728,9 +3760,7 @@ export default function AnalyticsPage({
                                         className="an-td"
                                         style={{ whiteSpace: "nowrap" }}
                                       >
-                                        {new Date(
-                                          r.created_at,
-                                        ).toLocaleDateString("en-CA", {
+                                        {fmtDate(r.created_at, {
                                           month: "short",
                                           day: "numeric",
                                         })}
@@ -3779,7 +3809,7 @@ export default function AnalyticsPage({
                                             border: `1px solid ${STATUS_COLORS[r.status]}30`,
                                           }}
                                         >
-                                          {STATUS_LABELS[r.status] ?? r.status}
+                                          {rideStatusLabel(r.status)}
                                         </span>
                                       </td>
                                       <td
@@ -3824,7 +3854,7 @@ export default function AnalyticsPage({
               {/* ═══ 1. Period rollup — hero + charts (leads the tab) ═══ */}
               <div className="an-section-header">
                 <div className="an-section-title">
-                  {isCompanySettles ? "Card settlement to your account" : "Where card money went"}
+                  {isCompanySettles ? t("settle.cardSettlementTitle") : t("settle.whereCardWent")}
                 </div>
                 <div className="an-controls">
                   {/* Net | Gross display lens. Net (default) = what actually
@@ -3833,14 +3863,14 @@ export default function AnalyticsPage({
                       company_settles — its fee view shows the full gross→net
                       decomposition at once, so a basis toggle is meaningless. */}
                   {!isCompanySettles && (
-                    <div className="an-period-btns" title="Net = after Vellon + Stripe fees. Gross = what passengers were charged.">
+                    <div className="an-period-btns" title={t("settle.basisHelp")}>
                       {(["net", "gross"] as const).map((b) => (
                         <button
                           key={b}
                           className={`an-period-btn${settlementBasis === b ? " active" : ""}`}
                           onClick={() => setSettlementBasis(b)}
                         >
-                          {b === "net" ? "Net" : "Gross"}
+                          {b === "net" ? t("settle.net") : t("settle.gross")}
                         </button>
                       ))}
                     </div>
@@ -3852,7 +3882,7 @@ export default function AnalyticsPage({
                         className={`an-period-btn${period === p ? " active" : ""}`}
                         onClick={() => setPeriod(p)}
                       >
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                        {t(`analytics.period.${p}`)}
                       </button>
                     ))}
                   </div>
@@ -3860,18 +3890,18 @@ export default function AnalyticsPage({
               </div>
               <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
                 {isCompanySettles
-                  ? "Card fares settled to your Stripe account — where each dollar goes"
+                  ? t("settle.cardSettledSub")
                   : settlementBasis === "net"
-                    ? "Net · amounts after Vellon + Stripe fees"
-                    : "Gross · what passengers were charged"}
+                    ? t("settle.netSub")
+                    : t("settle.grossSub")}
               </div>
 
               {isCompanySettles ? (
                 /* ── company_settles: fee-breakdown view ── */
                 feeBreakdownLoading ? (
-                  <div className="an-loading">Loading…</div>
+                  <div className="an-loading">{t("common.loading")}</div>
                 ) : !feeBreakdown || feeBreakdown.paid_rides === 0 ? (
-                  <div className="an-no-data">No settled card rides for this period</div>
+                  <div className="an-no-data">{t("settle.noSettledCard")}</div>
                 ) : (
                   <>
                     {/* Hero: gross fares decomposed. Net = what landed; the two
@@ -3880,52 +3910,53 @@ export default function AnalyticsPage({
                       <div className="an-hero-card lead paid-company">
                         <div className="an-hero-label">
                           <span className="an-dot" style={{ background: "#4a9eff" }} />
-                          Net to your account
+                          {t("settle.netToYourAccount")}
                         </div>
                         <div className="an-hero-value">${feeBreakdown.net_total.toFixed(2)}</div>
                         <div className="an-hero-sub">
-                          {feeBreakdown.paid_rides} ride
-                          {feeBreakdown.paid_rides === 1 ? "" : "s"} · settled to Stripe
+                          {t("analytics.ridesCount", { count: feeBreakdown.paid_rides })} · {t("settle.settledToStripe")}
                         </div>
                       </div>
 
                       <div className="an-hero-card">
-                        <div className="an-hero-label">Gross card fares</div>
+                        <div className="an-hero-label">{t("settle.grossCardFares")}</div>
                         <div className="an-hero-value">${feeBreakdown.gross_fares.toFixed(2)}</div>
-                        <div className="an-hero-sub">what passengers paid</div>
+                        <div className="an-hero-sub">{t("settle.whatPassengersPaid")}</div>
                       </div>
 
                       <div className="an-hero-card">
                         <div className="an-hero-label">
                           <span className="an-dot" style={{ background: "#E8500A" }} />
-                          Vellon fee
+                          {t("rideDetail.vellonFee")}
                         </div>
                         <div className="an-hero-value" style={{ color: "#f0782f" }}>
                           ${feeBreakdown.vellon_fee.toFixed(2)}
                         </div>
                         <div className="an-hero-sub">
                           {feeBreakdown.gross_fares > 0
-                            ? `${((feeBreakdown.vellon_fee / feeBreakdown.gross_fares) * 100).toFixed(1)}% of fares`
-                            : "platform fee"}
+                            ? t("settle.pctOfFares", {
+                                pct: ((feeBreakdown.vellon_fee / feeBreakdown.gross_fares) * 100).toFixed(1),
+                              })
+                            : t("settle.platformFee")}
                         </div>
                       </div>
 
                       <div className="an-hero-card">
                         <div className="an-hero-label">
                           <span className="an-dot" style={{ background: "#8B93A7" }} />
-                          Stripe fee
+                          {t("settle.stripeFee")}
                         </div>
                         <div className="an-hero-value" style={{ color: "#aab2c4" }}>
                           ${feeBreakdown.stripe_fee.toFixed(2)}
                         </div>
-                        <div className="an-hero-sub">card processing</div>
+                        <div className="an-hero-sub">{t("settle.cardProcessing")}</div>
                       </div>
                     </div>
 
                     {/* Two-up: fee-composition donut + daily net-settled flow */}
                     <div className="an-two-up">
                       <div className="an-chart-card">
-                        <div className="an-chart-title">Where each fare dollar goes</div>
+                        <div className="an-chart-title">{t("settle.whereEachDollar")}</div>
                         {(() => {
                           const center = feeHot
                             ? feeDonut.segs.find((s) => s.key === feeHot)
@@ -3993,10 +4024,10 @@ export default function AnalyticsPage({
                       </div>
 
                       <div className="an-chart-card">
-                        <div className="an-chart-title">Daily net settled to your account</div>
+                        <div className="an-chart-title">{t("settle.dailyNetTitle")}</div>
                         {settlementDailyChart.buckets.length === 0 ? (
                           <div className="an-no-data" style={{ padding: "40px 0" }}>
-                            No settled rides to chart
+                            {t("settle.noSettledToChart")}
                           </div>
                         ) : (
                           (() => {
@@ -4030,7 +4061,7 @@ export default function AnalyticsPage({
                                         <div className="an-bar-tip" style={{ bottom: h + 8 }}>
                                           <div className="an-tip-day">{b.label}</div>
                                           <div className="an-tip-row tot">
-                                            <span className="k">Net settled</span>
+                                            <span className="k">{t("rideDetail.netSettled")}</span>
                                             <span className="v">${b.paid.toFixed(2)}</span>
                                           </div>
                                         </div>
@@ -4047,9 +4078,9 @@ export default function AnalyticsPage({
                   </>
                 )
               ) : settlementRollupLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : settlementRollup.length === 0 ? (
-                <div className="an-no-data">No completed card rides for this period</div>
+                <div className="an-no-data">{t("settle.noCompletedCard")}</div>
               ) : (
                 <>
                   {/* Hero tiles — all one basis, so nothing needs reconciling. */}
@@ -4061,7 +4092,7 @@ export default function AnalyticsPage({
                       </div>
                       <div className="an-hero-value">${settlementTotals.settled.toFixed(2)}</div>
                       <div className="an-hero-sub">
-                        {settlementTotals.settledRides} ride
+                        {t("analytics.ridesCount", { count: settlementTotals.settledRides })}
                         {settlementTotals.settledRides === 1 ? "" : "s"} · {leadPaidSub}
                       </div>
                       {settlementDailyChart.buckets.length > 1 &&
@@ -4108,17 +4139,17 @@ export default function AnalyticsPage({
 
                     <div className="an-hero-card">
                       <div className="an-hero-label">
-                        {settlementBasis === "net" ? "Net total" : "Card fares"}
+                        {settlementBasis === "net" ? t("settle.netTotal") : t("settle.cardFares")}
                       </div>
                       <div className="an-hero-value">${settlementTotals.grand.toFixed(2)}</div>
                       <div className="an-hero-sub">
-                        {settlementTotals.rides} ride{settlementTotals.rides === 1 ? "" : "s"}{" "}
-                        {periodLabel.toLowerCase()}
+                        {t("analytics.ridesCount", { count: settlementTotals.rides })}{" "}
+                        {periodPhrase}
                       </div>
                     </div>
 
                     <div className="an-hero-card">
-                      <div className="an-hero-label">Held by Vellon</div>
+                      <div className="an-hero-label">{t("settlementShort.platformInvoiced")}</div>
                       <div
                         className="an-hero-value"
                         style={{ color: settlementTotals.held > 0 ? "#F59E0B" : "#F1F5F9" }}
@@ -4126,12 +4157,12 @@ export default function AnalyticsPage({
                         ${settlementTotals.held.toFixed(2)}
                       </div>
                       <div className="an-hero-sub">
-                        {settlementTotals.heldRides} pending invoice
+                        {t("settle.pendingInvoiceCount", { count: settlementTotals.heldRides })}
                       </div>
                     </div>
 
                     <div className="an-hero-card">
-                      <div className="an-hero-label">Failed or reversed</div>
+                      <div className="an-hero-label">{t("settle.failedOrReversed")}</div>
                       <div
                         className="an-hero-value"
                         style={{ color: settlementTotals.problem > 0 ? "#E24B4A" : "#F1F5F9" }}
@@ -4139,8 +4170,7 @@ export default function AnalyticsPage({
                         ${settlementTotals.problem.toFixed(2)}
                       </div>
                       <div className="an-hero-sub">
-                        {settlementTotals.problemRides} ride
-                        {settlementTotals.problemRides === 1 ? "" : "s"} this period
+                        {t("analytics.ridesCount", { count: settlementTotals.problemRides })} {t("settle.thisPeriod")}
                       </div>
                     </div>
                   </div>
@@ -4148,7 +4178,7 @@ export default function AnalyticsPage({
                   {/* Two-up: donut composition + daily settlement flow */}
                   <div className="an-two-up">
                     <div className="an-chart-card">
-                      <div className="an-chart-title">Composition by route</div>
+                      <div className="an-chart-title">{t("settle.compositionByRoute")}</div>
                       {(() => {
                         // Center follows the hovered slice, else the biggest.
                         const center = settleHotRoute
@@ -4191,7 +4221,7 @@ export default function AnalyticsPage({
                                     {center.pct.toFixed(1)}%
                                   </text>
                                   <text x="59" y="71" textAnchor="middle" fill="#6B7280" fontSize="9.5" style={{ letterSpacing: "0.04em" }}>
-                                    {(SETTLEMENT_ROUTE_SHORT[center.route] ?? center.route).toUpperCase()}
+                                    {settlementShort(center.route).toUpperCase()}
                                   </text>
                                 </>
                               )}
@@ -4206,7 +4236,7 @@ export default function AnalyticsPage({
                                 >
                                   <span className="an-dot" style={{ background: s.color }} />
                                   <span className="an-leg-name">
-                                    {SETTLEMENT_ROUTE_SHORT[s.route] ?? s.route}
+                                    {settlementShort(s.route)}
                                   </span>
                                   <span className="an-leg-amt">${s.amt.toFixed(2)}</span>
                                   <span className="an-leg-pct">{s.pct.toFixed(1)}%</span>
@@ -4219,10 +4249,10 @@ export default function AnalyticsPage({
                     </div>
 
                     <div className="an-chart-card">
-                      <div className="an-chart-title">Daily settlement flow</div>
+                      <div className="an-chart-title">{t("settle.dailyFlow")}</div>
                       {settlementDailyChart.buckets.length === 0 ? (
                         <div className="an-no-data" style={{ padding: "40px 0" }}>
-                          No settled rides to chart
+                          {t("settle.noSettledToChart")}
                         </div>
                       ) : (
                         (() => {
@@ -4273,19 +4303,19 @@ export default function AnalyticsPage({
                                           <div className="an-tip-row">
                                             <span className="k">
                                               <span className="an-dot" style={{ background: "#1D9E75" }} />
-                                              Paid
+                                              {t("settle.paid")}
                                             </span>
                                             <span className="v">${b.paid.toFixed(2)}</span>
                                           </div>
                                           <div className="an-tip-row">
                                             <span className="k">
                                               <span className="an-dot" style={{ background: "#F59E0B" }} />
-                                              Held
+                                              {t("settle.held")}
                                             </span>
                                             <span className="v">${b.held.toFixed(2)}</span>
                                           </div>
                                           <div className="an-tip-row tot">
-                                            <span className="k">Total</span>
+                                            <span className="k">{t("reports.total")}</span>
                                             <span className="v">${(b.paid + b.held).toFixed(2)}</span>
                                           </div>
                                         </div>
@@ -4295,8 +4325,8 @@ export default function AnalyticsPage({
                                 </div>
                               </div>
                               <div className="an-trend-legend">
-                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#1D9E75" }} /> Paid to drivers</span>
-                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#F59E0B" }} /> Held by Vellon</span>
+                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#1D9E75" }} /> {t("settle.paidToDrivers")}</span>
+                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#F59E0B" }} /> {t("settlementShort.platformInvoiced")}</span>
                               </div>
                             </>
                           );
@@ -4310,9 +4340,14 @@ export default function AnalyticsPage({
                     <table className="an-table">
                       <thead>
                         <tr>
-                          {["Route", "Rides", settlementBasis === "net" ? "Net" : "Fares", "Share"].map((h, i) => (
+                          {([
+                            "route",
+                            "rides",
+                            settlementBasis === "net" ? "net" : "fares",
+                            "share",
+                          ] as const).map((h, i) => (
                             <th key={h} className="an-th" style={{ textAlign: i === 0 ? "left" : "right" }}>
-                              {h}
+                              {t(`analytics.col.${h}`)}
                             </th>
                           ))}
                         </tr>
@@ -4341,16 +4376,15 @@ export default function AnalyticsPage({
                               }}
                               title={
                                 active
-                                  ? "Click to clear the filter"
-                                  : "Click to filter the ride list below"
+                                  ? t("settle.clickToClear")
+                                  : t("settle.clickToFilter")
                               }
                             >
                               <td className="an-td primary">
                                 <span style={{ display: "flex", alignItems: "center" }}>
                                   <span className="an-dot" style={{ background: color }} />
                                   <span style={isProblem ? { color } : {}}>
-                                    {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
-                                      row.settlement_route}
+                                    {settlementShort(row.settlement_route)}
                                   </span>
                                 </span>
                               </td>
@@ -4374,7 +4408,7 @@ export default function AnalyticsPage({
                         })}
                         <tr>
                           <td className="an-td primary" style={{ fontWeight: 700, borderBottom: "none" }}>
-                            Total
+                            {t("reports.total")}
                           </td>
                           <td className="an-td" style={{ textAlign: "right", fontWeight: 700, borderBottom: "none" }}>
                             {settlementTotals.rides}
@@ -4403,15 +4437,15 @@ export default function AnalyticsPage({
               {(payoutModel === "driver_direct" || isCompanySettles) && (
                 <>
                   <div className="an-section-header" style={{ marginTop: 32 }}>
-                    <div className="an-section-title">Cash fares</div>
+                    <div className="an-section-title">{t("settle.cashFares")}</div>
                   </div>
                   <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
                     {cashScopeNote}
                   </div>
                   {cashSettlementLoading ? (
-                    <div className="an-loading">Loading…</div>
+                    <div className="an-loading">{t("common.loading")}</div>
                   ) : !cashSettlement || cashSettlement.cash_rides === 0 ? (
-                    <div className="an-no-data">No completed cash rides for this period</div>
+                    <div className="an-no-data">{t("settle.noCompletedCash")}</div>
                   ) : (
                     <div className="an-set-hero" style={{ gridTemplateColumns: "1.5fr 1fr 1fr" }}>
                       <div className={`an-hero-card lead${leadAccent.cls}`}>
@@ -4426,9 +4460,9 @@ export default function AnalyticsPage({
                           ).toFixed(2)}
                         </div>
                         <div className="an-hero-sub">
-                          {cashSettlement.cash_rides} ride
+                          {t("analytics.ridesCount", { count: cashSettlement.cash_rides })}
                           {cashSettlement.cash_rides === 1 ? "" : "s"}
-                          {settlementBasis === "net" ? " · after Vellon fee" : ` · ${cashGrossTail}`}
+                          {settlementBasis === "net" ? ` · ${t("settle.afterVellonFee")}` : ` · ${cashGrossTail}`}
                         </div>
                       </div>
 
@@ -4447,18 +4481,18 @@ export default function AnalyticsPage({
                         </div>
                         <div className="an-hero-sub">
                           {settlementBasis === "net"
-                            ? `${cashSettlement.cash_rides} ride${cashSettlement.cash_rides === 1 ? "" : "s"} ${periodLabel.toLowerCase()}`
-                            : "after Vellon fee"}
+                            ? `${t("analytics.ridesCount", { count: cashSettlement.cash_rides })} ${periodPhrase}`
+                            : t("settle.afterVellonFee")}
                         </div>
                       </div>
 
                       <div className="an-hero-card">
-                        <div className="an-hero-label">Vellon fee accruing</div>
+                        <div className="an-hero-label">{t("settle.feeAccruing")}</div>
                         <div className="an-hero-value" style={{ color: "#F59E0B" }}>
                           ${cashSettlement.cash_fee_owed.toFixed(2)}
                         </div>
                         <div className="an-hero-sub">
-                          {periodLabel.toLowerCase()} · invoiced monthly
+                          {periodPhrase} · {t("settle.invoicedMonthly")}
                         </div>
                       </div>
                     </div>
@@ -4472,22 +4506,22 @@ export default function AnalyticsPage({
                   className="an-section-title"
                   style={{ display: "flex", alignItems: "center", gap: 8 }}
                 >
-                  Needs attention
+                  {t("attention.title")}
                   {needsAttention.length > 0 && (
                     <span className="an-attn-badge">{needsAttention.length}</span>
                   )}
                 </div>
                 <div className="an-controls">
-                  <span className="an-scope-note">All time · unresolved only</span>
+                  <span className="an-scope-note">{t("settle.allTimeUnresolved")}</span>
                 </div>
               </div>
 
               {needsAttentionLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : needsAttention.length === 0 ? (
                 <div className="an-settle-clear">
                   <span style={{ color: "#1D9E75", fontSize: 16 }}>✓</span>
-                  Every card ride settled cleanly — nothing to collect or pay out by hand.
+                  {t("settle.allClean")}
                 </div>
               ) : (
                 <>
@@ -4496,26 +4530,24 @@ export default function AnalyticsPage({
                   <div className="an-attn-split">
                     <div className="an-attn-tile" style={{ borderLeft: "3px solid #F59E0B" }}>
                       <div className="an-attn-tile-label" style={{ color: "#F59E0B" }}>
-                        To collect
+                        {t("settle.toCollect")}
                       </div>
                       <div className="an-attn-tile-value">
                         ${attentionSplit.collect.amount.toFixed(2)}
                       </div>
                       <div className="an-attn-tile-sub">
-                        {attentionSplit.collect.count} ride
-                        {attentionSplit.collect.count === 1 ? "" : "s"} · needs collection
+                        {t("analytics.ridesCount", { count: attentionSplit.collect.count })} · {t("settle.needsCollection")}
                       </div>
                     </div>
                     <div className="an-attn-tile" style={{ borderLeft: "3px solid #E24B4A" }}>
                       <div className="an-attn-tile-label" style={{ color: "#E24B4A" }}>
-                        To pay out
+                        {t("settle.toPayOut")}
                       </div>
                       <div className="an-attn-tile-value">
                         ${attentionSplit.payout.amount.toFixed(2)}
                       </div>
                       <div className="an-attn-tile-sub">
-                        {attentionSplit.payout.count} ride
-                        {attentionSplit.payout.count === 1 ? "" : "s"} · net owed to driver
+                        {t("analytics.ridesCount", { count: attentionSplit.payout.count })} · {t("settle.netOwedToDriver")}
                       </div>
                     </div>
                   </div>
@@ -4547,18 +4579,17 @@ export default function AnalyticsPage({
                               }}
                             >
                               <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9" }}>
-                                {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
-                                  row.settlement_route}
+                                {settlementShort(row.settlement_route)}
                               </span>
                               <span
                                 className="an-pill"
                                 style={{ color: dirColor, background: `${dirColor}1F` }}
                               >
-                                {dir === "collect" ? "Collect" : "Pay out"}
+                                {dir === "collect" ? t("settle.collect") : t("settle.payOut")}
                               </span>
                               {days >= 1 && (
                                 <span style={{ fontSize: 11, color: "#6B7280" }}>
-                                  waiting {days} day{days === 1 ? "" : "s"}
+                                  {t("settle.waitingDays", { count: days })}
                                 </span>
                               )}
                             </div>
@@ -4566,20 +4597,22 @@ export default function AnalyticsPage({
                               <strong style={{ color: "#E2E8F0", fontWeight: 600 }}>
                                 ${shownAmt?.toFixed(2) ?? "—"}
                               </strong>{" "}
-                              · {row.driver_name} · {when.toLocaleDateString("en-CA")}
-                              {row.stripe_dispute_id && ` · dispute ${row.stripe_dispute_id}`}
+                              · {row.driver_name} · {fmtDate(when)}
+                              {row.stripe_dispute_id && ` · ${t("settle.disputeRef", { id: row.stripe_dispute_id })}`}
                             </div>
                             <div className="an-attn-hint">
-                              {SETTLEMENT_ACTION_HINTS[row.settlement_route] ?? ""}
+                              {row.settlement_route && SETTLEMENT_ACTION_HINT_KEYS[row.settlement_route]
+                                ? t(SETTLEMENT_ACTION_HINT_KEYS[row.settlement_route])
+                                : ""}
                             </div>
-                            <div className="an-attn-id">Ride {row.id}</div>
+                            <div className="an-attn-id">{t("settle.rideId", { id: row.id })}</div>
                           </div>
                           <button
                             className="an-download-btn"
                             disabled={resolvingRideId === row.id}
                             onClick={() => resolveSettlement(row)}
                           >
-                            {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                            {resolvingRideId === row.id ? t("settle.marking") : t("reports.markResolvedCheck")}
                           </button>
                         </div>
                       );
@@ -4590,22 +4623,16 @@ export default function AnalyticsPage({
 
               {/* ═══ 3. Per-ride drilldown ═══ */}
               <div className="an-section-header" style={{ marginTop: 32 }}>
-                <div className="an-section-title">Rides {periodLabel.toLowerCase()}</div>
+                <div className="an-section-title">{t("analytics.ridesIn", { period: periodPhrase })}</div>
                 <div className="an-controls">
                   <div className="an-period-btns">
-                    {(
-                      [
-                        ["all", "All"],
-                        ["open", "Open"],
-                        ["resolved", "Resolved"],
-                      ] as const
-                    ).map(([id, lbl]) => (
+                    {(["all", "open", "resolved"] as const).map((id) => (
                       <button
                         key={id}
                         className={`an-period-btn${settlementStateFilter === id ? " active" : ""}`}
                         onClick={() => setSettlementStateFilter(id)}
                       >
-                        {lbl}
+                        {t(`analytics.settlementState.${id}`)}
                       </button>
                     ))}
                   </div>
@@ -4614,7 +4641,7 @@ export default function AnalyticsPage({
                     disabled={filteredSettlementRides.length === 0}
                     onClick={exportSettlementsCSV}
                   >
-                    ↓ CSV
+                      {t("analytics.csv")}
                   </button>
                 </div>
               </div>
@@ -4627,7 +4654,7 @@ export default function AnalyticsPage({
                   className={`an-chip${settlementRouteFilter === "all" ? " active" : ""}`}
                   onClick={() => setSettlementRouteFilter("all")}
                 >
-                  All routes
+                  {t("settle.allRoutes")}
                   <span className="an-chip-count">{settlementRides.length}</span>
                 </button>
                 {settlementRollupSorted.map((r) => (
@@ -4640,29 +4667,36 @@ export default function AnalyticsPage({
                       className="an-dot"
                       style={{ background: settlementColor(r.settlement_route), marginRight: 6 }}
                     />
-                    {SETTLEMENT_ROUTE_SHORT[r.settlement_route] ?? r.settlement_route}
+                    {settlementShort(r.settlement_route)}
                     <span className="an-chip-count">{r.rides_count}</span>
                   </button>
                 ))}
                 <span className="an-filter-count">
-                  {filteredSettlementRides.length} shown
+                  {t("settle.nShown", { count: filteredSettlementRides.length })}
                 </span>
               </div>
 
               {settlementRidesLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : filteredSettlementRides.length === 0 ? (
                 <div className="an-no-data">
-                  No rides match this filter for the selected period
+                  {t("settle.noRidesMatchFilter")}
                 </div>
               ) : (
                 <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
                   <table className="an-table">
                     <thead>
                       <tr>
-                        {["Date", "Ride", "Driver", "Fare", "Route", "Status"].map((h) => (
+                        {([
+                          "date",
+                          "ride",
+                          "driver",
+                          "fare",
+                          "route",
+                          "status",
+                        ] as const).map((h) => (
                           <th key={h} className="an-th" style={{ padding: "12px 14px" }}>
-                            {h}
+                            {t(`analytics.col.${h}`)}
                           </th>
                         ))}
                       </tr>
@@ -4682,9 +4716,7 @@ export default function AnalyticsPage({
                             }}
                           >
                             <td className="an-td" style={{ whiteSpace: "nowrap" }}>
-                              {new Date(
-                                row.completed_at ?? row.created_at,
-                              ).toLocaleDateString("en-CA")}
+                              {fmtDate(row.completed_at ?? row.created_at)}
                             </td>
                             <td
                               className="an-td"
@@ -4701,8 +4733,7 @@ export default function AnalyticsPage({
                               <span style={{ display: "flex", alignItems: "center" }}>
                                 <span className="an-dot" style={{ background: color }} />
                                 <span style={isProblem ? { color, fontWeight: 600 } : {}}>
-                                  {SETTLEMENT_ROUTE_SHORT[row.settlement_route] ??
-                                    row.settlement_route}
+                                  {settlementShort(row.settlement_route)}
                                 </span>
                               </span>
                               {row.stripe_dispute_id && (
@@ -4714,7 +4745,7 @@ export default function AnalyticsPage({
                             <td className="an-td">
                               {!isProblem ? (
                                 <span style={{ fontSize: 12, color: "#4B5563" }}>
-                                  No action needed
+                                  {t("settle.noActionNeeded")}
                                 </span>
                               ) : row.settlement_resolved_at ? (
                                 <span
@@ -4724,11 +4755,9 @@ export default function AnalyticsPage({
                                     fontWeight: 600,
                                     whiteSpace: "nowrap",
                                   }}
-                                  title={new Date(
-                                    row.settlement_resolved_at,
-                                  ).toLocaleString("en-CA")}
+                                  title={fmtDateTime(row.settlement_resolved_at)}
                                 >
-                                  ✓ Resolved
+                                  ✓ {t("reports.resolved")}
                                 </span>
                               ) : (
                                 <button
@@ -4736,7 +4765,7 @@ export default function AnalyticsPage({
                                   disabled={resolvingRideId === row.id}
                                   onClick={() => resolveSettlement(row)}
                                 >
-                                  {resolvingRideId === row.id ? "Marking…" : "✓ Mark resolved"}
+                                  {resolvingRideId === row.id ? t("settle.marking") : t("reports.markResolvedCheck")}
                                 </button>
                               )}
                             </td>
@@ -4754,14 +4783,14 @@ export default function AnalyticsPage({
           {section === "reviews" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Reviews</div>
+                <div className="an-section-title">{t("analytics.sections.reviews")}</div>
                 <div className="an-controls">
-                  <button className="an-download-btn" onClick={exportReviewsPDF}>↓ PDF</button>
-                  <button className="an-csv-btn" onClick={exportReviewsCSV}>↓ CSV</button>
+                  <button className="an-download-btn" onClick={exportReviewsPDF}>{t("analytics.pdf")}</button>
+                  <button className="an-csv-btn" onClick={exportReviewsCSV}>{t("analytics.csv")}</button>
                 </div>
               </div>
               {reviewsLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : (
                 <>
                   <div
@@ -4773,7 +4802,7 @@ export default function AnalyticsPage({
                       value={reviewDriverFilter}
                       onChange={(e) => setReviewDriverFilter(e.target.value)}
                     >
-                      <option value="all">All drivers</option>
+                      <option value="all">{t("reports.allDrivers")}</option>
                       {reviewDriverOptions.map((d) => (
                         <option key={d.id} value={d.id}>
                           {d.name}
@@ -4788,12 +4817,12 @@ export default function AnalyticsPage({
                           onClick={() => setReviewStarFilter(s)}
                           style={{ padding: "5px 10px" }}
                         >
-                          {s === null ? "All" : "★".repeat(s)}
+                          {s === null ? t("analytics.filterAll") : "★".repeat(s)}
                         </button>
                       ))}
                     </div>
                     <span className="an-filter-count">
-                      {filteredReviews.length} review
+                      {t("analytics.reviewsCount", { count: filteredReviews.length })}
                       {filteredReviews.length !== 1 ? "s" : ""}
                     </span>
                   </div>
@@ -4808,14 +4837,14 @@ export default function AnalyticsPage({
                         }}
                       >
                         <div className="an-revenue-mini">
-                          <div className="an-revenue-mini-label">Reviews</div>
+                          <div className="an-revenue-mini-label">{t("analytics.sections.reviews")}</div>
                           <div className="an-revenue-mini-value">
                             {selectedDriverReviews.length}
                           </div>
                         </div>
                         <div className="an-revenue-mini">
                           <div className="an-revenue-mini-label">
-                            Avg rating
+                            {t("drivers.avgRating")}
                           </div>
                           <div
                             className="an-revenue-mini-value"
@@ -4833,7 +4862,7 @@ export default function AnalyticsPage({
                         </div>
                         <div className="an-revenue-mini">
                           <div className="an-revenue-mini-label">
-                            Low ratings (≤2)
+                            {t("analytics.lowRatings")}
                           </div>
                           <div
                             className="an-revenue-mini-value"
@@ -4854,7 +4883,7 @@ export default function AnalyticsPage({
 
                   {filteredReviews.length === 0 ? (
                     <div className="an-no-data" style={{ padding: "48px 0" }}>
-                      No reviews match these filters
+                      {t("analytics.noReviewsMatch")}
                     </div>
                   ) : (
                     filteredReviews.map((rv) => (
@@ -4872,11 +4901,11 @@ export default function AnalyticsPage({
                           }}
                         >
                           {rv.rating <= 2 && (
-                            <span className="an-review-flag">⚠ Low rating</span>
+                            <span className="an-review-flag">⚠ {t("receipt.lowRating")}</span>
                           )}
                           {rv.reviewed_by_dispatch && (
                             <span className="an-reviewed-badge">
-                              ✓ Reviewed by dispatch
+                              ✓ {t("analytics.reviewedByDispatch")}
                             </span>
                           )}
                         </div>
@@ -4910,8 +4939,7 @@ export default function AnalyticsPage({
                             </span>
                           </div>
                           <span style={{ fontSize: 11, color: "#6B7280" }}>
-                            {new Date(rv.created_at).toLocaleDateString(
-                              "en-CA",
+                            {fmtDate(rv.created_at,
                               {
                                 month: "short",
                                 day: "numeric",
@@ -4924,12 +4952,12 @@ export default function AnalyticsPage({
                           style={{ display: "flex", gap: 20, marginBottom: 6 }}
                         >
                           <div style={{ fontSize: 12, color: "#9CA3AF" }}>
-                            <span style={{ color: "#6B7280" }}>Driver: </span>
+                            <span style={{ color: "#6B7280" }}>{t("reports.driver")}: </span>
                             {rv.driver_name ?? "—"}
                           </div>
                           <div style={{ fontSize: 12, color: "#9CA3AF" }}>
                             <span style={{ color: "#6B7280" }}>
-                              Passenger:{" "}
+                              {t("rideDetail.passenger")}:{" "}
                             </span>
                             {rv.passenger_name ?? "—"}
                           </div>
@@ -4965,8 +4993,8 @@ export default function AnalyticsPage({
                             onClick={() => markReviewReviewed(rv.id)}
                           >
                             {markingReviewed === rv.id
-                              ? "Saving…"
-                              : "✓ Mark as reviewed"}
+                              ? t("common.saving")
+                              : t("analytics.markAsReviewed")}
                           </button>
                         )}
                       </div>
@@ -4981,7 +5009,7 @@ export default function AnalyticsPage({
           {section === "drivers" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Driver Performance</div>
+                <div className="an-section-title">{t("analytics.driverPerformance")}</div>
                 <div className="an-controls">
                   <div className="an-period-btns">
                     {(["today", "week", "month", "year"] as const).map((p) => (
@@ -4990,18 +5018,18 @@ export default function AnalyticsPage({
                         className={`an-period-btn${period === p ? " active" : ""}`}
                         onClick={() => setPeriod(p)}
                       >
-                        {p.charAt(0).toUpperCase() + p.slice(1)}
+                        {t(`analytics.period.${p}`)}
                       </button>
                     ))}
                   </div>
-                  <button className="an-download-btn" onClick={exportDriversPDF}>↓ PDF</button>
-                  <button className="an-csv-btn" onClick={exportDriverStatsCSV}>↓ CSV</button>
+                  <button className="an-download-btn" onClick={exportDriversPDF}>{t("analytics.pdf")}</button>
+                  <button className="an-csv-btn" onClick={exportDriverStatsCSV}>{t("analytics.csv")}</button>
                 </div>
               </div>
               {revenueLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : driverStats.length === 0 ? (
-                <div className="an-no-data">No driver data for this period</div>
+                <div className="an-no-data">{t("analytics.noDriverData")}</div>
               ) : (() => {
                 const totalRides = driverStats.reduce((s, d) => s + d.rides, 0);
                 const totalEarnings = driverStats.reduce((s, d) => s + d.earnings, 0);
@@ -5012,7 +5040,9 @@ export default function AnalyticsPage({
                     rated.reduce((s, d) => s + d.ratingCount, 0)
                   : null;
                 const medals = ["🥇", "🥈", "🥉"];
-                const initials = (name: string) =>
+                // Initials of a PERSON'S NAME, not a label — the only thing
+                // being title-cased here is the user's own data.
+                const initials = (name: string) => // i18n-ok
                   name
                     .split(" ")
                     .filter(Boolean)
@@ -5025,26 +5055,26 @@ export default function AnalyticsPage({
                   <>
                     <div className="an-kpi-grid">
                       <div className="an-kpi-card">
-                        <div className="an-kpi-label">Active drivers</div>
+                        <div className="an-kpi-label">{t("analytics.activeDrivers")}</div>
                         <div className="an-kpi-value">{driverStats.length}</div>
-                        <div className="an-kpi-sub">with rides this period</div>
+                        <div className="an-kpi-sub">{t("analytics.withRidesThisPeriod")}</div>
                       </div>
                       <div className="an-kpi-card">
-                        <div className="an-kpi-label">Completed rides</div>
+                        <div className="an-kpi-label">{t("analytics.completedRides")}</div>
                         <div className="an-kpi-value">{totalRides}</div>
                         <div className="an-kpi-sub">
-                          {(totalRides / driverStats.length).toFixed(1)} avg / driver
+                          {t("analytics.avgPerDriver", { n: (totalRides / driverStats.length).toFixed(1) })}
                         </div>
                       </div>
                       <div className="an-kpi-card">
-                        <div className="an-kpi-label">Total earnings</div>
+                        <div className="an-kpi-label">{t("analytics.totalEarnings")}</div>
                         <div className="an-kpi-value" style={{ color: "#1D9E75" }}>
                           ${totalEarnings.toFixed(2)}
                         </div>
-                        <div className="an-kpi-sub">fares collected by drivers</div>
+                        <div className="an-kpi-sub">{t("analytics.faresCollectedByDrivers")}</div>
                       </div>
                       <div className="an-kpi-card">
-                        <div className="an-kpi-label">Fleet rating</div>
+                        <div className="an-kpi-label">{t("analytics.fleetRating")}</div>
                         <div
                           className="an-kpi-value"
                           style={{ color: fleetRating !== null ? ratingColor(fleetRating) : "#6B7280" }}
@@ -5053,8 +5083,8 @@ export default function AnalyticsPage({
                         </div>
                         <div className="an-kpi-sub">
                           {fleetRating !== null
-                            ? `across ${rated.reduce((s, d) => s + d.ratingCount, 0)} reviews`
-                            : "no reviews yet"}
+                            ? t("analytics.acrossReviews", { count: rated.reduce((s, d) => s + d.ratingCount, 0) })
+                            : t("analytics.noReviewsYet")}
                         </div>
                       </div>
                     </div>
@@ -5062,10 +5092,10 @@ export default function AnalyticsPage({
                       <div className="an-dl-head">
                         <div className="an-dl-hcell" style={{ textAlign: "center" }}>#</div>
                         <div className="an-dl-hcell" />
-                        <div className="an-dl-hcell">Driver</div>
-                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>Earnings</div>
-                        <div className="an-dl-hcell">Cash / Card</div>
-                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>Rating</div>
+                        <div className="an-dl-hcell">{t("csv.driver")}</div>
+                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>{t("csv.earnings")}</div>
+                        <div className="an-dl-hcell">{t("analytics.cashSlashCard")}</div>
+                        <div className="an-dl-hcell" style={{ textAlign: "right" }}>{t("csv.rating")}</div>
                       </div>
                       {driverStats.map((d, i) => {
                         const paidTotal = d.cashEarnings + d.cardEarnings;
@@ -5099,13 +5129,12 @@ export default function AnalyticsPage({
                             <div style={{ minWidth: 0 }}>
                               <div className="an-dl-name">{d.name}</div>
                               <div className="an-dl-meta">
-                                {d.rides} {d.rides === 1 ? "ride" : "rides"} · $
-                                {d.avgFare.toFixed(2)} avg
+                                {t("analytics.ridesCount", { count: d.rides })} · {t("analytics.avgFareInline", { amount: d.avgFare.toFixed(2) })}
                                 {d.cancelRate > 0 && (
                                   <>
                                     {" · "}
                                     <span className={d.cancelRate > 20 ? "warn" : undefined}>
-                                      {d.cancelRate.toFixed(0)}% cancelled
+                                      {t("analytics.pctCancelled", { pct: d.cancelRate.toFixed(0) })}
                                     </span>
                                   </>
                                 )}
@@ -5137,7 +5166,7 @@ export default function AnalyticsPage({
                                     {d.avgRating.toFixed(1)} ★
                                   </span>
                                   <span className="cnt">
-                                    {d.ratingCount} {d.ratingCount === 1 ? "review" : "reviews"}
+                                    {t("analytics.reviewsCount", { count: d.ratingCount })}
                                   </span>
                                 </>
                               ) : (
@@ -5183,7 +5212,7 @@ export default function AnalyticsPage({
                                 <div className="an-dm-name">{d.name}</div>
                                 <div className="an-dm-sub">
                                   {rank <= 3 ? `${medals[rank - 1]} ` : ""}
-                                  Rank #{rank} by earnings
+                                  {t("analytics.rankByEarnings", { rank })}
                                   {d.avgRating !== null && (
                                     <>
                                       {" · "}
@@ -5203,7 +5232,7 @@ export default function AnalyticsPage({
                             </div>
                             <div className="an-dm-grid">
                               <div className="an-dm-stat">
-                                <div className="an-dm-stat-label">Total earnings</div>
+                                <div className="an-dm-stat-label">{t("analytics.totalEarnings")}</div>
                                 <div
                                   className="an-dm-stat-value"
                                   style={{ color: "#1D9E75" }}
@@ -5211,19 +5240,19 @@ export default function AnalyticsPage({
                                   ${d.earnings.toFixed(2)}
                                 </div>
                                 <div className="an-dm-stat-sub">
-                                  {diffPct >= 0 ? "▲" : "▼"} {Math.abs(diffPct).toFixed(0)}%
-                                  vs fleet avg
+                                  {diffPct >= 0 ? "▲" : "▼"}{" "}
+                                  {t("analytics.vsFleetAvg", { pct: Math.abs(diffPct).toFixed(0) })}
                                 </div>
                               </div>
                               <div className="an-dm-stat">
-                                <div className="an-dm-stat-label">Completed rides</div>
+                                <div className="an-dm-stat-label">{t("analytics.completedRides")}</div>
                                 <div className="an-dm-stat-value">{d.rides}</div>
                                 <div className="an-dm-stat-sub">
-                                  ${d.avgFare.toFixed(2)} avg · fleet ${fleetAvgFare.toFixed(2)}
+                                  {t("analytics.avgVsFleet", { avg: d.avgFare.toFixed(2), fleet: fleetAvgFare.toFixed(2) })}
                                 </div>
                               </div>
                               <div className="an-dm-stat">
-                                <div className="an-dm-stat-label">Cash / Card</div>
+                                <div className="an-dm-stat-label">{t("analytics.cashSlashCard")}</div>
                                 <div
                                   className="an-dm-stat-value"
                                   style={{ fontSize: 15 }}
@@ -5240,11 +5269,11 @@ export default function AnalyticsPage({
                                   {paidTotal
                                     ? Math.round((d.cashEarnings / paidTotal) * 100)
                                     : 0}
-                                  % cash
+                                  {t("analytics.pctCashSuffix")}
                                 </div>
                               </div>
                               <div className="an-dm-stat">
-                                <div className="an-dm-stat-label">Cancellations</div>
+                                <div className="an-dm-stat-label">{t("analytics.cancellations")}</div>
                                 <div
                                   className="an-dm-stat-value"
                                   style={{
@@ -5254,16 +5283,16 @@ export default function AnalyticsPage({
                                   {d.cancelled}
                                 </div>
                                 <div className="an-dm-stat-sub">
-                                  {d.cancelRate.toFixed(1)}% of assigned rides
+                                  {t("analytics.pctOfAssigned", { pct: d.cancelRate.toFixed(1) })}
                                 </div>
                               </div>
                             </div>
                             <div className="an-dm-section-title">
-                              Recent review comments
+                              {t("analytics.recentReviewComments")}
                             </div>
                             {d.recentReviews.length === 0 ? (
                               <div className="an-no-data" style={{ padding: "16px 0" }}>
-                                No written reviews yet
+                                {t("analytics.noWrittenReviews")}
                               </div>
                             ) : (
                               d.recentReviews.map((rv, i) => (
@@ -5290,7 +5319,7 @@ export default function AnalyticsPage({
                               className="an-modal-close"
                               onClick={() => setDriverDetail(null)}
                             >
-                              Close
+                              {t("common.close")}
                             </button>
                           </div>
                         </div>
@@ -5315,7 +5344,7 @@ export default function AnalyticsPage({
                 {/* Header row */}
                 <div className="an-section-header" style={{ marginBottom: 12 }}>
                   <div>
-                    <div className="an-section-title">Activity Log</div>
+                    <div className="an-section-title">{t("analytics.sections.activity")}</div>
                     <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>
                       {activityDateFrom} → {activityDateTo}
                     </div>
@@ -5326,28 +5355,28 @@ export default function AnalyticsPage({
                       onClick={() => exportActivityPDF(filtered)}
                       disabled={filtered.length === 0}
                     >
-                      ↓ PDF
+                      {t("analytics.pdf")}
                     </button>
                     <button
                       className="an-csv-btn"
                       onClick={() => exportActivityCSV(filtered)}
                       disabled={filtered.length === 0}
                     >
-                      ↓ CSV
+                      {t("analytics.csv")}
                     </button>
                   </div>
                 </div>
 
                 {/* Filter toolbar */}
                 <div className="al-toolbar">
-                  <span className="al-toolbar-label">From</span>
+                  <span className="al-toolbar-label">{t("analytics.from")}</span>
                   <input
                     type="date"
                     className="an-date-input"
                     value={activityDateFrom}
                     onChange={(e) => setActivityDateFrom(e.target.value)}
                   />
-                  <span className="al-toolbar-label">to</span>
+                  <span className="al-toolbar-label">{t("analytics.to")}</span>
                   <input
                     type="date"
                     className="an-date-input"
@@ -5360,41 +5389,41 @@ export default function AnalyticsPage({
                     value={activityTypeFilter}
                     onChange={(e) => setActivityTypeFilter(e.target.value)}
                   >
-                    <option value="all">All event types</option>
-                    <optgroup label="Rides">
-                      <option value="ride.created">Created ride</option>
-                      <option value="ride.cancelled">Cancelled ride</option>
-                      <option value="ride.assigned">Assigned ride</option>
-                      <option value="ride.reassigned">Reassigned ride</option>
-                      <option value="ride.fare_changed">Changed fare</option>
-                      <option value="ride.scheduled_modified">Edited ride</option>
-                      <option value="ride.route_modified">Changed route</option>
-                      <option value="ride.flag_resolved">Resolved ride flag</option>
+                    <option value="all">{t("analytics.allEventTypes")}</option>
+                    <optgroup label={t("nav.rides")}>
+                      <option value="ride.created">{eventLabel("ride.created")}</option>
+                      <option value="ride.cancelled">{eventLabel("ride.cancelled")}</option>
+                      <option value="ride.assigned">{eventLabel("ride.assigned")}</option>
+                      <option value="ride.reassigned">{eventLabel("ride.reassigned")}</option>
+                      <option value="ride.fare_changed">{eventLabel("ride.fare_changed")}</option>
+                      <option value="ride.scheduled_modified">{eventLabel("ride.scheduled_modified")}</option>
+                      <option value="ride.route_modified">{eventLabel("ride.route_modified")}</option>
+                      <option value="ride.flag_resolved">{eventLabel("ride.flag_resolved")}</option>
                     </optgroup>
-                    <optgroup label="Drivers">
-                      <option value="driver.suspended">Suspended driver</option>
-                      <option value="driver.reactivated">Reactivated driver</option>
-                      <option value="driver.deleted">Deleted driver</option>
-                      <option value="driver.vehicle_updated">Updated vehicle</option>
-                      <option value="invite.created">Created invite</option>
-                      <option value="invite.revoked">Revoked invite</option>
+                    <optgroup label={t("nav.drivers")}>
+                      <option value="driver.suspended">{eventLabel("driver.suspended")}</option>
+                      <option value="driver.reactivated">{eventLabel("driver.reactivated")}</option>
+                      <option value="driver.deleted">{eventLabel("driver.deleted")}</option>
+                      <option value="driver.vehicle_updated">{eventLabel("driver.vehicle_updated")}</option>
+                      <option value="invite.created">{eventLabel("invite.created")}</option>
+                      <option value="invite.revoked">{eventLabel("invite.revoked")}</option>
                     </optgroup>
-                    <optgroup label="Discounts">
-                      <option value="discount.created">Created discount</option>
-                      <option value="discount.deactivated">Deactivated discount</option>
-                      <option value="discount.deleted">Deleted discount</option>
+                    <optgroup label={t("nav.discounts")}>
+                      <option value="discount.created">{eventLabel("discount.created")}</option>
+                      <option value="discount.deactivated">{eventLabel("discount.deactivated")}</option>
+                      <option value="discount.deleted">{eventLabel("discount.deleted")}</option>
                     </optgroup>
-                    <optgroup label="Announcements">
-                      <option value="announcement.drivers">Driver announcement</option>
-                      <option value="announcement.passengers">Passenger announcement</option>
+                    <optgroup label={t("nav.announcements")}>
+                      <option value="announcement.drivers">{eventLabel("announcement.drivers")}</option>
+                      <option value="announcement.passengers">{eventLabel("announcement.passengers")}</option>
                     </optgroup>
-                    <optgroup label="Settings">
-                      <option value="settings.pricing_updated">Updated pricing</option>
-                      <option value="settings.contact_updated">Updated contact details</option>
-                      <option value="settings.numbering_updated">Updated numbering</option>
-                      <option value="settings.vehicle_class_created">Added vehicle class</option>
-                      <option value="settings.vehicle_class_updated">Edited vehicle class</option>
-                      <option value="settings.vehicle_class_status_changed">Vehicle class status changed</option>
+                    <optgroup label={t("nav.settings")}>
+                      <option value="settings.pricing_updated">{eventLabel("settings.pricing_updated")}</option>
+                      <option value="settings.contact_updated">{eventLabel("settings.contact_updated")}</option>
+                      <option value="settings.numbering_updated">{eventLabel("settings.numbering_updated")}</option>
+                      <option value="settings.vehicle_class_created">{eventLabel("settings.vehicle_class_created")}</option>
+                      <option value="settings.vehicle_class_updated">{eventLabel("settings.vehicle_class_updated")}</option>
+                      <option value="settings.vehicle_class_status_changed">{eventLabel("settings.vehicle_class_status_changed")}</option>
                     </optgroup>
                     {/* Only types something actually emits are listed. The
                         remaining allowed values (ride.notes_added,
@@ -5403,25 +5432,25 @@ export default function AnalyticsPage({
                         staff.deactivated/reactivated) have no emitter, so an
                         option for them would be a filter that always returns
                         nothing. Add the option WITH the emitter. */}
-                    <optgroup label="Reports">
-                      <option value="report.printed">Printed report</option>
-                      <option value="dispatch_report.submitted">Submitted support report</option>
+                    <optgroup label={t("nav.reports")}>
+                      <option value="report.printed">{eventLabel("report.printed")}</option>
+                      <option value="dispatch_report.submitted">{eventLabel("dispatch_report.submitted")}</option>
                     </optgroup>
-                    <optgroup label="Team">
-                      <option value="staff.created">Added team member</option>
-                      <option value="staff.updated">Edited team member</option>
+                    <optgroup label={t("settings.sections.team")}>
+                      <option value="staff.created">{eventLabel("staff.created")}</option>
+                      <option value="staff.updated">{eventLabel("staff.updated")}</option>
                     </optgroup>
-                    <optgroup label="Settlements">
-                      <option value="settlement.resolved">Resolved settlement</option>
+                    <optgroup label={t("analytics.sections.settlements")}>
+                      <option value="settlement.resolved">{eventLabel("settlement.resolved")}</option>
                     </optgroup>
-                    <optgroup label="Exports">
-                      <option value="export.csv">Exported CSV</option>
-                      <option value="export.pdf">Exported PDF</option>
-                      <option value="invoice.printed">Printed receipt</option>
+                    <optgroup label={t("analytics.exports")}>
+                      <option value="export.csv">{eventLabel("export.csv")}</option>
+                      <option value="export.pdf">{eventLabel("export.pdf")}</option>
+                      <option value="invoice.printed">{eventLabel("invoice.printed")}</option>
                     </optgroup>
                   </select>
                   {activityLoading && (
-                    <span style={{ fontSize: 11, color: "#6B7280", marginLeft: 4 }}>Loading…</span>
+                    <span style={{ fontSize: 11, color: "#6B7280", marginLeft: 4 }}>{t("common.loading")}</span>
                   )}
                 </div>
 
@@ -5429,19 +5458,19 @@ export default function AnalyticsPage({
                 <div className="al-stats">
                   <div className="al-stat">
                     <span className="al-stat-val">{filtered.length}</span>
-                    <span className="al-stat-lbl">Total events</span>
+                    <span className="al-stat-lbl">{t("analytics.totalEvents")}</span>
                   </div>
                   <div className="al-stat">
                     <span className="al-stat-val" style={{ color: cancels > 0 ? "#E24B4A" : "#F1F5F9" }}>{cancels}</span>
-                    <span className="al-stat-lbl">Cancellations</span>
+                    <span className="al-stat-lbl">{t("analytics.cancellations")}</span>
                   </div>
                   <div className="al-stat">
                     <span className="al-stat-val">{driverActions}</span>
-                    <span className="al-stat-lbl">Driver actions</span>
+                    <span className="al-stat-lbl">{t("analytics.driverActions")}</span>
                   </div>
                   <div className="al-stat">
                     <span className="al-stat-val">{announcements}</span>
-                    <span className="al-stat-lbl">Announcements</span>
+                    <span className="al-stat-lbl">{t("nav.announcements")}</span>
                   </div>
                 </div>
 
@@ -5455,17 +5484,17 @@ export default function AnalyticsPage({
                 {/* Table */}
                 {!activityLoading && filtered.length === 0 ? (
                   <div className="an-no-data" style={{ padding: "48px 0" }}>
-                    {activityError ? "Could not load events — see error above" : "No events in this period"}
+                    {activityError ? t("analytics.couldNotLoadEvents") : t("analytics.noEvents")}
                   </div>
                 ) : (
                   <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
                     <table className="al-table">
                       <thead>
                         <tr>
-                          <th className="al-th">Date / Time</th>
-                          <th className="al-th">Dispatcher</th>
-                          <th className="al-th">Event</th>
-                          <th className="al-th">Details</th>
+                          <th className="al-th">{t("csv.dateTime")}</th>
+                          <th className="al-th">{t("settings.role.dispatcher")}</th>
+                          <th className="al-th">{t("csv.event")}</th>
+                          <th className="al-th">{t("csv.details")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5475,7 +5504,7 @@ export default function AnalyticsPage({
                           return (
                             <tr key={e.id} className="al-tr">
                               <td className="al-td al-td-time">
-                                {new Date(e.created_at).toLocaleString("en-CA", {
+                                {fmtDateTime(e.created_at, {
                                   month: "short",
                                   day: "numeric",
                                   hour: "numeric",
@@ -5484,7 +5513,7 @@ export default function AnalyticsPage({
                               </td>
                               <td className="al-td al-td-dispatcher">{e.dispatcher_name ?? "—"}</td>
                               <td className="al-td al-td-event" style={{ color }}>
-                                {EVENT_LABELS[e.event_type] ?? e.event_type}
+                                {eventLabel(e.event_type)}
                               </td>
                               <td className="al-td al-td-detail">{detail || "—"}</td>
                             </tr>
@@ -5502,36 +5531,44 @@ export default function AnalyticsPage({
           {section === "receipts" && (
             <>
               <div className="an-section-header">
-                <div className="an-section-title">Receipts</div>
+                <div className="an-section-title">{t("analytics.sections.receipts")}</div>
                 <div className="an-controls">
                   <span className="an-filter-count">
-                    {filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? "s" : ""}
+                    {t("analytics.receiptsCount", { count: filteredReceipts.length })}
                   </span>
-                  <button className="an-download-btn" onClick={exportReceiptsPDF} disabled={filteredReceipts.length === 0}>↓ PDF</button>
-                  <button className="an-csv-btn" onClick={exportReceiptsCSV} disabled={filteredReceipts.length === 0}>↓ CSV</button>
+                  <button className="an-download-btn" onClick={exportReceiptsPDF} disabled={filteredReceipts.length === 0}>{t("analytics.pdf")}</button>
+                  <button className="an-csv-btn" onClick={exportReceiptsCSV} disabled={filteredReceipts.length === 0}>{t("analytics.csv")}</button>
                 </div>
               </div>
               <div className="inv-search-row">
                 <input
                   className="inv-search"
-                  placeholder="Search by receipt # or passenger name…"
+                  placeholder={t("analytics.receiptSearchPlaceholder")}
                   value={receiptSearch}
                   onChange={(e) => setReceiptSearch(e.target.value)}
                 />
               </div>
               {receiptsLoading ? (
-                <div className="an-loading">Loading…</div>
+                <div className="an-loading">{t("common.loading")}</div>
               ) : filteredReceipts.length === 0 ? (
                 <div className="an-no-data" style={{ padding: "48px 0" }}>
-                  {receiptSearch ? "No receipts match your search" : "No receipts yet — receipts will appear here after rides complete"}
+                  {receiptSearch ? t("analytics.noReceiptsMatch") : t("analytics.noReceiptsYet")}
                 </div>
               ) : (
                 <div className="an-chart-card" style={{ padding: 0, overflow: "hidden" }}>
                   <table className="an-table">
                     <thead>
                       <tr>
-                        {["Receipt #", "Date", "Passenger", "Driver", "Route", "Amount", "Payment"].map((h) => (
-                          <th key={h} className="an-th" style={{ padding: "12px 14px" }}>{h}</th>
+                        {([
+                          "receiptNo",
+                          "date",
+                          "passenger",
+                          "driver",
+                          "route",
+                          "amount",
+                          "payment",
+                        ] as const).map((h) => (
+                          <th key={h} className="an-th" style={{ padding: "12px 14px" }}>{t(`analytics.col.${h}`)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -5547,7 +5584,7 @@ export default function AnalyticsPage({
                             <span className="receipt-tag">{inv.receipt_number}</span>
                           </td>
                           <td className="an-td" style={{ whiteSpace: "nowrap" }}>
-                            {new Date(inv.sent_at).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}
+                            {fmtDate(inv.sent_at, { month: "short", day: "numeric", year: "numeric" })}
                           </td>
                           <td className="an-td primary">{inv.passenger_name ?? "—"}</td>
                           <td className="an-td">{inv.driver_name ?? "—"}</td>
@@ -5569,41 +5606,41 @@ export default function AnalyticsPage({
                 <div className="an-modal-overlay" onClick={() => setSelectedReceipt(null)}>
                   <div className="an-modal" onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <div className="an-modal-title" style={{ marginBottom: 0 }}>Receipt</div>
+                      <div className="an-modal-title" style={{ marginBottom: 0 }}>{t("receipt.receipt")}</div>
                       <span className="receipt-tag" style={{ fontSize: 13, padding: "4px 10px" }}>
                         {selectedReceipt.receipt_number}
                       </span>
                     </div>
                     {(
                       [
-                        ["Date", new Date(selectedReceipt.sent_at).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })],
-                        ["Company", selectedReceipt.company_name ?? "—"],
-                        ...(selectedReceipt.hst_number ? [["HST Reg", selectedReceipt.hst_number]] : []),
-                        ["Passenger", selectedReceipt.passenger_name ?? "—"],
-                        ["Driver", selectedReceipt.driver_name ?? "—"],
-                        ["Pickup", selectedReceipt.pickup_address ?? "—"],
-                        ["Drop-off", selectedReceipt.dropoff_address ?? "—"],
-                        ["Payment", selectedReceipt.payment_method ?? "—"],
+                        [t("receipt.date"), fmtDateTime(selectedReceipt.sent_at, { dateStyle: "medium", timeStyle: "short" })],
+                        [t("receipt.company"), selectedReceipt.company_name ?? "—"],
+                        ...(selectedReceipt.hst_number ? [[t("receipt.hstReg"), selectedReceipt.hst_number]] : []),
+                        [t("analytics.col.passenger"), selectedReceipt.passenger_name ?? "—"],
+                        [t("analytics.col.driver"), selectedReceipt.driver_name ?? "—"],
+                        [t("analytics.col.pickup"), selectedReceipt.pickup_address ?? "—"],
+                        [t("analytics.col.dropoff"), selectedReceipt.dropoff_address ?? "—"],
+                        [t("analytics.col.payment"), selectedReceipt.payment_method ?? "—"],
                         ...(selectedReceipt.discount_amount && selectedReceipt.pre_discount_fare != null
                           ? ([
-                              ["Original fare", `$${selectedReceipt.pre_discount_fare.toFixed(2)}`],
-                              [`Discount${selectedReceipt.discount_label ? ` — ${selectedReceipt.discount_label}` : ""}`, `-$${selectedReceipt.discount_amount.toFixed(2)}`],
+                              [t("receipt.originalFare"), `$${selectedReceipt.pre_discount_fare.toFixed(2)}`],
+                              [`${t("receipt.discount")}${selectedReceipt.discount_label ? ` — ${selectedReceipt.discount_label}` : ""}`, `-$${selectedReceipt.discount_amount.toFixed(2)}`],
                             ] as [string, string][])
                           : []),
-                        ["Subtotal", `$${(selectedReceipt.fare / 1.15).toFixed(2)}`],
-                        ["HST (15%)", `$${(selectedReceipt.fare - selectedReceipt.fare / 1.15).toFixed(2)}`],
-                        ["Total", `$${selectedReceipt.fare.toFixed(2)}`],
+                        [t("receipt.subtotal"), `$${(selectedReceipt.fare / 1.15).toFixed(2)}`],
+                        [t("receipt.hst"), `$${(selectedReceipt.fare - selectedReceipt.fare / 1.15).toFixed(2)}`],
+                        [totalLabel, `$${selectedReceipt.fare.toFixed(2)}`],
                       ] as [string, string][]
                     ).map(([lbl, val]) => (
                       <div
                         key={lbl}
                         className="an-detail-row"
-                        style={lbl === "Total" ? { borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 4, paddingTop: 12 } : {}}
+                        style={lbl === totalLabel ? { borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 4, paddingTop: 12 } : {}}
                       >
                         <span className="an-detail-label">{lbl}</span>
                         <span
                           className="an-detail-value"
-                          style={lbl === "Total" ? { color: "#1D9E75", fontWeight: 700, fontSize: 16 } : {}}
+                          style={lbl === totalLabel ? { color: "#1D9E75", fontWeight: 700, fontSize: 16 } : {}}
                         >
                           {val}
                         </span>
@@ -5614,10 +5651,10 @@ export default function AnalyticsPage({
                       style={{ width: "100%", marginTop: 16, textAlign: "center" }}
                       onClick={() => printReceipt(selectedReceipt)}
                     >
-                      Print Receipt
+                      {t("analytics.printReceipt")}
                     </button>
                     <button className="an-modal-close" onClick={() => setSelectedReceipt(null)}>
-                      Close
+                      {t("common.close")}
                     </button>
                   </div>
                 </div>
@@ -5640,7 +5677,7 @@ export default function AnalyticsPage({
               }}
             >
               <div className="an-modal-title" style={{ marginBottom: 0 }}>
-                Ride details
+                {t("rideEdit.rideDetails")}
               </div>
               <span
                 className="an-status"
@@ -5650,40 +5687,39 @@ export default function AnalyticsPage({
                   border: `1px solid ${STATUS_COLORS[rideDetail.ride.status]}30`,
                 }}
               >
-                {STATUS_LABELS[rideDetail.ride.status] ??
-                  rideDetail.ride.status}
+                {rideStatusLabel(rideDetail.ride.status)}
               </span>
             </div>
             {(
               [
                 [
-                  "Date",
-                  new Date(rideDetail.ride.created_at).toLocaleString("en-CA", {
+                  t("receipt.date"),
+                  fmtDateTime(rideDetail.ride.created_at, {
                     dateStyle: "medium",
                     timeStyle: "short",
                   }),
                 ],
-                ["Passenger", rideDetail.ride.passenger_name],
-                ["Driver", rideDetail.ride.driver_name],
-                ["Pickup", rideDetail.ride.pickup_address],
-                ["Drop-off", rideDetail.ride.dropoff_address],
+                [t("rideDetail.passenger"), rideDetail.ride.passenger_name],
+                [t("rideDetail.driver"), rideDetail.ride.driver_name],
+                [t("reports.pickup"), rideDetail.ride.pickup_address],
+                [t("reports.dropoff"), rideDetail.ride.dropoff_address],
                 [
-                  "Fare estimate",
+                  t("rideDetail.fareEstimate"),
                   rideDetail.ride.fare_estimate
                     ? `$${rideDetail.ride.fare_estimate.toFixed(2)}`
                     : "—",
                 ],
                 [
-                  "Fare final",
+                  t("rideDetail.fareFinal"),
                   rideDetail.ride.fare_final
                     ? `$${rideDetail.ride.fare_final.toFixed(2)}`
                     : "—",
                 ],
-                ["Payment", rideDetail.ride.payment_method],
+                [t("analytics.col.payment"), rideDetail.ride.payment_method],
                 ...(rideDetail.ride.payment_method === "card" && rideDetail.ride.settlement_route
                   ? ([
                       [
-                        "Vellon fee",
+                        t("rideDetail.vellonFee"),
                         rideDetail.ride.fare_final != null &&
                         rideDetail.ride.platform_fee_percent_at_completion != null
                           ? `$${(
@@ -5693,13 +5729,13 @@ export default function AnalyticsPage({
                           : "—",
                       ],
                       [
-                        "Card processing fee",
+                        t("rideDetail.cardFee"),
                         rideDetail.ride.stripe_fee != null
                           ? `$${rideDetail.ride.stripe_fee.toFixed(2)}`
-                          : "Pending",
+                          : t("rideDetail.feePending"),
                       ],
                       [
-                        "Net settled",
+                        t("rideDetail.netSettled"),
                         rideDetail.ride.fare_final != null &&
                         rideDetail.ride.platform_fee_percent_at_completion != null &&
                         rideDetail.ride.stripe_fee != null
@@ -5712,25 +5748,24 @@ export default function AnalyticsPage({
                           : "—",
                       ],
                       [
-                        "Settlement",
-                        SETTLEMENT_ROUTE_LABELS[rideDetail.ride.settlement_route] ??
-                          rideDetail.ride.settlement_route,
+                        settlementLabel,
+                        settlementRouteLabel(rideDetail.ride.settlement_route),
                       ],
                       ...(rideDetail.ride.refunded_amount_cents &&
                       rideDetail.ride.refunded_amount_cents > 0
                         ? ([
                             [
-                              "Refunded to passenger",
+                              t("rideDetail.refundedToPassenger"),
                               `$${(rideDetail.ride.refunded_amount_cents / 100).toFixed(2)}` +
                                 (rideDetail.ride.refund_reason
-                                  ? ` (${REFUND_REASON_LABELS[rideDetail.ride.refund_reason] ?? rideDetail.ride.refund_reason})`
+                                  ? ` (${refundReasonLabel(rideDetail.ride.refund_reason)})`
                                   : ""),
                             ],
                             ...(rideDetail.ride.transfer_reversed_cents &&
                             rideDetail.ride.transfer_reversed_cents > 0
                               ? ([
                                   [
-                                    "Clawed back from payout",
+                                    t("rideDetail.clawedBack"),
                                     `$${(rideDetail.ride.transfer_reversed_cents / 100).toFixed(2)}`,
                                   ],
                                 ] as [string, string][])
@@ -5741,8 +5776,8 @@ export default function AnalyticsPage({
                   : []),
                 ...(rideDetail.ride.status === "cancelled" && rideDetail.ride.cancelled_reason
                   ? ([[
-                      "Cancelled reason",
-                      CANCEL_REASON_LABELS[rideDetail.ride.cancelled_reason] ?? rideDetail.ride.cancelled_reason,
+                      t("rideDetail.cancelledReason"),
+                      cancelReasonLabel(rideDetail.ride.cancelled_reason),
                     ]] as [string, string][])
                   : []),
                 ...((): [string, string][] => {
@@ -5750,12 +5785,12 @@ export default function AnalyticsPage({
                     rideDetail.ride.arrived_at,
                     rideDetail.ride.no_show_at,
                   );
-                  return waited ? [["Driver waited", waited]] : [];
+                  return waited ? [[t("rideDetail.driverWaited"), waited]] : [];
                 })(),
               ] as [string, string][]
             ).map(([label, value]) => {
               const isSettlementWarning =
-                label === "Settlement" &&
+                label === settlementLabel &&
                 ["transfer_failed", "transfer_reversed", "reversal_failed", "retransfer_failed"].includes(
                   rideDetail.ride.settlement_route ?? "",
                 );
@@ -5776,7 +5811,7 @@ export default function AnalyticsPage({
 
             {rideDetail.review && (
               <>
-                <div className="an-modal-section">Review</div>
+                <div className="an-modal-section">{t("receipt.review")}</div>
                 <div
                   style={{
                     background: "#18222F",
@@ -5790,7 +5825,7 @@ export default function AnalyticsPage({
                       className="an-review-flag"
                       style={{ marginBottom: 10, display: "inline-block" }}
                     >
-                      ⚠ Low rating
+                      ⚠ {t("receipt.lowRating")}
                     </span>
                   )}
                   {rideDetail.review.reviewed_by_dispatch && (
@@ -5802,7 +5837,7 @@ export default function AnalyticsPage({
                         display: "inline-block",
                       }}
                     >
-                      ✓ Reviewed
+                      ✓ {t("csv.reviewed")}
                     </span>
                   )}
                   <div
@@ -5850,8 +5885,8 @@ export default function AnalyticsPage({
                       onClick={() => markReviewReviewed(rideDetail.review!.id)}
                     >
                       {markingReviewed === rideDetail.review.id
-                        ? "Saving…"
-                        : "✓ Mark as reviewed"}
+                        ? t("common.saving")
+                        : t("analytics.markAsReviewed")}
                     </button>
                   )}
                 </div>
@@ -5866,7 +5901,7 @@ export default function AnalyticsPage({
                   padding: "12px 0",
                 }}
               >
-                No review left for this ride
+                {t("analytics.noReviewForRide")}
               </div>
             )}
 
@@ -5877,14 +5912,14 @@ export default function AnalyticsPage({
                 disabled={printingRide}
                 onClick={() => printRideReceipt(rideDetail.ride, rideDetail.review)}
               >
-                {printingRide ? "Preparing…" : "Print Receipt"}
+                {printingRide ? t("analytics.preparing") : t("analytics.printReceipt")}
               </button>
             )}
             <button
               className="an-modal-close"
               onClick={() => setRideDetail(null)}
             >
-              Close
+              {t("common.close")}
             </button>
           </div>
         </div>

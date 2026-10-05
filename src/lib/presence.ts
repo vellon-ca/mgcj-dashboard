@@ -1,3 +1,5 @@
+import i18next from "i18next";
+
 /**
  * Driver presence, derived — online vs away vs offline.
  *
@@ -87,9 +89,15 @@ export function lastSeenLabel(
   const ms = now - new Date(lastSeenAt).getTime();
   if (!Number.isFinite(ms) || ms < 0) return null;
   const mins = Math.floor(ms / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
+  // i18next's module `t` rather than the hook: this is a plain function called
+  // from render AND from the driver-list sort, so it cannot hold a hook. The
+  // re-render caveat is the same one src/i18n/format.ts documents — every
+  // screen showing this label also shows translated copy, so it re-renders
+  // with the language. Plural forms are `_one`/`_other` per locale, which is
+  // why this passes `count` rather than pre-formatting the number in.
+  if (mins < 1) return i18next.t("lastSeen.justNow");
+  if (mins < 60) return i18next.t("lastSeen.minutes", { count: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+  if (hrs < 24) return i18next.t("lastSeen.hours", { count: hrs });
+  return i18next.t("lastSeen.days", { count: Math.floor(hrs / 24) });
 }

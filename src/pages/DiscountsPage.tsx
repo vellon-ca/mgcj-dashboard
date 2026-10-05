@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import { useTranslation } from "react-i18next";
+import { fmtDate } from "../i18n/format";
 
 interface Institution {
   id: string;
@@ -37,9 +39,10 @@ interface Props {
   adminId: string;
 }
 
-const SECTION_ITEMS: { id: "student" | "codes"; label: string }[] = [
-  { id: "codes", label: "Discount Codes" },
-  { id: "student", label: "Student Discount" },
+// Keys, not English — module scope is evaluated before a language is active.
+const SECTION_ITEMS: { id: "student" | "codes"; labelKey: string }[] = [
+  { id: "codes", labelKey: "discounts.sections.codes" },
+  { id: "student", labelKey: "discounts.sections.student" },
 ];
 
 const EMPTY_FORM = {
@@ -57,6 +60,7 @@ const EMPTY_FORM = {
 const DISCOUNT_SECTIONS = ["student", "codes"] as const;
 
 export default function DiscountsPage({ companyId, adminId }: Props) {
+  const { t } = useTranslation();
   // Bound to /discounts/<section>.
   const [section, setSection] = useSubView<"student" | "codes">(
     "discounts",
@@ -132,7 +136,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
   async function saveStudentSettings() {
     const pctNum = Number(pct);
     if (Number.isNaN(pctNum) || pctNum < 0 || pctNum > 100) {
-      alert("Discount percentage must be between 0 and 100.");
+      alert(t("discounts.errPct"));
       return;
     }
 
@@ -164,7 +168,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
       setDirty(false);
     } catch (err: any) {
-      alert(err.message ?? "Failed to save discount settings.");
+      alert(err.message ?? t("discounts.errSaveSettings"));
     } finally {
       setSaving(false);
     }
@@ -230,15 +234,15 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
     const amountNum = Number(form.amount);
 
     if (!codeStr) {
-      alert("Please enter a code.");
+      alert(t("discounts.errNoCode"));
       return;
     }
     if (Number.isNaN(amountNum) || amountNum <= 0) {
-      alert("Please enter a valid discount amount.");
+      alert(t("discounts.errBadAmount"));
       return;
     }
     if (form.amount_type === "percent" && amountNum > 100) {
-      alert("Percentage discounts can't exceed 100%.");
+      alert(t("discounts.errPctMax"));
       return;
     }
 
@@ -286,7 +290,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       setFormOpen(false);
       await fetchCodes();
     } catch (err: any) {
-      alert(err.message ?? "Failed to save discount code.");
+      alert(err.message ?? t("discounts.errSaveCode"));
     } finally {
       setSavingCode(false);
     }
@@ -309,7 +313,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
   }
 
   async function deleteCode(c: DiscountCode) {
-    if (!confirm(`Delete code "${c.code}"? This can't be undone.`)) return;
+    if (!confirm(t("discounts.confirmDelete", { code: c.code }))) return;
     await supabase.from("discount_codes").delete().eq("id", c.id);
     fetchCodes();
     logDispatchEvent({
@@ -353,12 +357,12 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
   function codeStatusLabel(c: DiscountCode) {
     const now = new Date();
-    if (!c.active) return { label: "Inactive", color: "#6B7280" };
+    if (!c.active) return { label: t("common.inactive"), color: "#6B7280" };
     if (c.starts_at && now < new Date(c.starts_at))
-      return { label: "Scheduled", color: "#F59E0B" };
+      return { label: t("discounts.statusScheduled"), color: "#F59E0B" };
     if (c.ends_at && now > new Date(c.ends_at))
-      return { label: "Expired", color: "#E24B4A" };
-    return { label: "Active", color: "#1D9E75" };
+      return { label: t("discounts.statusExpired"), color: "#E24B4A" };
+    return { label: t("common.active"), color: "#1D9E75" };
   }
 
   return (
@@ -483,14 +487,14 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
       {/* LEFT PANEL */}
       <div className="dc-panel">
-        <div className="dc-panel-title">Discounts</div>
+        <div className="dc-panel-title">{t("discounts.title")}</div>
         {SECTION_ITEMS.map((s) => (
           <button
             key={s.id}
             className={`dc-section-btn${section === s.id ? " active" : ""}`}
             onClick={() => setSection(s.id)}
           >
-            {s.label}
+            {t(s.labelKey)}
           </button>
         ))}
       </div>
@@ -499,57 +503,51 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       <div className="dc-content">
         {section === "student" ? (
           loading ? (
-            <div className="dc-loading">Loading…</div>
+            <div className="dc-loading">{t("common.loading")}</div>
           ) : (
             <>
               <div className="dc-header">
                 <div>
-                  <div className="dc-title">Student Discount</div>
-                  <div className="dc-subtitle-text">
-                    Sponsor schools whose verified students get a discount on
-                    every ride, card and cash — applied to the final fare your
-                    platform fee is also calculated against.
-                  </div>
+                  <div className="dc-title">{t("discounts.sections.student")}</div>
+                  <div className="dc-subtitle-text">{t("discounts.studentSubtitle")}</div>
                 </div>
                 <button
                   className={`dc-save-btn${!dirty && !saving ? " dc-saved" : ""}`}
                   onClick={saveStudentSettings}
                   disabled={saving || !dirty}
                 >
-                  {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
+                  {saving ? t("common.saving") : dirty ? t("discounts.saveChanges") : t("discounts.savedShort")}
                 </button>
               </div>
 
               <div className="dc-summary">
                 <div className="dc-summary-card">
-                  <div className="dc-summary-label">Status</div>
+                  <div className="dc-summary-label">{t("common.status")}</div>
                   <div
                     className="dc-summary-value"
                     style={{ color: enabled ? "#1D9E75" : "#6B7280", fontSize: 16 }}
                   >
-                    {enabled ? "Enabled" : "Disabled"}
+                    {enabled ? t("discounts.enabled") : t("discounts.disabled")}
                   </div>
                 </div>
                 <div className="dc-summary-card">
-                  <div className="dc-summary-label">Discount</div>
+                  <div className="dc-summary-label">{t("discounts.discount")}</div>
                   <div className="dc-summary-value">{Number(pct) || 0}%</div>
                 </div>
                 <div className="dc-summary-card">
-                  <div className="dc-summary-label">Schools</div>
+                  <div className="dc-summary-label">{t("discounts.schools")}</div>
                   <div className="dc-summary-value">{sponsoredIds.size}</div>
                 </div>
               </div>
 
               <div className="dc-settings-grid">
                 <div className="dc-card">
-                  <div className="dc-card-label">Settings</div>
+                  <div className="dc-card-label">{t("settings.title")}</div>
 
                   <div className="dc-toggle-row">
                     <div className="dc-toggle-text">
-                      <span className="dc-toggle-title">Enable student discount</span>
-                      <span className="dc-toggle-sub">
-                        Applies automatically to verified students at booking
-                      </span>
+                      <span className="dc-toggle-title">{t("discounts.enableStudent")}</span>
+                      <span className="dc-toggle-sub">{t("discounts.enableStudentHint")}</span>
                     </div>
                     <button
                       className={`dc-switch${enabled ? " on" : ""}`}
@@ -557,7 +555,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                         setEnabled((v) => !v);
                         setDirty(true);
                       }}
-                      aria-label="Toggle student discount"
+                      aria-label={t("discounts.toggleStudentAria")}
                     >
                       <span className="dc-switch-knob" />
                     </button>
@@ -567,10 +565,8 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
                   <div className="dc-pct-row">
                     <div className="dc-pct-label">
-                      <span className="dc-toggle-title">Discount percentage</span>
-                      <span className="dc-toggle-sub">
-                        Taken off the fare before your platform fee is calculated
-                      </span>
+                      <span className="dc-toggle-title">{t("discounts.pctLabel")}</span>
+                      <span className="dc-toggle-sub">{t("discounts.pctHint")}</span>
                     </div>
                     <div className={`dc-pct-input-wrap${enabled ? "" : " disabled"}`}>
                       <input
@@ -592,11 +588,9 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                 </div>
 
                 <div className="dc-card">
-                  <div className="dc-card-label">Sponsored schools</div>
+                  <div className="dc-card-label">{t("discounts.sponsoredSchools")}</div>
                   {institutions.length === 0 ? (
-                    <div className="dc-schools-empty">
-                      No schools available yet — contact M&amp;G C&amp;J to add one.
-                    </div>
+                    <div className="dc-schools-empty">{t("discounts.noSchools")}</div>
                   ) : (
                     <div className="dc-schools">
                       {institutions.map((inst) => {
@@ -613,10 +607,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                       })}
                     </div>
                   )}
-                  <div className="dc-note">
-                    Students verify with their school email in the app — only
-                    schools selected here unlock the discount for your rides.
-                  </div>
+                  <div className="dc-note">{t("discounts.schoolsNote")}</div>
                 </div>
               </div>
             </>
@@ -625,24 +616,18 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
           <>
             <div className="dc-header">
               <div>
-                <div className="dc-title">Discount Codes</div>
-                <div className="dc-subtitle-text">
-                  Create one-off codes for partners (a church, a club, an
-                  event) to share with their members. A code only applies for
-                  passengers without an active student discount.
-                </div>
+                <div className="dc-title">{t("discounts.sections.codes")}</div>
+                <div className="dc-subtitle-text">{t("discounts.codesSubtitle")}</div>
               </div>
               <button className="dc-save-btn" onClick={openCreateForm}>
-                + New code
+                {t("discounts.newCode")}
               </button>
             </div>
 
             {codesLoading ? (
-              <div className="dc-loading">Loading…</div>
+              <div className="dc-loading">{t("common.loading")}</div>
             ) : codes.length === 0 ? (
-              <div className="dc-empty">
-                No discount codes yet — create one to get started.
-              </div>
+              <div className="dc-empty">{t("discounts.noCodes")}</div>
             ) : (
               <div className="dc-codes-grid">
               {codes.map((c) => {
@@ -656,8 +641,8 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                           <button
                             className={`dc-copy-btn${copiedCode === c.id ? " copied" : ""}`}
                             onClick={() => copyCode(c.id, c.code)}
-                            aria-label="Copy code"
-                            title={copiedCode === c.id ? "Copied!" : "Copy code"}
+                            aria-label={t("discounts.copyCode")}
+                            title={copiedCode === c.id ? t("discounts.copied") : t("discounts.copyCode")}
                           >
                             {copiedCode === c.id ? (
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -687,7 +672,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
                     <div className="dc-code-meta">
                       <div className="dc-code-meta-item">
-                        <span className="dc-code-meta-label">Discount</span>
+                        <span className="dc-code-meta-label">{t("discounts.discount")}</span>
                         <span className="dc-code-meta-value">
                           {c.amount_type === "percent"
                             ? `${c.amount}%`
@@ -695,22 +680,20 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                         </span>
                       </div>
                       <div className="dc-code-meta-item">
-                        <span className="dc-code-meta-label">Validity</span>
+                        <span className="dc-code-meta-label">{t("discounts.validity")}</span>
                         <span className="dc-code-meta-value">
-                          {c.starts_at
-                            ? new Date(c.starts_at).toLocaleDateString("en-CA")
-                            : "Now"}
+                          {c.starts_at ? fmtDate(c.starts_at) : t("discounts.now")}
                           {" – "}
-                          {c.ends_at
-                            ? new Date(c.ends_at).toLocaleDateString("en-CA")
-                            : "No end"}
+                          {c.ends_at ? fmtDate(c.ends_at) : t("discounts.noEnd")}
                         </span>
                       </div>
                       <div className="dc-code-meta-item">
-                        <span className="dc-code-meta-label">Limit</span>
+                        <span className="dc-code-meta-label">{t("discounts.limit")}</span>
                         <span className="dc-code-meta-value">
-                          {c.max_redemptions ? `Max ${c.max_redemptions}` : "Unlimited"}
-                          {c.one_per_passenger ? " · 1/passenger" : ""}
+                          {c.max_redemptions
+                            ? t("discounts.maxN", { n: c.max_redemptions })
+                            : t("discounts.unlimited")}
+                          {c.one_per_passenger ? ` · ${t("discounts.onePerPassenger")}` : ""}
                         </span>
                       </div>
                     </div>
@@ -720,48 +703,46 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                         className="dc-code-action dc-action-edit"
                         onClick={() => openEditForm(c)}
                       >
-                        Edit
+                        {t("common.edit")}
                       </button>
                       <button
                         className="dc-code-action dc-action-history"
                         onClick={() => viewRedemptions(c)}
                       >
-                        {redemptionsForCode === c.id ? "Hide history" : "History"}
+                        {redemptionsForCode === c.id ? t("discounts.hideHistory") : t("discounts.history")}
                       </button>
                       <button
                         className={`dc-code-action dc-action-toggle${c.active ? "" : " off"}`}
                         onClick={() => toggleCodeActive(c)}
                       >
-                        {c.active ? "Deactivate" : "Activate"}
+                        {c.active ? t("common.deactivate") : t("common.activate")}
                       </button>
                       <button
                         className="dc-code-action dc-action-delete"
                         onClick={() => deleteCode(c)}
                       >
-                        Delete
+                        {t("common.delete")}
                       </button>
                     </div>
 
                     {redemptionsForCode === c.id && (
                       <div className="dc-redemptions">
                         {redemptionsLoading ? (
-                          <div className="dc-redemption-empty">Loading…</div>
+                          <div className="dc-redemption-empty">{t("common.loading")}</div>
                         ) : redemptions.length === 0 ? (
-                          <div className="dc-redemption-empty">
-                            No rides have used this code yet.
-                          </div>
+                          <div className="dc-redemption-empty">{t("discounts.noRedemptions")}</div>
                         ) : (
                           redemptions.map((r) => (
                             <div key={r.id} className="dc-redemption-row">
                               <span className="dc-redemption-name">
                                 {r.passenger_name ?? "—"}
                               </span>
+                              <span>{fmtDate(r.created_at)}</span>
                               <span>
-                                {new Date(r.created_at).toLocaleDateString("en-CA")}
-                              </span>
-                              <span>
-                                -${(r.discount_amount ?? 0).toFixed(2)} of $
-                                {(r.fare_estimate ?? 0).toFixed(2)}
+                                {t("discounts.redemptionAmount", {
+                                  off: (r.discount_amount ?? 0).toFixed(2),
+                                  fare: (r.fare_estimate ?? 0).toFixed(2),
+                                })}
                               </span>
                             </div>
                           ))
@@ -781,17 +762,17 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         <div className="dc-form-overlay" onClick={() => setFormOpen(false)}>
           <div className="dc-form" onClick={(e) => e.stopPropagation()}>
             <div className="dc-form-title">
-              {editingId ? "Edit discount code" : "New discount code"}
+              {editingId ? t("discounts.editCode") : t("discounts.newCodeTitle")}
             </div>
 
             <div className="dc-form-field">
-              <label className="dc-form-label">Code</label>
+              <label className="dc-form-label">{t("discounts.code")}</label>
               <div className="dc-form-code-row">
                 <input
                   className="dc-form-input"
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value })}
-                  placeholder="CHURCH25"
+                  placeholder={t("discounts.codePlaceholder")}
                   style={{ textTransform: "uppercase" }}
                 />
                 <button
@@ -799,24 +780,24 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                   type="button"
                   onClick={() => setForm({ ...form, code: generateCode() })}
                 >
-                  Auto-generate
+                  {t("discounts.autoGenerate")}
                 </button>
               </div>
             </div>
 
             <div className="dc-form-field">
-              <label className="dc-form-label">Label (optional)</label>
+              <label className="dc-form-label">{t("discounts.labelOptional")}</label>
               <input
                 className="dc-form-input"
                 value={form.label}
                 onChange={(e) => setForm({ ...form, label: e.target.value })}
-                placeholder="St. John's Church partnership"
+                placeholder={t("discounts.labelPlaceholder")}
               />
             </div>
 
             <div className="dc-form-row">
               <div className="dc-form-field">
-                <label className="dc-form-label">Type</label>
+                <label className="dc-form-label">{t("discounts.type")}</label>
                 <select
                   className="dc-form-select"
                   value={form.amount_type}
@@ -824,13 +805,15 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                     setForm({ ...form, amount_type: e.target.value as "percent" | "fixed" })
                   }
                 >
-                  <option value="percent">Percent off</option>
-                  <option value="fixed">Fixed amount off</option>
+                  <option value="percent">{t("discounts.percentOff")}</option>
+                  <option value="fixed">{t("discounts.fixedOff")}</option>
                 </select>
               </div>
               <div className="dc-form-field">
                 <label className="dc-form-label">
-                  Amount {form.amount_type === "percent" ? "(%)" : "($)"}
+                  {form.amount_type === "percent"
+                    ? t("discounts.amountPct")
+                    : t("discounts.amountDollars")}
                 </label>
                 <input
                   className="dc-form-input"
@@ -846,7 +829,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
             <div className="dc-form-row">
               <div className="dc-form-field">
-                <label className="dc-form-label">Starts (optional)</label>
+                <label className="dc-form-label">{t("discounts.startsOptional")}</label>
                 <input
                   className="dc-form-input"
                   type="date"
@@ -855,7 +838,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                 />
               </div>
               <div className="dc-form-field">
-                <label className="dc-form-label">Ends (optional)</label>
+                <label className="dc-form-label">{t("discounts.endsOptional")}</label>
                 <input
                   className="dc-form-input"
                   type="date"
@@ -866,22 +849,20 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
             </div>
 
             <div className="dc-form-field">
-              <label className="dc-form-label">Max total redemptions (optional)</label>
+              <label className="dc-form-label">{t("discounts.maxRedemptions")}</label>
               <input
                 className="dc-form-input"
                 type="number"
                 min={1}
                 value={form.max_redemptions}
                 onChange={(e) => setForm({ ...form, max_redemptions: e.target.value })}
-                placeholder="Leave blank for unlimited"
+                placeholder={t("discounts.maxRedemptionsPlaceholder")}
               />
-              <div className="dc-form-hint">
-                E.g. cap a launch promo at the first 50 rides.
-              </div>
+              <div className="dc-form-hint">{t("discounts.maxRedemptionsHint")}</div>
             </div>
 
             <div className="dc-form-toggle-row">
-              <span className="dc-form-toggle-label">Limit to one use per passenger</span>
+              <span className="dc-form-toggle-label">{t("discounts.oneUseLabel")}</span>
               <button
                 className={`dc-switch${form.one_per_passenger ? " on" : ""}`}
                 onClick={() =>
@@ -893,7 +874,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
             </div>
 
             <div className="dc-form-toggle-row">
-              <span className="dc-form-toggle-label">Active</span>
+              <span className="dc-form-toggle-label">{t("common.active")}</span>
               <button
                 className={`dc-switch${form.active ? " on" : ""}`}
                 onClick={() => setForm({ ...form, active: !form.active })}
@@ -904,14 +885,14 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
             <div className="dc-form-actions">
               <button className="dc-form-cancel" onClick={() => setFormOpen(false)}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 className="dc-form-submit"
                 onClick={saveCode}
                 disabled={savingCode}
               >
-                {savingCode ? "Saving…" : editingId ? "Save changes" : "Create code"}
+                {savingCode ? t("common.saving") : editingId ? t("discounts.saveChanges") : t("discounts.createCode")}
               </button>
             </div>
           </div>
