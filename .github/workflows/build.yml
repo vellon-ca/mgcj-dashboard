@@ -11,6 +11,10 @@ name: build
 # to a network, so dummy values compile identically to real ones. Keeping this
 # job secret-free means CI never becomes another place live keys live.
 #
+# Two text-to-text checks (`check:event-types`, `check:i18n`) ride in this job
+# for the same reason: they need no credentials and fail faster and more
+# specifically than the compile does.
+#
 # Lint is NOT part of this gate: `npm run lint` currently reports 309 problems
 # (279 errors). A gate that fails on pre-existing style debt is a gate that
 # gets switched off in a week. Clean the lint backlog first, then add it here.
@@ -51,6 +55,15 @@ jobs:
       # the database's. The script says which half it skipped.
       - name: Check event_type lists agree
         run: npm run check:event-types
+
+      # Same category as the check above: text-to-text, no credentials, and the
+      # faster, more specific failure. It covers the three ways a translation
+      # rots — a key missing from one locale, an orphan left by a rename, a
+      # dropped {{placeholder}} — plus the one none of those can see: a string
+      # that was never externalized at all, which is the failure that actually
+      # shipped six times in mgcj-app.
+      - name: Check i18n (drift + un-externalized strings)
+        run: npm run check:i18n
 
       - name: Build
         # `npm run build` is `tsc -b && vite build`, so this typechecks too.

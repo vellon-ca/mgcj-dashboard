@@ -43,22 +43,45 @@ const mapKeys = (name) => {
   const body = analytics.split(`const ${name}: Record<string, string> = {`)[1].split("\n};")[0];
   return new Set([...body.matchAll(/^\s*"([a-z_.]+)":/gm)].map(m => m[1]));
 };
-const labels = mapKeys("EVENT_LABELS");
+// EVENT_LABEL_KEYS, not EVENT_LABELS: since the i18n sweep (2026-10-04) the map
+// holds translation KEYS and the English lives in src/i18n/locales/en.json. The
+// keys of the map are still the event types, which is all this check reads.
+const labels = mapKeys("EVENT_LABEL_KEYS");
 const colors = mapKeys("EVENT_COLORS");
 
 // ── the activity filter's <option> list ─────────────────────────────────────
 // Located structurally rather than by scanning every <option> in the file: this
 // page has other selects, and a global scan would drag their values in.
-const anchor = analytics.indexOf('<optgroup label="Rides">');
-const selectStart = analytics.lastIndexOf("<select", anchor);
-const selectEnd = analytics.indexOf("</select>", anchor);
+// Anchored on the select's own BINDING, not on any copy. It used to anchor on
+// `<optgroup label="Rides">`, which the i18n sweep turned into
+// `label={t("nav.rides")}` — the check then reported every emitted type as
+// unfilterable, because it was reading an empty block. A gate keyed to English
+// prose is a gate a translation breaks.
+const anchor = analytics.indexOf("value={activityTypeFilter}");
+const selectStart = anchor < 0 ? -1 : analytics.lastIndexOf("<select", anchor);
+const selectEnd = anchor < 0 ? -1 : analytics.indexOf("</select>", anchor);
 if (anchor < 0 || selectStart < 0 || selectEnd < 0) {
-  fail.push("could not locate the activity filter <select> (the 'Rides' optgroup anchor moved)");
+  fail.push("could not locate the activity filter <select> (its `value={activityTypeFilter}` binding moved)");
 }
 const optionBlock = anchor < 0 ? "" : analytics.slice(selectStart, selectEnd);
+// The option text is now `{eventLabel("<type>")}`, resolved through the SAME
+// function the feed uses — so capture the argument, not prose. Check 3 below
+// changed with it: "do the two render the same words" became structurally
+// guaranteed, and what is left to catch is a copy-paste where the option's
+// value and the key it renders disagree.
 const options = new Map(
-  [...optionBlock.matchAll(/<option value="([a-z_]+\.[a-z_]+)">([^<]+)<\/option>/g)].map(m => [m[1], m[2]]),
+  [...optionBlock.matchAll(/<option value="([a-z_]+\.[a-z_]+)">\{eventLabel\("([a-z_]+\.[a-z_]+)"\)\}<\/option>/g)]
+    .map(m => [m[1], m[2]]),
 );
+// A plain-text option would silently vanish from `options` above and so from
+// every check keyed on it — louder to say so than to under-report.
+const plainOptions = [...optionBlock.matchAll(/<option value="([a-z_]+\.[a-z_]+)">(?!\{eventLabel)/g)]
+  .map(m => m[1]);
+if (plainOptions.length) {
+  fail.push(
+    `activity-filter options render literal text instead of eventLabel(): ${plainOptions.join(", ")}`,
+  );
+}
 
 // ── what this app actually emits ────────────────────────────────────────────
 const emitted = new Set();
@@ -86,15 +109,15 @@ report("in EVENT_COLORS but not in the union", diff(colors, union));
 //    invisible here, so their options are checked by eye, not by this rule.
 report("emitted by this app but not in the activity filter", diff(emitted, new Set(options.keys())));
 
-// 3. every filter option must be a real type, and its text must match the feed's
-//    label -- otherwise the same event is called two different things in one UI.
+// 3. every filter option must be a real type, and must render the label for ITS
+//    OWN value -- a copy-pasted option showing another event's name.
+//    (The old form of this check compared the option's prose to EVENT_LABELS'
+//    prose. Both now come from one t() lookup, so that class of drift is gone;
+//    this is the part that survives translation.)
 report("in the activity filter but not in the union", diff(new Set(options.keys()), union));
-for (const [value, text] of options) {
-  const expected = labels.has(value)
-    ? analytics.split(`"${value}": "`)[1]?.split('"')[0]
-    : null;
-  if (expected && text !== expected) {
-    fail.push(`filter option "${value}" reads "${text}" but EVENT_LABELS says "${expected}"`);
+for (const [value, rendered] of options) {
+  if (rendered !== value) {
+    fail.push(`filter option "${value}" renders eventLabel("${rendered}") -- mismatched value`);
   }
 }
 
@@ -131,11 +154,13 @@ if (fail.length) {
   console.error("\nevent_type lists disagree:\n");
   for (const f of fail) console.error(`  FAIL  ${f}`);
   console.error(`
-Adding an event type is a four-place change:
-  1. the DB CHECK          — a migration in mgcj-app (drop and rebuild whole)
-  2. DispatchEventType     — src/lib/logDispatchEvent.ts
-  3. EVENT_LABELS/COLORS   — src/pages/AnalyticsPage.tsx
-  4. the activity filter   — same file, ONLY once something emits the type
+Adding an event type is a FIVE-place change since the i18n sweep:
+  1. the DB CHECK            — a migration in mgcj-app (drop and rebuild whole)
+  2. DispatchEventType       — src/lib/logDispatchEvent.ts
+  3. EVENT_LABEL_KEYS/COLORS — src/pages/AnalyticsPage.tsx
+  4. the activity filter     — same file, ONLY once something emits the type
+  5. the event.* key         — src/i18n/locales/en.json AND fr.json
+                               ("npm run check:i18n" is what catches a missing one)
 `);
   process.exit(1);
 }
