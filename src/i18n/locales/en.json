@@ -298,7 +298,10 @@
     "unknown": "Unknown",
     "unnamed": "Unnamed",
     "yes": "Yes",
-    "phoneCountryHint": "Outside Canada or the US? Start with + and the country code."
+    "phoneCountryHint": "Enter the number without the country code.",
+    "selectCountry": "Select country",
+    "searchCountry": "Search country or code",
+    "noCountryMatch": "No country matches that."
   },
   "coverage": {
     "atRisk": "At risk",

@@ -35,7 +35,7 @@ import {
 } from "../lib/labels";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
-import { toE164, formatPhoneInput, PHONE_INPUT_MAX_LENGTH } from "../lib/phone";
+import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -1710,12 +1710,12 @@ export default function DashboardPage({
   const [driverNumFormat, setDriverNumFormat] = useState({ prefix: "", pad: 0 });
   const [loading, setLoading] = useState(true);
   const [inviteName, setInviteName] = useState("");
-  const [invitePhone, setInvitePhone] = useState("");
+  const inviteField = usePhoneField();
 
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
-  const [bookPassenger, setBookPassenger] = useState("");
+  const bookField = usePhoneField();
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
   const [bookPickup, setBookPickup] = useState("");
@@ -2831,13 +2831,13 @@ export default function DashboardPage({
 
   async function createInvite(e: React.FormEvent) {
     e.preventDefault();
-    if (!inviteName.trim() || !invitePhone.trim()) return;
+    if (!inviteName.trim() || !inviteField.national.trim()) return;
     // `"+1" + digits` was not a default, it was a corruption: an international
     // number typed here became "+1447911123456". And driver_invites.phone is
     // matched against the signup JWT by `consume_invite_code`, so a wrong value
     // here reaches the driver as "invalid invite code" and never as a phone
     // problem -- which is why this half must ship with the app's half.
-    const e164Phone = toE164(invitePhone);
+    const e164Phone = inviteField.e164;
     if (!e164Phone) {
       alert(t("drivers.inviteInvalidPhone"));
       return;
@@ -2859,7 +2859,7 @@ export default function DashboardPage({
     }
     setInviteSuccess(code);
     setInviteName("");
-    setInvitePhone("");
+    inviteField.clear();
     fetchInvites();
     logDispatchEvent({
       companyId: profile.company_id!,
@@ -3123,7 +3123,7 @@ export default function DashboardPage({
     setBookLoading(true);
     setBookError(null);
     try {
-      const phone = toE164(bookPassenger);
+      const phone = bookField.e164;
       // toE164 is STRICT now and returns null for anything unparseable, where
       // it used to hand back a bare "+<digits>". The only thing that stood
       // between that and a booked ride was create-guest-passenger's own 400.
@@ -3316,7 +3316,7 @@ export default function DashboardPage({
         },
       });
       setBookingOpen(false);
-      setBookPassenger("");
+      bookField.clear();
       setBookPassengerName("");
       setBookPickup("");
       setBookPickupCoords(null);
@@ -4119,11 +4119,32 @@ export default function DashboardPage({
         .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
         .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
         .db-invite-input::placeholder { color: #6B7280; }
-        .db-phone-wrap { display: flex; align-items: center; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0 12px; transition: border-color 0.15s; }
-        .db-phone-wrap:focus-within { border-color: rgba(232,80,10,0.35); }
         .db-phone-hint { font-size: 11px; color: #6B7280; font-family: system-ui, -apple-system, sans-serif; margin-top: 6px; line-height: 1.45; }
-        .db-phone-input { flex: 1; background: transparent; border: none; padding: 10px 0; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
-        .db-phone-input::placeholder { color: #6B7280; }
+        /* Country chip + national number. db-tel is position:relative so the
+           search popover anchors to the field; it must stay above the modal's
+           own stacking context, hence the z-index. NOTE no backticks in here:
+           the whole block is one template literal and a stray one ends it. */
+        .db-tel { position: relative; }
+        .db-tel-row { display: flex; align-items: stretch; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; overflow: hidden; transition: border-color 0.15s; }
+        .db-tel-row:focus-within { border-color: rgba(232,80,10,0.35); }
+        .db-tel-modal .db-tel-row { background: #111827; }
+        .db-tel-chip { display: flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.04); border: none; border-right: 1px solid rgba(255,255,255,0.08); padding: 0 10px; cursor: pointer; color: #F1F5F9; font-family: system-ui, sans-serif; }
+        .db-tel-chip:hover { background: rgba(255,255,255,0.07); }
+        .db-tel-flag { font-size: 15px; }
+        .db-tel-dial { font-size: 13px; font-weight: 600; }
+        .db-tel-caret { font-size: 9px; color: #6B7280; }
+        .db-tel-input { flex: 1; min-width: 0; background: transparent; border: none; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
+        .db-tel-input::placeholder { color: #6B7280; }
+        .db-tel-pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: 280px; max-width: 90vw; background: #1A2433; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.45); padding: 8px; }
+        .db-tel-search { width: 100%; box-sizing: border-box; background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
+        .db-tel-search::placeholder { color: #6B7280; }
+        .db-tel-list { max-height: 260px; overflow-y: auto; margin-top: 6px; }
+        .db-tel-item { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; padding: 8px 8px; cursor: pointer; text-align: left; border-radius: 6px; font-family: system-ui, sans-serif; }
+        .db-tel-item:hover { background: rgba(255,255,255,0.06); }
+        .db-tel-item-on { background: rgba(232,80,10,0.12); }
+        .db-tel-name { flex: 1; font-size: 13px; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-tel-dial-muted { font-size: 12px; color: #6B7280; }
+        .db-tel-empty { padding: 14px 8px; font-size: 12px; color: #6B7280; text-align: center; font-family: system-ui, sans-serif; }
         .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
         .db-invite-btn:hover { opacity: 0.88; }
         .db-invite-btn:disabled { opacity: 0.5; }
@@ -5140,19 +5161,12 @@ export default function DashboardPage({
                         value={inviteName}
                         onChange={(e) => setInviteName(e.target.value)}
                       />
-                      {/* No "+1" chip, and inputMode is no longer "numeric":
-                          both blocked the "+". See src/lib/phone.ts. */}
-                      <div className="db-phone-wrap">
-                        <input
-                          className="db-phone-input"
-                          /* i18n-ok — a phone-number FORMAT example. */
-                          placeholder="(902) 123-4567"
-                          value={invitePhone}
-                          onChange={(e) => setInvitePhone(formatPhoneInput(e.target.value))}
-                          maxLength={PHONE_INPUT_MAX_LENGTH}
-                          inputMode="tel"
-                        />
-                      </div>
+                      {/* The invite is matched on phone by
+                          `consume_invite_code`, so the country here has to be
+                          the one the driver will sign up with: a mismatch
+                          surfaces to them as "invalid invite code", which
+                          names nothing about the number. */}
+                      <PhoneInput field={inviteField} />
                       <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
                       <button
                         className="db-invite-btn"
@@ -5733,18 +5747,13 @@ export default function DashboardPage({
             >
               <div>
                 <label className="db-modal-label">{t("booking.passengerPhone")}</label>
-                <input
+                <PhoneInput
+                  field={bookField}
+                  variant="modal"
                   autoFocus
-                  className="db-modal-input"
-                  /* i18n-ok — a phone-number FORMAT example. */
-                  placeholder="(902) 555-1234"
-                  value={bookPassenger}
-                  onChange={(e) => {
-                    setBookPassenger(formatPhoneInput(e.target.value));
-                    setBookPassengerRegistered(false);
-                  }}
+                  required
                   onBlur={async () => {
-                    const phone = toE164(bookPassenger);
+                    const phone = bookField.e164;
                     if (!phone) return;
                     const { data } = (await supabase
                       .rpc("find_passenger_by_phone", { p_phone: phone })
@@ -5758,7 +5767,10 @@ export default function DashboardPage({
                       setBookPassengerRegistered(false);
                     }
                   }}
-                  required
+                  // Editing the number invalidates the lookup it came from —
+                  // otherwise the green "registered" badge and the prefilled
+                  // name stay on screen for a DIFFERENT passenger's number.
+                  onEdit={() => setBookPassengerRegistered(false)}
                 />
                 <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
               </div>
@@ -6073,7 +6085,7 @@ export default function DashboardPage({
                     setBookingOpen(false);
                     setBookError(null);
                     setBookFareError(false);
-                    setBookPassenger("");
+                    bookField.clear();
                     setBookPassengerRegistered(false);
                   }}
                 >

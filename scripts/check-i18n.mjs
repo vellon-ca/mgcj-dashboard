@@ -28,7 +28,7 @@
  * script line moves the Expo fingerprint and orphans every installed build's
  * OTA; this repo has no native build, so the line is free.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,15 +71,24 @@ const problem = (msg) => {
 };
 
 // ── Locale files against each other ──
+// Country names live in locales/countries/<tag>.json (generated — see
+// mgcj-app/scripts/gen-countries.mjs) and are merged into `translation` under
+// `countries.<ISO>` at runtime. Merge them here too, or the 245 names per
+// locale are the one block of copy this gate cannot see.
+const loadLocale = (tag) => {
+  const obj = JSON.parse(readFileSync(join(dir, `${tag}.json`), "utf8"));
+  const sub = join(dir, "countries", `${tag}.json`);
+  if (existsSync(sub)) obj.countries = JSON.parse(readFileSync(sub, "utf8"));
+  return obj;
+};
+
 const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
-const base = flatten(
-  JSON.parse(readFileSync(join(dir, `${BASE}.json`), "utf8")),
-);
+const base = flatten(loadLocale(BASE));
 console.log(`src/i18n/locales — ${Object.keys(base).length} keys in ${BASE}\n`);
 
 for (const file of files.filter((f) => f !== `${BASE}.json`)) {
   const tag = file.replace(/\.json$/, "");
-  const t = flatten(JSON.parse(readFileSync(join(dir, file), "utf8")));
+  const t = flatten(loadLocale(tag));
   const missing = Object.keys(base).filter((k) => !(k in t));
   const extra = Object.keys(t).filter((k) => !(k in base));
   const badVars = Object.keys(t).filter(
@@ -203,7 +212,7 @@ for (const f of srcFiles) {
     for (const [tag, str] of Object.entries(
       Object.fromEntries(files.map((file) => [
         file.replace(/\.json$/, ""),
-        flatten(JSON.parse(readFileSync(join(dir, file), "utf8")))[key],
+        flatten(loadLocale(file.replace(/\.json$/, "")))[key],
       ])),
     )) {
       if (typeof str !== "string") continue;

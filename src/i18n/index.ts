@@ -12,9 +12,18 @@
 
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
-import en from "./locales/en.json";
-import fr from "./locales/fr.json";
+import enBase from "./locales/en.json";
+import frBase from "./locales/fr.json";
+import enCountries from "./locales/countries/en.json";
+import frCountries from "./locales/countries/fr.json";
 import { DEFAULT_LOCALE } from "./locales";
+
+// Country names are nested INTO `translation` as `countries.<ISO>` rather than
+// given their own namespace, so `check:i18n` — which compares the locale files
+// to en as one flat key set — sees them like any other copy. Generated, not
+// hand-written: mgcj-app/scripts/gen-countries.mjs, then copied across.
+const en = { ...enBase, countries: enCountries };
+const fr = { ...frBase, countries: frCountries };
 
 export const resources = {
   en: { translation: en },
