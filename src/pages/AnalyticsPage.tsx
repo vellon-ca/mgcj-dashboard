@@ -146,6 +146,57 @@ interface ReceiptRow {
   discount_label: string | null;
   payment_method: string | null;
   sent_at: string;
+  // What was PRINTED on this receipt, snapshotted at send time
+  // (20260930000000 + 20261001020000). NULL tax_rate_percent/tax_amount means
+  // no tax line was printed — not a zero one. `select("*")` was already
+  // returning all three; only this type and the math below were behind.
+  // Typed loosely because PostgREST can hand back `numeric` as a string.
+  tax_rate_percent: number | string | null;
+  tax_amount: number | string | null;
+  tax_label: string | null;
+}
+
+/**
+ * The receipt's tax block, read off the row rather than recomputed.
+ *
+ * This replaces `fare / 1.15` in the two places the dashboard renders a
+ * receipt. Three things were wrong with that, in increasing order of severity:
+ *
+ *  1. The rate. Nova Scotia moved to 14% on 2025-04-01, so `1.15` has been
+ *     wrong since. `send-ride-receipt` fixed this by freezing the rate per
+ *     ride; the dashboard kept the literal and so disagreed with the emailed
+ *     receipt for the same ride.
+ *  2. The gate. The split was drawn UNCONDITIONALLY, gating only the
+ *     registration line on `hst_number`. A company under the $30k
+ *     small-supplier threshold — ordinary for a Valley operator — got a
+ *     dashboard receipt claiming tax it never collected and cannot remit, off
+ *     which a passenger could claim an input tax credit.
+ *  3. Recomputing at all. The amount printed was rounded once at send time and
+ *     stored; deriving it again from fare and rate is how two copies of one
+ *     figure disagree by a cent.
+ *
+ * So: no rate constant, and no arithmetic beyond `fare - tax_amount`. The
+ * `taxed` gate is byte-for-byte the function's own (`taxRatePercent != null &&
+ * taxAmount != null`), because the point is that the two documents agree.
+ *
+ * A receipt sent BEFORE those migrations has all three columns NULL and so
+ * prints no tax line. That is deliberate and matches the function's choice: an
+ * understated receipt is a lesser defect than one asserting uncollected tax.
+ */
+function receiptTax(r: ReceiptRow) {
+  const num = (v: number | string | null) =>
+    v == null || v === "" ? null : Number(v);
+  const rate = num(r.tax_rate_percent);
+  const amount = num(r.tax_amount);
+  const taxed = rate != null && rate > 0 && amount != null && Number.isFinite(amount);
+  return {
+    taxed,
+    subtotal: taxed ? r.fare - amount! : null,
+    amount,
+    // Matches the function's formatRate: 14.00 prints as "14", 14.50 as "14.5".
+    rateText: rate == null ? "" : String(Number(rate.toFixed(2))),
+    label: r.tax_label,
+  };
 }
 
 // REASON_LABELS, STATUS_LABELS, CANCEL_REASON_LABELS, SETTLEMENT_ROUTE_LABELS,
@@ -1969,8 +2020,10 @@ export default function AnalyticsPage({
         fare: inv.fare,
       },
     });
-    const subtotal = inv.fare / 1.15;
-    const hst = inv.fare - subtotal;
+    const tax = receiptTax(inv);
+    // The company's own wording, as written. The fallback covers a receipt sent
+    // between 20260930000000 and 20261001020000, which has a rate but no label.
+    const taxLabel = tax.label || t("receipt.hst");
     const hasDiscount = !!(inv.discount_amount && inv.pre_discount_fare != null);
     const date = fmtDateTime(inv.sent_at, {
       weekday: "long", year: "numeric", month: "long", day: "numeric",
@@ -2005,9 +2058,9 @@ export default function AnalyticsPage({
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px; vertical-align: top;">${esc(t("reports.dropoff"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.dropoff_address) || "—"}</td></tr>
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("rideDetail.passenger"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.passenger_name) || "—"}</td></tr>
           <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("rideDetail.driver"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.driver_name) || "—"}</td></tr>
-          ${inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.hstReg"))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.hst_number)}</td></tr>` : ""}
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.subtotal"))}</td><td style="padding: 8px 0; font-size: 13px;">$${subtotal.toFixed(2)}</td></tr>
-          <tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.hst"))}</td><td style="padding: 8px 0; font-size: 13px;">$${hst.toFixed(2)}</td></tr>
+          ${tax.taxed && inv.hst_number ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.taxRegLabel", { taxLabel }))}</td><td style="padding: 8px 0; font-size: 13px;">${esc(inv.hst_number)}</td></tr>` : ""}
+          ${tax.taxed ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.subtotalBefore", { taxLabel }))}</td><td style="padding: 8px 0; font-size: 13px;">$${tax.subtotal!.toFixed(2)}</td></tr>` : ""}
+          ${tax.taxed ? `<tr><td style="padding: 8px 0; color: #6B7280; font-size: 13px;">${esc(t("receipt.taxLine", { taxLabel, rate: tax.rateText }))}</td><td style="padding: 8px 0; font-size: 13px;">$${tax.amount!.toFixed(2)}</td></tr>` : ""}
         </table>
         ${opts?.extraHtml ?? ""}
         <p style="font-size: 12px; color: #9CA3AF; text-align: center; margin-top: 24px; border-top: 1px solid #f3f4f6; padding-top: 16px;">
@@ -5615,7 +5668,14 @@ export default function AnalyticsPage({
                       [
                         [t("receipt.date"), fmtDateTime(selectedReceipt.sent_at, { dateStyle: "medium", timeStyle: "short" })],
                         [t("receipt.company"), selectedReceipt.company_name ?? "—"],
-                        ...(selectedReceipt.hst_number ? [[t("receipt.hstReg"), selectedReceipt.hst_number]] : []),
+                        ...(receiptTax(selectedReceipt).taxed && selectedReceipt.hst_number
+                          ? [[
+                              t("receipt.taxRegLabel", {
+                                taxLabel: selectedReceipt.tax_label || t("receipt.hst"),
+                              }),
+                              selectedReceipt.hst_number,
+                            ]]
+                          : []),
                         [t("analytics.col.passenger"), selectedReceipt.passenger_name ?? "—"],
                         [t("analytics.col.driver"), selectedReceipt.driver_name ?? "—"],
                         [t("analytics.col.pickup"), selectedReceipt.pickup_address ?? "—"],
@@ -5627,8 +5687,21 @@ export default function AnalyticsPage({
                               [`${t("receipt.discount")}${selectedReceipt.discount_label ? ` — ${selectedReceipt.discount_label}` : ""}`, `-$${selectedReceipt.discount_amount.toFixed(2)}`],
                             ] as [string, string][])
                           : []),
-                        [t("receipt.subtotal"), `$${(selectedReceipt.fare / 1.15).toFixed(2)}`],
-                        [t("receipt.hst"), `$${(selectedReceipt.fare - selectedReceipt.fare / 1.15).toFixed(2)}`],
+                        // Same gate and same stored figures as the printed and
+                        // emailed copies — see receiptTax(). No tax line at all
+                        // when the ride was not taxed.
+                        ...((): [string, string][] => {
+                          const tax = receiptTax(selectedReceipt);
+                          if (!tax.taxed) return [];
+                          const taxLabel = tax.label || t("receipt.hst");
+                          return [
+                            [t("receipt.subtotalBefore", { taxLabel }), `$${tax.subtotal!.toFixed(2)}`],
+                            [
+                              t("receipt.taxLine", { taxLabel, rate: tax.rateText }),
+                              `$${tax.amount!.toFixed(2)}`,
+                            ],
+                          ];
+                        })(),
                         [totalLabel, `$${selectedReceipt.fare.toFixed(2)}`],
                       ] as [string, string][]
                     ).map(([lbl, val]) => (
