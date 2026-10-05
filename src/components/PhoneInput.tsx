@@ -11,7 +11,7 @@
 // a number somebody read to them over the phone, and a driver invite built as
 // `"+1" + digits` for an international driver fails later as "invalid invite
 // code", which names nothing about the phone number.
-import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   DEFAULT_COUNTRY_ISO,
@@ -138,6 +138,44 @@ const ALIASES: Record<string, string[]> = {
   IN: ["india", "inde"],
 };
 
+// ── Caret preservation ─────────────────────────────────────────────────────
+//
+// The input is controlled and its value is RE-FORMATTED on every keystroke, so
+// after an edit the DOM string React writes back is not the string the browser
+// just produced. A browser given a new value puts the caret at the end — which
+// is exactly wrong for the thing a dispatcher does most: hearing "no, 555, not
+// 556", clicking into the middle of the number and correcting one digit. The
+// caret has to stay where the correction is.
+//
+// The position is carried across the re-format as a COUNT OF DIGITS, not a
+// character offset: the separators move. "(902) 55|5-1234" is "7 digits to my
+// left" both before and after formatting, whatever brackets and dashes the
+// formatter decides to put in.
+function digitsBefore(text: string, offset: number): number {
+  let n = 0;
+  for (let i = 0; i < offset && i < text.length; i++) if (/\d/.test(text[i])) n++;
+  return n;
+}
+
+/** The character offset just after the nth digit of `text`. */
+function offsetAfterDigits(text: string, n: number): number {
+  if (n <= 0) {
+    // Before the first digit, not offset 0: that would park the caret to the
+    // left of the "(" the formatter adds, where the next keystroke types
+    // outside the bracket.
+    const first = text.search(/\d/);
+    return first === -1 ? text.length : first;
+  }
+  let seen = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (/\d/.test(text[i])) {
+      seen++;
+      if (seen === n) return i + 1;
+    }
+  }
+  return text.length;
+}
+
 type Props = {
   field: PhoneField;
   /** Which surface it sits on — the two differ in background only. */
@@ -155,6 +193,16 @@ export default function PhoneInput({ field, variant = "panel", autoFocus, requir
   const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Digit count to the left of the caret, pending re-application after the
+  // formatter has run. Null when the change came from somewhere else (a seed,
+  // a cleared field) and the caret is none of our business.
+  const pendingCaret = useRef<number | null>(null);
+  // Bumped on every edit so the layout effect below runs even when the
+  // re-formatted string is IDENTICAL to the previous one — which is the case
+  // for deleting a separator, where React restores the value and the caret
+  // would otherwise be dropped at the end with nothing having changed.
+  const [editSeq, setEditSeq] = useState(0);
 
   // Close on an outside click or Escape. Without this the popover survives
   // opening the next modal and floats over it.
@@ -174,6 +222,15 @@ export default function PhoneInput({ field, variant = "panel", autoFocus, requir
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    const want = pendingCaret.current;
+    pendingCaret.current = null;
+    const el = inputRef.current;
+    if (want === null || !el || document.activeElement !== el) return;
+    const pos = offsetAfterDigits(el.value, want);
+    el.setSelectionRange(pos, pos);
+  }, [editSeq, field.national]);
 
   // Rebuilt when the language changes, because the SORT ORDER is part of the
   // translation: alphabetical by localized name, not by ISO code.
@@ -221,13 +278,17 @@ export default function PhoneInput({ field, variant = "panel", autoFocus, requir
           <span className="db-tel-caret">▾</span>
         </button>
         <input
+          ref={inputRef}
           className="db-tel-input"
           /* i18n-ok — a phone-number FORMAT example, shown only for NANP: an
              example in the wrong national shape reads as a required length. */
           placeholder={field.dial === "1" ? "(902) 555-1234" : ""}
           value={field.national}
           onChange={(e) => {
-            field.onChangeNational(e.target.value);
+            const raw = e.target.value;
+            pendingCaret.current = digitsBefore(raw, e.target.selectionStart ?? raw.length);
+            setEditSeq((n) => n + 1);
+            field.onChangeNational(raw);
             onEdit?.();
           }}
           onBlur={onBlur}
