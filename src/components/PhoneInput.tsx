@@ -78,7 +78,16 @@ export function usePhoneField(initial?: string | null): PhoneField {
     [dial],
   );
 
-  const clear = useCallback(() => setNational(""), []);
+  // Resets the COUNTRY as well, which is where this copy deliberately differs
+  // from the app's. A dispatcher's field is reused by whoever books next: one
+  // international booking would otherwise leave the chip on +44, and the next
+  // local 10-digit number becomes +447785551234 — accepted, dialled, and
+  // complained about by nobody. In the app the chip is one person's own
+  // country and staying put is right.
+  const clear = useCallback(() => {
+    setNational("");
+    setCountryState(DEFAULT_COUNTRY_ISO);
+  }, []);
 
   const e164 = composeE164(dial, national);
   return { country, dial, national, e164, valid: e164 !== null, setCountry, onChangeNational, clear };
@@ -182,7 +191,7 @@ export default function PhoneInput({ field, variant = "panel", autoFocus, requir
       };
     });
     return list.sort((a, b) => a.name.localeCompare(b.name, i18n.language));
-  }, [t, i18n]);
+  }, [t, i18n.language]);
 
   const filtered = useMemo(() => {
     const q = fold(query);
@@ -248,7 +257,14 @@ export default function PhoneInput({ field, variant = "panel", autoFocus, requir
                 type="button"
                 className={`db-tel-item ${r.iso === field.country ? "db-tel-item-on" : ""}`}
                 onClick={() => {
+                  // The chip changes the NUMBER, not just the label, so it
+                  // owes `onEdit` the same notification the input does. Without
+                  // this: type digits, click the chip (which blurs the input and
+                  // runs the lookup under the OLD country), pick the right
+                  // country — and the green "registered" badge plus a prefilled
+                  // name stay on screen for a number that no longer exists.
                   field.setCountry(r.iso);
+                  onEdit?.();
                   setQuery("");
                   setOpen(false);
                 }}

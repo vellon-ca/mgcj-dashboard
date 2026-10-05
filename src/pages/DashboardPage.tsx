@@ -3124,8 +3124,8 @@ export default function DashboardPage({
     setBookError(null);
     try {
       const phone = bookField.e164;
-      // toE164 is STRICT now and returns null for anything unparseable, where
-      // it used to hand back a bare "+<digits>". The only thing that stood
+      // `bookField.e164` is STRICT and is null for anything unparseable, where
+      // the old formatter handed back a bare "+<digits>". The only thing that stood
       // between that and a booked ride was create-guest-passenger's own 400.
       if (!phone) {
         setBookLoading(false);
@@ -4139,6 +4139,10 @@ export default function DashboardPage({
         .db-tel-search { width: 100%; box-sizing: border-box; background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
         .db-tel-search::placeholder { color: #6B7280; }
         .db-tel-list { max-height: 260px; overflow-y: auto; margin-top: 6px; }
+        /* .db-modal is overflow-y:auto, so a popover tall enough to pass its
+           bottom edge gets clipped and has to be scrolled to. Shorter list in
+           that variant instead. */
+        .db-tel-modal .db-tel-list { max-height: 180px; }
         .db-tel-item { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; padding: 8px 8px; cursor: pointer; text-align: left; border-radius: 6px; font-family: system-ui, sans-serif; }
         .db-tel-item:hover { background: rgba(255,255,255,0.06); }
         .db-tel-item-on { background: rgba(232,80,10,0.12); }
