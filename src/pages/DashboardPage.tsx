@@ -35,6 +35,7 @@ import {
 } from "../lib/labels";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
+import { toE164, formatPhoneInput, PHONE_INPUT_MAX_LENGTH } from "../lib/phone";
 
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
@@ -1711,16 +1712,10 @@ export default function DashboardPage({
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
 
-  function formatPhoneInput(value: string): string {
-    const digits = value.replace(/\D/g, "").slice(0, 10);
-    if (digits.length <= 3) return digits.length ? `(${digits}` : "";
-    if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteSuccess, setInviteSuccess] = useState("");
   const [bookingOpen, setBookingOpen] = useState(false);
-  const [bookPassenger, setBookPassenger] = useState("+1 ");
+  const [bookPassenger, setBookPassenger] = useState("");
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
   const [bookPickup, setBookPickup] = useState("");
@@ -2124,20 +2119,6 @@ export default function DashboardPage({
     return () => clearInterval(interval);
   }, []);
 
-  function toE164(raw: string): string {
-    const digits = raw.replace(/\D/g, "");
-    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
-    if (digits.length === 10) return `+1${digits}`;
-    return `+${digits}`;
-  }
-
-  function formatBookingPhone(value: string): string {
-    const digits = value.replace(/\D/g, "").replace(/^1/, "").slice(0, 10);
-    if (digits.length === 0) return "+1 ";
-    if (digits.length <= 3) return `+1 (${digits}`;
-    if (digits.length <= 6) return `+1 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    return `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
 
   // Split in two on purpose (2026-09-10, after the free-tier CPU-credit
   // exhaustion). Everything here used to run every 15s, which meant refetching
@@ -2851,9 +2832,18 @@ export default function DashboardPage({
   async function createInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!inviteName.trim() || !invitePhone.trim()) return;
+    // `"+1" + digits` was not a default, it was a corruption: an international
+    // number typed here became "+1447911123456". And driver_invites.phone is
+    // matched against the signup JWT by `consume_invite_code`, so a wrong value
+    // here reaches the driver as "invalid invite code" and never as a phone
+    // problem -- which is why this half must ship with the app's half.
+    const e164Phone = toE164(invitePhone);
+    if (!e164Phone) {
+      alert(t("drivers.inviteInvalidPhone"));
+      return;
+    }
     setInviteLoading(true);
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const e164Phone = "+1" + invitePhone.replace(/\D/g, "");
     const { error } = await supabase.from("driver_invites").insert({
       name: inviteName.trim(),
       phone: e164Phone,
@@ -3134,6 +3124,14 @@ export default function DashboardPage({
     setBookError(null);
     try {
       const phone = toE164(bookPassenger);
+      // toE164 is STRICT now and returns null for anything unparseable, where
+      // it used to hand back a bare "+<digits>". The only thing that stood
+      // between that and a booked ride was create-guest-passenger's own 400.
+      if (!phone) {
+        setBookLoading(false);
+        setBookError(t("booking.errInvalidPhone"));
+        return;
+      }
       // role filter matters: a driver or admin sharing this number would
       // otherwise be returned and booked as the passenger.
       // Via the RPC: column privileges apply to WHERE as well as the select
@@ -3318,7 +3316,7 @@ export default function DashboardPage({
         },
       });
       setBookingOpen(false);
-      setBookPassenger("+1 ");
+      setBookPassenger("");
       setBookPassengerName("");
       setBookPickup("");
       setBookPickupCoords(null);
@@ -4123,7 +4121,7 @@ export default function DashboardPage({
         .db-invite-input::placeholder { color: #6B7280; }
         .db-phone-wrap { display: flex; align-items: center; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 0 12px; transition: border-color 0.15s; }
         .db-phone-wrap:focus-within { border-color: rgba(232,80,10,0.35); }
-        .db-phone-prefix { font-size: 13px; color: #9CA3AF; font-family: system-ui, sans-serif; padding-right: 6px; border-right: 1px solid rgba(255,255,255,0.08); margin-right: 8px; white-space: nowrap; }
+        .db-phone-hint { font-size: 11px; color: #6B7280; font-family: system-ui, -apple-system, sans-serif; margin-top: 6px; line-height: 1.45; }
         .db-phone-input { flex: 1; background: transparent; border: none; padding: 10px 0; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
         .db-phone-input::placeholder { color: #6B7280; }
         .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
@@ -5142,18 +5140,20 @@ export default function DashboardPage({
                         value={inviteName}
                         onChange={(e) => setInviteName(e.target.value)}
                       />
+                      {/* No "+1" chip, and inputMode is no longer "numeric":
+                          both blocked the "+". See src/lib/phone.ts. */}
                       <div className="db-phone-wrap">
-                        <span className="db-phone-prefix">+1</span>
                         <input
                           className="db-phone-input"
                           /* i18n-ok — a phone-number FORMAT example. */
                           placeholder="(902) 123-4567"
                           value={invitePhone}
                           onChange={(e) => setInvitePhone(formatPhoneInput(e.target.value))}
-                          maxLength={14}
-                          inputMode="numeric"
+                          maxLength={PHONE_INPUT_MAX_LENGTH}
+                          inputMode="tel"
                         />
                       </div>
+                      <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
                       <button
                         className="db-invite-btn"
                         type="submit"
@@ -5737,15 +5737,15 @@ export default function DashboardPage({
                   autoFocus
                   className="db-modal-input"
                   /* i18n-ok — a phone-number FORMAT example. */
-                  placeholder="+1 (902) 555-1234"
+                  placeholder="(902) 555-1234"
                   value={bookPassenger}
                   onChange={(e) => {
-                    setBookPassenger(formatBookingPhone(e.target.value));
+                    setBookPassenger(formatPhoneInput(e.target.value));
                     setBookPassengerRegistered(false);
                   }}
                   onBlur={async () => {
                     const phone = toE164(bookPassenger);
-                    if (phone.replace(/\D/g, "").length < 11) return;
+                    if (!phone) return;
                     const { data } = (await supabase
                       .rpc("find_passenger_by_phone", { p_phone: phone })
                       .maybeSingle()) as {
@@ -5760,6 +5760,7 @@ export default function DashboardPage({
                   }}
                   required
                 />
+                <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
               </div>
               <div>
                 <label className="db-modal-label">
@@ -6072,7 +6073,7 @@ export default function DashboardPage({
                     setBookingOpen(false);
                     setBookError(null);
                     setBookFareError(false);
-                    setBookPassenger("+1 ");
+                    setBookPassenger("");
                     setBookPassengerRegistered(false);
                   }}
                 >

@@ -257,7 +257,8 @@
     "preferredDriverHint": "(optionnel — la libération reste automatique, ceci oriente seulement à qui elle est proposée)",
     "registered": "Inscrit",
     "scheduleFor": "Planifier pour",
-    "title": "Nouvelle course"
+    "title": "Nouvelle course",
+    "errInvalidPhone": "Saisissez un numéro de téléphone de passager valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays."
   },
   "cancelReason": {
     "dispatchCancelled": "Annulée par la répartition",
@@ -296,7 +297,8 @@
     "status": "Statut",
     "unknown": "Inconnu",
     "unnamed": "Sans nom",
-    "yes": "Oui"
+    "yes": "Oui",
+    "phoneCountryHint": "Hors Canada ou États-Unis ? Commencez par + et l'indicatif pays."
   },
   "coverage": {
     "atRisk": "À risque",
@@ -517,7 +519,8 @@
     "vehicleClass": "Catégorie de véhicule",
     "viewTrail": "Voir le trajet de ce chauffeur",
     "viewTrailHint": "Où il a conduit, et où il s'est arrêté",
-    "year": "Année"
+    "year": "Année",
+    "inviteInvalidPhone": "Saisissez un numéro de téléphone valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays."
   },
   "escReason": {
     "driverNeverCame": "Le chauffeur n'est jamais arrivé",
