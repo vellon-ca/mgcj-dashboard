@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { segment, navigate, VIEW_PATHS, type View } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { driverPresence, lastSeenLabel } from "../lib/presence";
@@ -3110,6 +3110,49 @@ export default function DashboardPage({
     setEditFareTouched(false);
   }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment, companyBaseFare, companyRatePerKm]);
 
+  // One definition of "close the booking modal", shared by Cancel and Escape.
+  // They were a copy of each other for about a minute, which is how a Cancel
+  // that clears the phone field and an Escape that doesn't get born: the chip
+  // would stay on the last country used, and `clear()` resetting it is the
+  // whole reason this field's copy differs from the app's.
+  const closeBooking = useCallback(() => {
+    setBookingOpen(false);
+    setBookError(null);
+    setBookFareError(false);
+    bookField.clear();
+    setBookPassengerRegistered(false);
+    // `bookField` itself is a fresh object every render; `clear` is the only
+    // part of it this touches and it is stable.
+  }, [bookField.clear]);
+
+  // Escape closes whichever modal is open. Two rules:
+  //  * The ride detail wins, because it renders after the booking overlay and
+  //    so sits on top of it if both are somehow open.
+  //  * A country picker inside a modal gets the key first — it is the inner
+  //    layer, and its own listener is already closing it, so without this
+  //    check one Escape would shut the popover AND the modal underneath it.
+  // Mirrors the modal's own render condition: a rideDetail in a LIVE status
+  // renders as the inline side panel, not as this modal, and Escape there is
+  // not the thing being asked for.
+  const rideDetailIsModal =
+    !!rideDetail && (editingRide || !LIVE_STATUSES.has(rideDetail.status));
+
+  useEffect(() => {
+    if (!bookingOpen && !rideDetailIsModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector(".db-tel-pop")) return;
+      if (rideDetailIsModal) {
+        setRideDetail(null);
+        setEditingRide(false);
+        return;
+      }
+      closeBooking();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [bookingOpen, rideDetailIsModal, closeBooking]);
+
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!bookPickupCoords) {
@@ -6085,13 +6128,7 @@ export default function DashboardPage({
                 <button
                   className="db-modal-cancel-btn"
                   type="button"
-                  onClick={() => {
-                    setBookingOpen(false);
-                    setBookError(null);
-                    setBookFareError(false);
-                    bookField.clear();
-                    setBookPassengerRegistered(false);
-                  }}
+                  onClick={closeBooking}
                 >
                   {t("common.cancel")}
                 </button>
