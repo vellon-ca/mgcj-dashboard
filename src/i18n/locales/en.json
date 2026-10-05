@@ -257,7 +257,8 @@
     "preferredDriverHint": "(optional — release stays automatic, this just biases who it goes to)",
     "registered": "Registered",
     "scheduleFor": "Schedule for",
-    "title": "New ride"
+    "title": "New ride",
+    "errInvalidPhone": "Enter a valid passenger phone number. For a number outside Canada or the US, start with + and the country code."
   },
   "cancelReason": {
     "dispatchCancelled": "Cancelled by dispatch",
@@ -296,7 +297,11 @@
     "status": "Status",
     "unknown": "Unknown",
     "unnamed": "Unnamed",
-    "yes": "Yes"
+    "yes": "Yes",
+    "phoneCountryHint": "Enter the number without the country code.",
+    "selectCountry": "Select country",
+    "searchCountry": "Search country or code",
+    "noCountryMatch": "No country matches that."
   },
   "coverage": {
     "atRisk": "At risk",
@@ -517,7 +522,8 @@
     "vehicleClass": "Vehicle class",
     "viewTrail": "View this driver's trail",
     "viewTrailHint": "Where they drove, and where they stopped",
-    "year": "Year"
+    "year": "Year",
+    "inviteInvalidPhone": "Enter a valid phone number. For a number outside Canada or the US, start with + and the country code."
   },
   "escReason": {
     "driverNeverCame": "Driver never arrived",
