@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from './hooks/useAuth'
+import { useLocaleSync } from './i18n/useLocaleSync'
 import { goToLogin, consumeReturnPath } from './lib/viewPath'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 
 export default function App() {
   const { session, profile, companyName, loading, signOut } = useAuth()
+  const { t } = useTranslation()
   const [stuck, setStuck] = useState(false)
+
+  // Reads `profiles.locale` in as source 2 of the locale precedence, and
+  // mirrors an explicit pick back out. Mounted HERE rather than inside
+  // LocaleProvider on purpose: the provider sits above the auth tree and must
+  // never touch the Supabase client — see useLocaleSync for the deadlock that
+  // rule exists for.
+  useLocaleSync(profile)
 
   // Signed out (on arrival or after signing out): park where we were and show
   // /login in the address bar. Gated on !loading — doing this while the session
@@ -32,10 +42,10 @@ export default function App() {
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       fontFamily: "'Inter', system-ui, sans-serif", color: '#E8500A', fontSize: 16, gap: 14,
     }}>
-      <div>Loading…</div>
+      <div>{t('common.loading')}</div>
       {stuck && (
         <>
-          <div style={{ color: '#6B7280', fontSize: 13 }}>Taking longer than usual.</div>
+          <div style={{ color: '#6B7280', fontSize: 13 }}>{t('app.takingLonger')}</div>
           <button
             onClick={() => window.location.reload()}
             style={{
@@ -43,7 +53,7 @@ export default function App() {
               padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
           >
-            Reload
+            {t('common.reload')}
           </button>
         </>
       )}
@@ -63,12 +73,12 @@ export default function App() {
         textAlign: 'center', border: '0.5px solid rgba(255,255,255,0.08)',
       }}>
         <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
-        <div style={{ color: '#F87171', marginBottom: 16 }}>Access denied. Staff only.</div>
+        <div style={{ color: '#F87171', marginBottom: 16 }}>{t('app.accessDenied')}</div>
         <button
           style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
           onClick={() => signOut()}
         >
-          Sign out
+          {t('common.signOut')}
         </button>
       </div>
     </div>
@@ -85,13 +95,13 @@ export default function App() {
         textAlign: 'center', border: '0.5px solid rgba(255,255,255,0.08)', maxWidth: 360,
       }}>
         <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
-        <div style={{ color: '#F87171', marginBottom: 4 }}>Your account has been deactivated.</div>
-        <div style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>Contact an admin at your company to restore access.</div>
+        <div style={{ color: '#F87171', marginBottom: 4 }}>{t('app.deactivated')}</div>
+        <div style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>{t('app.deactivatedHelp')}</div>
         <button
           style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
           onClick={() => signOut()}
         >
-          Sign out
+          {t('common.signOut')}
         </button>
       </div>
     </div>

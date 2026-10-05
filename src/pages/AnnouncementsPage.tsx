@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
+import { useTranslation } from "react-i18next";
+import { fmtDate, fmtDateTime, fmtTime } from "../i18n/format";
 
 interface MessageRow {
   id: string;
@@ -14,17 +16,27 @@ interface MessageRow {
   created_at: string;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  announcement: "Announcement",
-  offer: "Offer",
+// Keys, not English — see the REPORT_CATEGORIES note in SettingsPage.tsx for
+// why a module-scope map must hold keys and resolve at render.
+const CATEGORY_KEYS: Record<string, string> = {
+  announcement: "announcements.categoryAnnouncement",
+  offer: "announcements.categoryOffer",
 };
 const CATEGORY_COLORS: Record<string, string> = {
   announcement: "#60A5FA",
   offer: "#E8500A",
 };
-const AUDIENCE_LABELS: Record<string, string> = {
-  all_passengers: "Passengers",
-  all_drivers: "Drivers",
+const AUDIENCE_KEYS: Record<string, string> = {
+  all_passengers: "announcements.audiencePassengers",
+  all_drivers: "announcements.audienceDrivers",
+};
+// Separate whole-sentence keys rather than interpolating a lowercased audience
+// label: "Send to all passengers" needs an article and agreement in French
+// ("Envoyer à tous les passagers"), which a .toLowerCase() of a noun cannot
+// supply. Lowercasing a label to drop it mid-sentence is an English-only trick.
+const SEND_TO_KEYS: Record<string, string> = {
+  all_passengers: "announcements.sendToPassengers",
+  all_drivers: "announcements.sendToDrivers",
 };
 
 const EMPTY_FORM = {
@@ -42,6 +54,7 @@ interface Props {
 }
 
 export default function AnnouncementsPage({ companyId, adminId }: Props) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [audienceFilter, setAudienceFilter] = useState<"all" | "all_passengers" | "all_drivers">("all");
   const [loading, setLoading] = useState(true);
@@ -91,7 +104,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
 
   async function sendMessage() {
     if (!form.title.trim() || !form.body.trim()) {
-      setError("Title and message are required.");
+      setError(t("announcements.errRequired"));
       return;
     }
     setSending(true);
@@ -137,7 +150,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
       clearImage();
       await fetchMessages();
     } catch (e: any) {
-      setError(e.message ?? "Failed to send message.");
+      setError(e.message ?? t("announcements.errSendFailed"));
     } finally {
       setSending(false);
     }
@@ -148,7 +161,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
   );
   const groupedByDate: { date: string; items: MessageRow[] }[] = [];
   for (const m of filteredMessages) {
-    const dateLabel = new Date(m.created_at).toLocaleDateString("en-CA", {
+    const dateLabel = fmtDate(m.created_at, {
       weekday: "long",
       month: "long",
       day: "numeric",
@@ -222,18 +235,18 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
 
       <div className="mp-wrap">
         <div className="mp-compose">
-          <div className="mp-compose-title">New announcement</div>
+          <div className="mp-compose-title">{t("announcements.new")}</div>
 
           {error && <div className="mp-error">{error}</div>}
 
           <div className="mp-field">
-            <label className="mp-label">Audience</label>
+            <label className="mp-label">{t("announcements.audience")}</label>
             <div className="mp-toggle-row">
               <button
                 className={`mp-toggle-btn${form.audience === "all_passengers" ? " active" : ""}`}
                 onClick={() => setForm((f) => ({ ...f, audience: "all_passengers" }))}
               >
-                All passengers
+                {t("announcements.allPassengers")}
               </button>
               <button
                 className={`mp-toggle-btn${form.audience === "all_drivers" ? " active" : ""}`}
@@ -241,39 +254,39 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                   setForm((f) => ({ ...f, audience: "all_drivers", category: "announcement" }))
                 }
               >
-                All drivers
+                {t("announcements.allDrivers")}
               </button>
             </div>
           </div>
 
           {form.audience === "all_passengers" && (
             <div className="mp-field">
-              <label className="mp-label">Category</label>
+              <label className="mp-label">{t("announcements.category")}</label>
               <div className="mp-toggle-row">
                 <button
                   className={`mp-toggle-btn${form.category === "announcement" ? " active" : ""}`}
                   onClick={() => setForm((f) => ({ ...f, category: "announcement" }))}
                 >
-                  📣 Announcement
+                  📣 {t("announcements.categoryAnnouncement")}
                 </button>
                 <button
                   className={`mp-toggle-btn${form.category === "offer" ? " active" : ""}`}
                   onClick={() => setForm((f) => ({ ...f, category: "offer" }))}
                 >
-                  🏷️ Offer
+                  🏷️ {t("announcements.categoryOffer")}
                 </button>
               </div>
             </div>
           )}
 
           <div className="mp-field">
-            <label className="mp-label">Display style</label>
+            <label className="mp-label">{t("announcements.displayStyle")}</label>
             <div className="mp-toggle-row">
               <button
                 className={`mp-toggle-btn${form.display_mode === "inbox" ? " active" : ""}`}
                 onClick={() => setForm((f) => ({ ...f, display_mode: "inbox" }))}
               >
-                Inbox
+                {t("announcements.inbox")}
               </button>
               <button
                 className={`mp-toggle-btn${form.display_mode === "interstitial" ? " active" : ""}`}
@@ -285,24 +298,24 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                   }))
                 }
               >
-                Interstitial (spotlighted once)
+                {t("announcements.interstitialLong")}
               </button>
             </div>
           </div>
 
           <div className="mp-field">
-            <label className="mp-label">Title</label>
+            <label className="mp-label">{t("announcements.titleLabel")}</label>
             <input
               className="mp-input"
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              placeholder="20% off rides this weekend"
+              placeholder={t("announcements.titlePlaceholder")}
               maxLength={80}
             />
           </div>
 
           <div className="mp-field">
-            <label className="mp-label">Message</label>
+            <label className="mp-label">{t("announcements.messageLabel")}</label>
             <textarea
               className="mp-textarea"
               value={form.body}
@@ -313,7 +326,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                     : e.target.value;
                 setForm((f) => ({ ...f, body: value }));
               }}
-              placeholder="Book any ride Fri–Sun and save 20%..."
+              placeholder={t("announcements.bodyPlaceholder")}
               maxLength={form.display_mode === "interstitial" ? interstitialLimit : undefined}
             />
             {form.display_mode === "interstitial" && (
@@ -321,14 +334,14 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                 {form.body.length} / {interstitialLimit}
                 {form.body.length >= interstitialLimit &&
                   (imageFile
-                    ? " · that's the limit for a photo message — switch to Inbox for more room"
-                    : " · that's the limit — switch to Inbox mode for a longer message")}
+                    ? ` · ${t("announcements.limitPhoto")}`
+                    : ` · ${t("announcements.limitPlain")}`)}
               </div>
             )}
           </div>
 
           <div className="mp-field">
-            <label className="mp-label">Expires (optional)</label>
+            <label className="mp-label">{t("announcements.expiresOptional")}</label>
             <input
               className="mp-input"
               type="datetime-local"
@@ -338,12 +351,12 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
           </div>
 
           <div className="mp-field">
-            <label className="mp-label">Photo (optional)</label>
+            <label className="mp-label">{t("announcements.photoOptional")}</label>
             {imagePreview ? (
               <div>
                 <img className="mp-image-preview" src={imagePreview} />
                 <button className="mp-image-remove" onClick={clearImage}>
-                  Remove photo
+                  {t("announcements.removePhoto")}
                 </button>
               </div>
             ) : (
@@ -351,7 +364,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                 className="mp-image-picker"
                 onClick={() => fileInputRef.current?.click()}
               >
-                + Add a photo
+                {t("announcements.addPhoto")}
               </div>
             )}
             <input
@@ -364,15 +377,15 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
           </div>
 
           <button className="mp-send-btn" disabled={sending} onClick={sendMessage}>
-            {sending ? "Sending…" : `Send to all ${AUDIENCE_LABELS[form.audience].toLowerCase()}`}
+            {sending ? t("settings.sending") : t(SEND_TO_KEYS[form.audience])}
           </button>
         </div>
 
         <div className="mp-content">
           <div className="mp-header">
-            <div className="mp-title">Sent announcements</div>
+            <div className="mp-title">{t("announcements.sentTitle")}</div>
             <div className="mp-subtitle-text">
-              {filteredMessages.length} sent
+              {t("announcements.sentCount", { count: filteredMessages.length })}
             </div>
           </div>
 
@@ -381,26 +394,26 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
               className={`mp-filter-btn${audienceFilter === "all" ? " active" : ""}`}
               onClick={() => setAudienceFilter("all")}
             >
-              All
+              {t("announcements.filterAll")}
             </button>
             <button
               className={`mp-filter-btn${audienceFilter === "all_passengers" ? " active" : ""}`}
               onClick={() => setAudienceFilter("all_passengers")}
             >
-              Passengers
+              {t("announcements.audiencePassengers")}
             </button>
             <button
               className={`mp-filter-btn${audienceFilter === "all_drivers" ? " active" : ""}`}
               onClick={() => setAudienceFilter("all_drivers")}
             >
-              Drivers
+              {t("announcements.audienceDrivers")}
             </button>
           </div>
 
           {loading ? (
-            <div className="mp-loading">Loading…</div>
+            <div className="mp-loading">{t("common.loading")}</div>
           ) : filteredMessages.length === 0 ? (
-            <div className="mp-empty">Nothing sent yet.</div>
+            <div className="mp-empty">{t("announcements.nothingSent")}</div>
           ) : (
             groupedByDate.map((group) => (
               <div key={group.date}>
@@ -410,7 +423,7 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                     <div className="mp-card-top">
                       <div className="mp-badges">
                         <span className="mp-badge mp-badge-audience">
-                          {AUDIENCE_LABELS[m.target_type]}
+                          {t(AUDIENCE_KEYS[m.target_type])}
                         </span>
                         <span
                           className="mp-badge"
@@ -420,20 +433,17 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                             border: `1px solid ${CATEGORY_COLORS[m.category]}30`,
                           }}
                         >
-                          {CATEGORY_LABELS[m.category]}
+                          {t(CATEGORY_KEYS[m.category])}
                         </span>
                         <span className="mp-badge mp-badge-mode">
-                          {m.display_mode === "interstitial" ? "Interstitial" : "Inbox"}
+                          {m.display_mode === "interstitial" ? t("announcements.interstitial") : t("announcements.inbox")}
                         </span>
                         {m.expires_at && new Date(m.expires_at) < new Date() && (
-                          <span className="mp-badge mp-badge-expired">Expired</span>
+                          <span className="mp-badge mp-badge-expired">{t("announcements.expired")}</span>
                         )}
                       </div>
                       <div className="mp-card-date">
-                        {new Date(m.created_at).toLocaleTimeString("en-CA", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
+                        {fmtTime(m.created_at, { hour: "numeric", minute: "2-digit" })}
                       </div>
                     </div>
                     <div className="mp-card-title">{m.title}</div>
@@ -443,12 +453,13 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
                     )}
                     {m.expires_at && (
                       <div className="mp-card-expiry">
-                        Expires{" "}
-                        {new Date(m.expires_at).toLocaleString("en-CA", {
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
+                        {t("announcements.expiresAt", {
+                          when: fmtDateTime(m.expires_at, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          }),
                         })}
                       </div>
                     )}

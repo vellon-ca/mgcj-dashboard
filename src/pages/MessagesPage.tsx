@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
+import i18next from "i18next";
+import { useTranslation } from "react-i18next";
+import { fmtDate, fmtTime } from "../i18n/format";
 
 interface DriverRow {
   id: string;
@@ -30,6 +33,12 @@ interface Props {
 }
 
 function dayKey(iso: string) {
+  // A GROUPING key, never displayed. "en-CA" is deliberate because
+  // it yields YYYY-MM-DD, which is stable and sorts; swapping in the active
+  // locale would make the day separators regroup on a language change for no
+  // reason. The scanner cannot tell a key from a label, and it is right to
+  // ask: every OTHER hardcoded tag in this repo was a real bug.
+  // i18n-ok
   return new Date(iso).toLocaleDateString("en-CA");
 }
 
@@ -40,9 +49,9 @@ function formatDateLabel(iso: string) {
     (new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) /
       (1000 * 60 * 60 * 24)
   );
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString("en-CA", {
+  if (diffDays === 0) return i18next.t("messages.today");
+  if (diffDays === 1) return i18next.t("messages.yesterday");
+  return fmtDate(d, {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -75,6 +84,7 @@ function linkifyBody(text: string) {
 }
 
 export default function MessagesPage({ companyId, adminId, isActive, onUnreadChange }: Props) {
+  const { t } = useTranslation();
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [threads, setThreads] = useState<Map<string, ThreadSummary>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -169,7 +179,7 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
         .order("name");
       const driverList: DriverRow[] = (profileRows ?? []).map((p: any) => ({
         id: p.id,
-        name: p.name ?? "Driver",
+        name: p.name ?? t("common.driver"),
         avatar_url: p.avatar_url,
       }));
       setDrivers(driverList);
@@ -377,14 +387,15 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
 
       <div className="mc-wrap">
         <div className="mc-list">
-          <div className="mc-list-title">Drivers</div>
+          <div className="mc-list-title">{t("messages.drivers")}</div>
           {loading ? (
-            <div className="mc-loading">Loading…</div>
+            <div className="mc-loading">{t("common.loading")}</div>
           ) : sortedDrivers.length === 0 ? (
-            <div className="mc-empty">No drivers yet.</div>
+            <div className="mc-empty">{t("messages.noDrivers")}</div>
           ) : (
             sortedDrivers.map((d) => {
               const thread = threads.get(d.id);
+              // i18n-ok — AVATAR INITIALS, not a label.
               const initials = d.name
                 .split(" ")
                 .map((n) => n[0])
@@ -408,7 +419,7 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
                       {thread?.unread && <span className="mc-unread-dot" />}
                     </div>
                     <div className="mc-driver-preview">
-                      {thread?.lastBody ?? "No messages yet"}
+                      {thread?.lastBody ?? t("messages.noMessagesYet")}
                     </div>
                   </div>
                 </button>
@@ -419,15 +430,15 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
 
         <div className="mc-thread">
           {!selectedDriver ? (
-            <div className="mc-thread-empty">Select a driver to start messaging</div>
+            <div className="mc-thread-empty">{t("messages.selectDriver")}</div>
           ) : (
             <>
               <div className="mc-thread-header">{selectedDriver.name}</div>
               <div className="mc-thread-scroll" ref={scrollRef}>
                 {threadLoading ? (
-                  <div className="mc-loading">Loading…</div>
+                  <div className="mc-loading">{t("common.loading")}</div>
                 ) : messages.length === 0 ? (
-                  <div className="mc-empty">No messages yet — say hello.</div>
+                  <div className="mc-empty">{t("messages.sayHello")}</div>
                 ) : (
                   messages.map((m, i) => {
                     const showSeparator =
@@ -445,11 +456,11 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
                               {linkifyBody(m.body)}
                             </div>
                             <div className="mc-bubble-time">
-                              {new Date(m.created_at).toLocaleTimeString("en-CA", {
+                              {fmtTime(m.created_at, {
                                 hour: "numeric",
                                 minute: "2-digit",
                               })}
-                              {i === lastSeenIndex ? " · Seen" : ""}
+                              {i === lastSeenIndex ? ` · ${t("messages.seen")}` : ""}
                             </div>
                           </div>
                         </div>
@@ -466,14 +477,14 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !sending) sendMessage();
                   }}
-                  placeholder="Type a message..."
+                  placeholder={t("messages.placeholder")}
                 />
                 <button
                   className="mc-send-btn"
                   disabled={sending || !draft.trim()}
                   onClick={sendMessage}
                 >
-                  Send
+                  {t("messages.send")}
                 </button>
               </div>
             </>

@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 
 type Step = "email" | "otp";
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setError("");
     const address = email.trim().toLowerCase();
     if (!looksLikeEmail(address)) {
-      setError("Enter a valid email address.");
+      setError(t("login.invalidEmail"));
       return;
     }
     setLoading(true);
@@ -39,9 +41,7 @@ export default function LoginPage() {
       console.error("[Login] dispatch check error:", checkError);
     } else if (!isDispatch) {
       setLoading(false);
-      setError(
-        "This address isn't registered to a dispatch account. Contact your administrator if you think this is a mistake.",
-      );
+      setError(t("login.notDispatch"));
       return;
     }
 
@@ -76,7 +76,7 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (error) {
-      setError("Incorrect code. Try again.");
+      setError(t("login.badCode"));
       return;
     }
     // Role gating happens in App.tsx via useAuth's profile fetch, which is
@@ -289,22 +289,25 @@ export default function LoginPage() {
         <div className="login-bg-glow" />
         <div className="login-card">
           <div className="login-wordmark">
+            {/* A brand name is not copy; translating it is how a product
+                acquires two names. */}
+            {/* i18n-ok */}
             <span className="login-brand">Vellon</span>
           </div>
-          <div className="login-subtitle">Dispatch Dashboard</div>
+          <div className="login-subtitle">{t("login.subtitle")}</div>
           <div className="login-rule" />
 
           {step === "email" ? (
             <form onSubmit={handleSendOTP} className="login-form">
               <div>
-                <label className="login-label">Email address</label>
+                <label className="login-label">{t("login.emailLabel")}</label>
                 <div className="login-field">
                   <input
                     className="login-input"
                     type="email"
                     inputMode="email"
                     autoComplete="email"
-                    placeholder="you@company.ca"
+                    placeholder={t("login.emailPlaceholder")}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     autoFocus
@@ -313,13 +316,13 @@ export default function LoginPage() {
               </div>
               {error && <div className="login-error">{error}</div>}
               <button className="login-btn" type="submit" disabled={loading}>
-                {loading ? "Sending…" : "Send verification code"}
+                {loading ? t("login.sending") : t("login.send")}
               </button>
             </form>
           ) : (
             <form onSubmit={handleVerifyOTP} className="login-form">
               <div>
-                <label className="login-label">Verification code</label>
+                <label className="login-label">{t("login.codeLabel")}</label>
                 <input
                   className="login-otp-input"
                   type="text"
@@ -335,11 +338,19 @@ export default function LoginPage() {
                 />
               </div>
               <div className="login-hint">
-                Code sent to <strong>{email}</strong>
+                {/* <Trans> rather than two interpolated halves: the bold span
+                    is INSIDE the sentence, and French may not place it where
+                    English does. Splitting the string around the markup bakes
+                    English word order into the component. */}
+                <Trans
+                  i18nKey="login.codeSentTo"
+                  values={{ email }}
+                  components={{ s: <strong /> }}
+                />
               </div>
               {error && <div className="login-error">{error}</div>}
               <button className="login-btn" type="submit" disabled={loading}>
-                {loading ? "Verifying…" : "Verify & sign in"}
+                {loading ? t("login.verifying") : t("login.verify")}
               </button>
               <button
                 type="button"
@@ -350,12 +361,12 @@ export default function LoginPage() {
                   setOtp("");
                 }}
               >
-                ← Use a different address
+                {t("login.useDifferent")}
               </button>
             </form>
           )}
 
-          <div className="login-footer">Dispatch powered by Vellon</div>
+          <div className="login-footer">{t("login.footer")}</div>
         </div>
       </div>
     </>

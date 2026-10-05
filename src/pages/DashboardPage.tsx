@@ -21,6 +21,18 @@ import SettingsPage from "./SettingsPage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import MessagesPage from "./MessagesPage";
 
+import i18next from "i18next";
+import { Trans, useTranslation } from "react-i18next";
+import { fmtDateTime, fmtTime } from "../i18n/format";
+import {
+  CANCEL_REASON_KEYS,
+  FLAG_REASON_KEYS,
+  FLAG_REASON_ORDER,
+  noShowEvidence,
+  REFUND_REASON_KEYS,
+  rideStatusLabel as sharedRideStatusLabel,
+  SETTLEMENT_ROUTE_KEYS,
+} from "../lib/labels";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 
@@ -34,16 +46,12 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "#E24B4A",
   scheduled: "#A855F7",
 };
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pending",
-  offered: "Offered",
-  assigned: "Assigned",
-  driver_arriving: "Arriving",
-  in_progress: "In progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  scheduled: "Scheduled",
-};
+// STATUS_LABELS, FLAG_REASON_LABELS, CANCEL_REASON_LABELS,
+// SETTLEMENT_ROUTE_LABELS, REFUND_REASON_LABELS and noShowEvidence() moved to
+// src/lib/labels.ts when they became translation keys — every one of them was
+// copy-pasted into AnalyticsPage (and some into ReportsPage) verbatim, and
+// parallel key sets for one list is how a translation drifts in a language the
+// editor cannot read. STATUS_COLORS stays: it is styling.
 // Gates the Edit button in the ride-DETAIL modal, which only renders for a
 // ride that is not in LIVE_STATUSES — so in practice this set decides for
 // completed/cancelled only. in_progress was listed here but never reached it;
@@ -111,10 +119,10 @@ function buildAlerts(rides: any[]): AlertItem[] {
         tier: "act_now",
         source: "passenger_flag",
         rideId: r.id,
-        title: FLAG_REASON_LABELS[codes[0]] ?? "Passenger reported a problem",
+        title: flagLabel(codes[0]),
         detail:
           codes.length > 1
-            ? codes.slice(1).map((c) => FLAG_REASON_LABELS[c] ?? c).join(" · ")
+            ? codes.slice(1).map(flagLabel).join(" · ")
             : (r.passenger_flag_note ?? undefined),
         at: r.passenger_flag_updated_at ?? r.passenger_flagged_at,
       });
@@ -135,8 +143,8 @@ function buildAlerts(rides: any[]): AlertItem[] {
         rideId: r.id,
         title:
           r.assignment_hold_reason === "no_drivers"
-            ? "No drivers online for this ride"
-            : "Every driver declined this ride",
+            ? i18next.t("attention.noDriversOnlineForRide")
+            : i18next.t("attention.everyDriverDeclinedRide"),
         detail: r.pickup_address ?? undefined,
         at: r.created_at,
       });
@@ -199,78 +207,30 @@ function playAlertChime() {
 // Passenger escalations raised from the app during a live ride (flag_ride).
 // A minimal surface for now: a badge on the active card and a resolve action.
 // The dismissible home panel + archive is the next phase.
-const FLAG_REASON_ORDER = [
-  "not_in_car",
-  "felt_unsafe",
-  "driver_never_came",
-  "wrong_destination",
-  "other",
-];
-const FLAG_REASON_LABELS: Record<string, string> = {
-  not_in_car: "Passenger says they're NOT in the car",
-  driver_never_came: "Driver never arrived",
-  wrong_destination: "Going the wrong way",
-  felt_unsafe: "Passenger feels unsafe",
-  other: "Problem reported",
-};
+/** The long register of the flag reason, for the live dispatch card. Falls
+ *  back to the generic "Problem reported" rather than the raw code: this one
+ *  renders as a headline on a card a dispatcher reads mid-shift. */
+function flagLabel(code: string): string {
+  const key = FLAG_REASON_KEYS[code];
+  return i18next.t(key ?? "flagReason.other");
+}
 
 // Distinguishes system-driven cancellations from a plain passenger cancel —
 // surfaced as a dedicated section in the ride-detail modal (not baked into
 // the badge, which stays plain red/"Cancelled" for every cancellation reason).
-const CANCEL_REASON_LABELS: Record<string, string> = {
-  timeout: "No drivers found in time",
-  missed_window: "Missed scheduled window — no driver engaged",
-  passenger_cancelled: "Cancelled by passenger",
-  dispatch_cancelled: "Cancelled by dispatch",
-  passenger_no_show: "Passenger no-show — driver waited at pickup",
-  system_cancelled: "Cancelled automatically by the system",
-};
 
-// A driver-filed no-show is the one cancellation where dispatch has to arbitrate
-// between two people who disagree, so the detail modal shows the evidence rather
-// than the verdict. Both timestamps are stamped server-side by the lifecycle
-// trigger (mgcj-app migration 20260741), not written by the driver's app, and
-// settle-ride will not accept a no-show until 5 minutes after arrived_at with
-// the driver inside the pickup geofence — so this row is a record of what
-// happened, not a restatement of the driver's claim.
-function noShowEvidence(
-  arrivedAt: string | null,
-  noShowAt: string | null,
-): string | null {
-  if (!noShowAt) return null;
-  const time = (d: Date) =>
-    d.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" });
-  const filed = new Date(noShowAt);
-  if (!arrivedAt) return `Reported ${time(filed)} (arrival time not recorded)`;
-  const arrived = new Date(arrivedAt);
-  const mins = Math.round((filed.getTime() - arrived.getTime()) / 60_000);
-  return `${time(arrived)} → ${time(filed)} (${mins} min at pickup)`;
-}
 
-const SETTLEMENT_ROUTE_LABELS: Record<string, string> = {
-  driver_transfer: "Paid directly to the driver",
-  company_transfer: "Routed to your company account",
-  platform_invoiced: "Held by Vellon — pending invoice",
-  transfer_failed: "Transfer failed — contact Vellon support",
-  transfer_reversed: "Payout reversed — charge was disputed",
-  refund_reversed: "Payout reversed — ride was refunded",
-  refund_review: "Refunded — payout under review by Vellon",
-  reversal_failed: "Payout reversal failed — contact Vellon support",
-  retransfer_failed: "Dispute won, but re-payout failed — contact Vellon support",
-};
 
-const REFUND_REASON_LABELS: Record<string, string> = {
-  driver_fault: "driver/company at fault",
-  platform_mistake: "platform mistake — Vellon absorbed",
-  goodwill: "goodwill — Vellon absorbed",
-};
+
+
+
 
 function rideStatusColor(ride: { status: string }): string {
   return STATUS_COLORS[ride.status];
 }
 
 function rideStatusLabel(ride: { status: string }): string {
-  return STATUS_LABELS[ride.status] ?? ride.status;
+  return sharedRideStatusLabel(ride.status);
 }
 
 type Tab = "rides" | "drivers";
@@ -293,9 +253,10 @@ function readViewPath(): View {
   return (VIEW_PATHS as readonly string[]).includes(p) ? (p as View) : "rides";
 }
 
-const NAV_ITEMS: { tab: Tab; label: string }[] = [
-  { tab: "rides", label: "Rides" },
-  { tab: "drivers", label: "Drivers" },
+// Keys, not English: module scope is evaluated before a language is active.
+const NAV_ITEMS: { tab: Tab; labelKey: string }[] = [
+  { tab: "rides", labelKey: "nav.rides" },
+  { tab: "drivers", labelKey: "nav.drivers" },
 ];
 
 function IconRides() {
@@ -583,6 +544,7 @@ function DriverDetailPanel({
   isAdmin: boolean;
   driverNumFormat: { prefix: string; pad: number };
 }) {
+  const { t } = useTranslation();
   const [history, setHistory] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState<number | null>(null);
   const [totalRides, setTotalRides] = useState(0);
@@ -690,6 +652,9 @@ function DriverDetailPanel({
 
   function suggestClassId(model: string): string {
     const m = model.toLowerCase();
+    // i18n-ok (both lines) — these are matched against the company's own
+    // vehicle-class NAMES in the database, not rendered. Translating them
+    // would stop the suggestion matching any row.
     let target = 'Sedan';
     if (VAN_KEYWORDS.some(w => m.includes(w))) target = 'Van';
     else if (SUV_KEYWORDS.some(w => m.includes(w))) target = 'SUV';
@@ -749,7 +714,7 @@ function DriverDetailPanel({
       // 23505 is the per-company unique index on (company_id, lower(car_number)).
       setVehicleError(
         error.code === '23505'
-          ? `Car ${vCarNumber.trim()} is already assigned to another driver.`
+          ? t("drivers.carTaken", { car: vCarNumber.trim() })
           : error.message
       );
       return;
@@ -787,7 +752,7 @@ function DriverDetailPanel({
     });
   }
 
-  const name = driver.profile?.name ?? "Unknown";
+  const name = driver.profile?.name ?? t("common.unknown");
   // "#7" when the company uses bare numbers, "D-007" when it has set a prefix.
   // Prefixing a prefixed number would read "#D-007", which is nonsense — the
   // "#" is only there to mark a bare integer as an identifier.
@@ -845,7 +810,7 @@ function DriverDetailPanel({
           >
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          Back to map
+          {t("drivers.backToMap")}
         </button>
       </div>
 
@@ -855,30 +820,34 @@ function DriverDetailPanel({
           <div className="dd-confirm-box">
             {confirmAction === "delete" ? (
               <>
-                <div className="dd-confirm-title">Delete driver?</div>
+                <div className="dd-confirm-title">{t("drivers.deleteTitle")}</div>
                 <div className="dd-confirm-body">
-                  <strong>{name}</strong>'s account will be permanently deactivated and they will no longer be able to sign in. Their ride history is preserved for reporting.
+                  <Trans
+                    i18nKey="drivers.deleteBody"
+                    values={{ name }}
+                    components={{ s: <strong /> }}
+                  />
                 </div>
                 <div className="dd-confirm-warning">
-                  This cannot be undone.
+                  {t("drivers.cannotUndo")}
                 </div>
               </>
             ) : confirmAction === "deactivate" ? (
               <>
                 <div className="dd-confirm-title">
-                  {activeRide ? "Schedule deactivation?" : "Deactivate driver?"}
+                  {activeRide ? t("drivers.scheduleDeactivation") : t("drivers.deactivateTitle")}
                 </div>
                 <div className="dd-confirm-body">
                   {activeRide
-                    ? `${name} is currently on a ride. Their account will be deactivated as soon as the ride completes.`
-                    : `${name} will be locked out of the app immediately and won't receive new rides.`}
+                    ? t("drivers.deactivateOnRide", { name })
+                    : t("drivers.deactivateNow", { name })}
                 </div>
               </>
             ) : (
               <>
-                <div className="dd-confirm-title">Activate driver?</div>
+                <div className="dd-confirm-title">{t("drivers.activateTitle")}</div>
                 <div className="dd-confirm-body">
-                  {name} will regain full access to the app and start receiving rides again.
+                  {t("drivers.activateBody", { name })}
                 </div>
               </>
             )}
@@ -888,14 +857,14 @@ function DriverDetailPanel({
                 onClick={() => setConfirmAction(null)}
                 disabled={acting}
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 className={`dd-confirm-ok${confirmAction === "delete" ? " danger" : confirmAction === "activate" ? " green" : ""}`}
                 onClick={handleConfirm}
                 disabled={acting}
               >
-                {acting ? "…" : confirmAction === "delete" ? "Delete driver" : confirmAction === "activate" ? "Activate" : "Confirm"}
+                {acting ? "…" : confirmAction === "delete" ? t("drivers.deleteDriver") : confirmAction === "activate" ? t("common.activate") : t("common.confirm")}
               </button>
             </div>
           </div>
@@ -920,7 +889,7 @@ function DriverDetailPanel({
             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
               <div className="dd-profile-name" style={{ marginBottom: 0 }}>{name}</div>
               {driverNumLabel && (
-                <span className="dd-driver-num" title="Driver number">
+                <span className="dd-driver-num" title={t("drivers.driverNumber")}>
                   {driverNumLabel}
                 </span>
               )}
@@ -929,36 +898,36 @@ function DriverDetailPanel({
                 style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : presence === "away" ? "#F59E0B" : "#374151", flexShrink: 0 }}
               />
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
-                <button className="dd-action-edit" onClick={openVehicleEdit}>Edit vehicle</button>
+                <button className="dd-action-edit" onClick={openVehicleEdit}>{t("drivers.editVehicle")}</button>
                 {isAccountActive ? (
                   <button
                     className="dd-action-deactivate"
                     onClick={() => setConfirmAction("deactivate")}
                   >
-                    Deactivate
+                    {t("common.deactivate")}
                   </button>
                 ) : (
                   <button
                     className="dd-action-activate"
                     onClick={() => setConfirmAction("activate")}
                   >
-                    Activate
+                    {t("common.activate")}
                   </button>
                 )}
                 <button
                   className="dd-action-delete"
                   disabled={!!activeRide}
-                  title={activeRide ? "Cannot delete a driver on an active ride" : undefined}
+                  title={activeRide ? t("drivers.cannotDeleteOnRide") : undefined}
                   onClick={() => setConfirmAction("delete")}
                 >
-                  Delete
+                  {t("common.delete")}
                 </button>
               </div>
             </div>
             <div className="dd-profile-sub">
               {driver.vehicle_make} {driver.vehicle_model} ·{" "}
               {driver.plate_number ?? "—"}
-              {vehicleClasses.length > 0 && ` · ${vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? "No class"}`}
+              {vehicleClasses.length > 0 && ` · ${vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? t("drivers.noClass")}`}
             </div>
             <div className="dd-profile-phone">
               {driver.profile?.phone ?? "—"}
@@ -967,44 +936,45 @@ function DriverDetailPanel({
         </div>
         <div className="dd-status-row">
           {!isAccountActive ? (
-            <span className="dd-pill dd-pill-red">Deactivated</span>
+            <span className="dd-pill dd-pill-red">{t("common.deactivated")}</span>
           ) : isDeactivationPending ? (
-            <span className="dd-pill dd-pill-amber">⏳ Deactivation pending</span>
+            <span className="dd-pill dd-pill-amber">⏳ {t("drivers.deactivationPending")}</span>
           ) : presence === "offline" ? (
-            <span className="dd-pill dd-pill-gray">Offline</span>
+            <span className="dd-pill dd-pill-gray">{t("drivers.offline")}</span>
           ) : awaitingReply ? (
-            <span className="dd-pill dd-pill-amber">◷ Offered — awaiting reply</span>
+            <span className="dd-pill dd-pill-amber">◷ {t("drivers.offeredAwaiting")}</span>
           ) : activeRide ? (
-            <span className="dd-pill dd-pill-orange">● On a ride</span>
+            <span className="dd-pill dd-pill-orange">● {t("drivers.onARide")}</span>
           ) : presence === "away" ? (
             /* Away = still switched on, but we have not heard from their phone
                inside the same 60s window dispatch uses, so dispatch is skipping
                them right now. Shown with the age so a dispatcher can tell a
                tunnel from a driver who went home. */
             <span className="dd-pill dd-pill-amber">
-              ◌ Away{lastSeen ? ` · last seen ${lastSeen}` : ""}
+              ◌ {t("drivers.away")}
+              {lastSeen ? ` · ${t("drivers.lastSeen", { when: lastSeen })}` : ""}
             </span>
           ) : (
-            <span className="dd-pill dd-pill-green">● Available</span>
+            <span className="dd-pill dd-pill-green">● {t("drivers.available")}</span>
           )}
           {presence === "away" && activeRide && !awaitingReply && (
             /* On a ride AND out of contact: the passenger's live tracking has
                stopped updating too. Worth its own pill rather than being hidden
                behind the ride status. */
             <span className="dd-pill dd-pill-amber">
-              ◌ Out of contact{lastSeen ? ` · ${lastSeen}` : ""}
+              ◌ {t("drivers.outOfContact")}{lastSeen ? ` · ${lastSeen}` : ""}
             </span>
           )}
           {openReports > 0 && (
             <span className="dd-pill dd-pill-red">
-              ⚠ {openReports} open report{openReports > 1 ? "s" : ""}
+              ⚠ {t("drivers.openReportCount", { count: openReports })}
             </span>
           )}
         </div>
         <div className="dd-stats">
           <div className="dd-stat-box">
             <div className="dd-stat-val">{totalRides}</div>
-            <div className="dd-stat-lbl">Completed</div>
+            <div className="dd-stat-lbl">{t("rideStatus.completed")}</div>
           </div>
           <div className="dd-stat-box">
             <div
@@ -1022,7 +992,7 @@ function DriverDetailPanel({
             >
               {avgRating !== null ? `★ ${avgRating.toFixed(1)}` : "—"}
             </div>
-            <div className="dd-stat-lbl">Avg rating</div>
+            <div className="dd-stat-lbl">{t("drivers.avgRating")}</div>
           </div>
           <div className="dd-stat-box">
             <div
@@ -1031,7 +1001,7 @@ function DriverDetailPanel({
             >
               {openReports}
             </div>
-            <div className="dd-stat-lbl">Open reports</div>
+            <div className="dd-stat-lbl">{t("drivers.openReports")}</div>
           </div>
         </div>
 
@@ -1039,26 +1009,27 @@ function DriverDetailPanel({
         {editingVehicle && (
           <div className="dd-confirm-overlay">
             <div className="dd-confirm-box" style={{ maxWidth: 340 }}>
-              <div className="dd-confirm-title">Edit vehicle</div>
+              <div className="dd-confirm-title">{t("drivers.editVehicle")}</div>
               <div className="dd-vehicle-grid" style={{ marginBottom: 10 }}>
                 <div className="dd-vehicle-field">
-                  <div className="dd-vehicle-field-label">Make</div>
-                  <input className="dd-vehicle-input" value={vMake} onChange={e => setVMake(e.target.value)} placeholder="e.g. Dodge" />
+                  <div className="dd-vehicle-field-label">{t("drivers.make")}</div>
+                  <input className="dd-vehicle-input" value={vMake} onChange={e => setVMake(e.target.value)} placeholder={t("drivers.makePlaceholder")} />
                 </div>
                 <div className="dd-vehicle-field">
-                  <div className="dd-vehicle-field-label">Model</div>
-                  <input className="dd-vehicle-input" value={vModel} onChange={e => handleModelChange(e.target.value)} placeholder="e.g. Grand Caravan" />
+                  <div className="dd-vehicle-field-label">{t("drivers.model")}</div>
+                  <input className="dd-vehicle-input" value={vModel} onChange={e => handleModelChange(e.target.value)} placeholder={t("drivers.modelPlaceholder")} />
                 </div>
                 <div className="dd-vehicle-field">
-                  <div className="dd-vehicle-field-label">Year</div>
+                  <div className="dd-vehicle-field-label">{t("drivers.year")}</div>
                   <input className="dd-vehicle-input" value={vYear} onChange={e => setVYear(e.target.value)} placeholder="2021" type="number" min="1990" max="2030" />
                 </div>
                 <div className="dd-vehicle-field">
-                  <div className="dd-vehicle-field-label">Plate</div>
+                  <div className="dd-vehicle-field-label">{t("drivers.plate")}</div>
+                  {/* i18n-ok — a plate FORMAT example, not a sentence. */}
                   <input className="dd-vehicle-input" value={vPlate} onChange={e => setVPlate(e.target.value.toUpperCase())} placeholder="ABC 123" />
                 </div>
                 <div className="dd-vehicle-field">
-                  <div className="dd-vehicle-field-label">Car number</div>
+                  <div className="dd-vehicle-field-label">{t("drivers.carNumberLabel")}</div>
                   {isAdmin ? (
                     <input
                       className="dd-vehicle-input"
@@ -1075,7 +1046,7 @@ function DriverDetailPanel({
               </div>
               {vehicleClasses.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
-                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>Vehicle class</div>
+                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>{t("drivers.vehicleClass")}</div>
                   <div className="dd-class-picker">
                     {vehicleClasses.map((vc: any) => (
                       <button
@@ -1085,7 +1056,7 @@ function DriverDetailPanel({
                         type="button"
                       >
                         <div className="dd-class-name">{vc.name}</div>
-                        <div className="dd-class-cap">{vc.capacity} seats</div>
+                        <div className="dd-class-cap">{t("drivers.seats", { count: vc.capacity })}</div>
                       </button>
                     ))}
                   </div>
@@ -1093,26 +1064,26 @@ function DriverDetailPanel({
               )}
               {vehicleError && <div className="dd-vehicle-error" style={{ marginBottom: 10 }}>{vehicleError}</div>}
               <div className="dd-confirm-actions">
-                <button className="dd-confirm-cancel" onClick={() => setEditingVehicle(false)}>Cancel</button>
+                <button className="dd-confirm-cancel" onClick={() => setEditingVehicle(false)}>{t("common.cancel")}</button>
                 <button className="dd-confirm-ok" onClick={saveVehicle} disabled={vehicleSaving}>
-                  {vehicleSaving ? 'Saving…' : 'Save'}
+                  {vehicleSaving ? t("common.saving") : t("common.save")}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        <div className="dd-section-label">Location history</div>
+        <div className="dd-section-label">{t("drivers.locationHistory")}</div>
         <button className="dd-trail-btn" onClick={onViewTrail} type="button">
-          View this driver's trail
-          <span className="dd-trail-hint">Where they drove, and where they stopped</span>
+          {t("drivers.viewTrail")}
+          <span className="dd-trail-hint">{t("drivers.viewTrailHint")}</span>
         </button>
 
-        <div className="dd-section-label">Ride history</div>
+        <div className="dd-section-label">{t("drivers.rideHistory")}</div>
         {loading ? (
-          <div className="dd-empty">Loading…</div>
+          <div className="dd-empty">{t("common.loading")}</div>
         ) : history.length === 0 ? (
-          <div className="dd-empty">No rides yet</div>
+          <div className="dd-empty">{t("drivers.noRidesYet")}</div>
         ) : (
           history.map((ride) => (
             <div key={ride.id} className="dd-ride-row">
@@ -1133,12 +1104,12 @@ function DriverDetailPanel({
                   {ride.pickup_address} → {ride.dropoff_address}
                 </div>
                 <div className="dd-ride-time">
-                  {new Date(ride.created_at).toLocaleString("en-CA", {
+                  {fmtDateTime(ride.created_at, {
                     month: "short",
                     day: "numeric",
                     hour: "numeric",
                     minute: "2-digit",
-                  } as any)}
+                  })}
                 </div>
               </div>
               <div className="dd-ride-fare">
@@ -1178,11 +1149,11 @@ function AssignmentHold({ ride }: { ride: any }) {
   let title = "";
   let body: string | null = null;
   if (reason === "no_drivers") {
-    title = "No drivers online";
-    body = "Nobody is on shift for this vehicle class.";
+    title = i18next.t("hold.noDriversTitle");
+    body = i18next.t("hold.noDriversBody");
   } else if (reason === "all_declined") {
-    title = "Every driver declined";
-    body = "No one left to offer this to automatically.";
+    title = i18next.t("hold.allDeclinedTitle");
+    body = i18next.t("hold.allDeclinedBody");
   }
   // driver_committed lands here with no title — render nothing at all rather
   // than an empty amber box.
@@ -1215,26 +1186,27 @@ function localDayISO(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function clockOf(t: number): string {
-  return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function clockOf(ms: number): string {
+  // Was `toLocaleTimeString([], …)` — an empty locale list means "follow the
+  // browser", which ignores an explicit language pick just as surely as a
+  // hardcoded "en-CA" does. Renamed from `t` so the parameter cannot shadow a
+  // translation function if one is ever needed here.
+  return fmtTime(ms, { hour: "2-digit", minute: "2-digit" });
 }
 
 function shortTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-CA", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  return fmtTime(iso, { hour: "numeric", minute: "2-digit" });
 }
 
 function coverageDisplay(ride: any): { label: string; color: string; bg: string } {
   const minsUntil = ride.scheduled_at
     ? (new Date(ride.scheduled_at).getTime() - Date.now()) / 60_000
     : Infinity;
-  if (minsUntil > 24 * 60) return { label: "Healthy", color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+  if (minsUntil > 24 * 60) return { label: i18next.t("coverage.healthy"), color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
   const cov = ride.coverage_status ?? "covered";
-  if (cov === "uncovered") return { label: "No drivers", color: "#F87171", bg: "rgba(248,113,113,0.12)" };
-  if (cov === "at_risk")   return { label: "At risk",    color: "#F59E0B", bg: "rgba(245,158,11,0.12)" };
-  return { label: "Covered", color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+  if (cov === "uncovered") return { label: i18next.t("coverage.noDrivers"), color: "#F87171", bg: "rgba(248,113,113,0.12)" };
+  if (cov === "at_risk")   return { label: i18next.t("coverage.atRisk"),    color: "#F59E0B", bg: "rgba(245,158,11,0.12)" };
+  return { label: i18next.t("coverage.covered"), color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
 }
 
 // Scheduled Ride Card
@@ -1259,19 +1231,17 @@ function ScheduledRideCard({
   onEdit: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const scheduledDate = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
   const formattedDate = scheduledDate
-    ? scheduledDate.toLocaleString("en-CA", {
+    ? fmtDateTime(scheduledDate, {
         weekday: "short",
         month: "short",
         day: "numeric",
-      } as any)
+      })
     : "—";
   const formattedTime = scheduledDate
-    ? scheduledDate.toLocaleTimeString("en-CA", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
+    ? fmtTime(scheduledDate, { hour: "numeric", minute: "2-digit" })
     : "—";
   const cov = coverageDisplay(ride);
 
@@ -1305,7 +1275,7 @@ function ScheduledRideCard({
       </div>
       <div className="db-sched-body">
         <div className="db-sched-name">
-          {(ride as any).passenger?.name ?? "Unknown passenger"}
+          {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
         </div>
         <div className="db-sched-addr">{ride.pickup_address}</div>
         <div className="db-sched-addr dest">{ride.dropoff_address}</div>
@@ -1317,20 +1287,22 @@ function ScheduledRideCard({
         <div className="db-sched-driver-row">
           <div className="db-sched-driver-dot" />
           <span className="db-sched-driver-name">
-            {(ride as any).driver?.profile?.name ?? "Driver assigned"}
+            {(ride as any).driver?.profile?.name ?? t("dispatch.driverAssigned")}
           </span>
         </div>
       )}
       {ride.driver_id && !ride.confirmed_by_driver && (
         <div className="db-pending-badge" style={{ margin: "8px 12px 0" }}>
-          ⏳ Waiting for {(ride as any).driver?.profile?.name ?? "driver"} to confirm
+          ⏳ {t("dispatch.waitingForConfirm", {
+            name: (ride as any).driver?.profile?.name ?? t("rideDetail.driver"),
+          })}
         </div>
       )}
       <div style={{ padding: "8px 12px 10px" }}>
         {assigningRide === ride.id ? (
           <>
             <div className="db-assign-label" style={{ marginTop: 0 }}>
-              Assign driver:
+              {t("dispatch.assignDriverLabel")}
             </div>
             {onlineDrivers.map((d) => (
               <button
@@ -1341,9 +1313,9 @@ function ScheduledRideCard({
                   onAssignDriver(d.id);
                 }}
               >
-                {(d as any).profile?.name ?? "Driver"}
-                {driverPresence(d as any) === "away" ? " · away" : ""}
-                {(ride.declined_by ?? []).includes(d.id) ? " (declined)" : ""}
+                {(d as any).profile?.name ?? t("rideDetail.driver")}
+                {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
+                {(ride.declined_by ?? []).includes(d.id) ? ` ${t("dispatch.declinedSuffix")}` : ""}
               </button>
             ))}
             <button
@@ -1353,7 +1325,7 @@ function ScheduledRideCard({
                 onCancelAssign();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </>
         ) : (
@@ -1365,7 +1337,7 @@ function ScheduledRideCard({
                 onAssign();
               }}
             >
-              {ride.driver_id ? "Reassign driver" : "Assign driver"}
+              {ride.driver_id ? t("dispatch.reassignDriver") : t("dispatch.assignDriver")}
             </button>
             <button
               className="db-sched-assign-btn"
@@ -1374,7 +1346,7 @@ function ScheduledRideCard({
                 onEdit();
               }}
             >
-              Edit
+              {t("common.edit")}
             </button>
             <button
               className="db-cancel-ride-btn"
@@ -1383,7 +1355,7 @@ function ScheduledRideCard({
                 onCancel();
               }}
             >
-              Cancel
+              {t("common.cancel")}
             </button>
           </div>
         )}
@@ -1402,7 +1374,18 @@ export default function DashboardPage({
   companyName: string | null;
   onSignOut: () => void;
 }) {
+  const { t } = useTranslation();
   const isAdmin = profile.role === "admin";
+
+  // Each falls back to the raw column value, as the maps they replaced did: an
+  // unknown code means a schema change this build predates, and showing `foo`
+  // tells whoever reports it more than showing nothing.
+  const settlementRouteLabel = (route: string | null | undefined) =>
+    route && SETTLEMENT_ROUTE_KEYS[route] ? t(SETTLEMENT_ROUTE_KEYS[route]) : (route ?? "—");
+  const cancelReasonLabel = (reason: string) =>
+    CANCEL_REASON_KEYS[reason] ? t(CANCEL_REASON_KEYS[reason]) : reason;
+  const refundReasonLabel = (reason: string) =>
+    REFUND_REASON_KEYS[reason] ? t(REFUND_REASON_KEYS[reason]) : reason;
 
   // Section to open on first paint, read from the URL path so a refresh keeps
   // you where you were. Discounts is admin-only, so fall back for non-admins.
@@ -1660,7 +1643,7 @@ export default function DashboardPage({
             strokeColor: "#fff",
             strokeWeight: 2,
           },
-          title: `Stopped ${stop.minutes} min`,
+          title: i18next.t("trail.stoppedMin", { count: stop.minutes }),
         }),
       );
       bounds.extend({ lat: stop.at.lat, lng: stop.at.lng });
@@ -1779,6 +1762,13 @@ export default function DashboardPage({
   const dropoffAutocompleteRef = useRef<any>(null);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+  // Hoisted out of the detail-row map so the row label and the warning test
+  // cannot disagree — see the comment at the comparison site.
+  const settlementLabel = t("rideDetail.settlement");
+  const settlementRouteIsWarning = [
+    "transfer_failed", "transfer_reversed", "refund_reversed", "refund_review",
+    "reversal_failed", "retransfer_failed",
+  ].includes(rideDetail?.settlement_route ?? "");
 
   // Keep the open ride-detail modal in sync with realtime updates to the
   // underlying `rides` array (e.g. a driver declining) instead of only
@@ -2029,14 +2019,21 @@ export default function DashboardPage({
               const schedAt    = (payload.new as any).scheduled_at;
               const minsUntil  = schedAt ? (new Date(schedAt).getTime() - Date.now()) / 60_000 : Infinity;
               if (newCov && minsUntil < 24 * 60 && COV_SEV[newCov] > (COV_SEV[prevCov] ?? 0)) {
+                // timeZone stays pinned to America/Halifax: the whole
+                // scheduled pipeline is, so a toast in the viewer's zone would
+                // name a different clock time than the ride card beside it.
                 const when = (payload.new as any).scheduled_at
-                  ? new Date((payload.new as any).scheduled_at).toLocaleTimeString("en-CA", {
+                  ? fmtTime((payload.new as any).scheduled_at, {
                       hour: "numeric", minute: "2-digit", timeZone: "America/Halifax",
                     })
-                  : "scheduled ride";
+                  : null;
                 const msg = newCov === "uncovered"
-                  ? `No eligible drivers for ${when} ride`
-                  : `${when} ride is at risk — no active drivers`;
+                  ? (when
+                      ? t("dispatch.covUncoveredAt", { when })
+                      : t("dispatch.covUncovered"))
+                  : (when
+                      ? t("dispatch.covAtRiskAt", { when })
+                      : t("dispatch.covAtRisk"));
                 setCoverageToast(msg);
                 if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
                 coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 6000);
@@ -2401,7 +2398,8 @@ export default function DashboardPage({
 
   // Material "directions_car", 24x24 viewBox — centred by the wrapping
   // transform below.
-  const CAR_GLYPH_PATH =
+  // An SVG path, not copy.
+  const CAR_GLYPH_PATH = // i18n-ok
     "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z";
 
   function buildCarIcon(
@@ -2490,7 +2488,7 @@ export default function DashboardPage({
             position: pos,
             // Don't flash a car onto the map if a different driver is focused.
             map: !focus || focus === d.id ? googleMapRef.current! : null,
-            title: d.profile?.name ?? "Driver",
+            title: d.profile?.name ?? t("common.driver"),
             // Recolouring/rotating icons repaint poorly in the shared optimized
             // canvas; each car gets its own element instead.
             optimized: false,
@@ -2697,7 +2695,7 @@ export default function DashboardPage({
         const mk1 = new google.maps.Marker({
           position: { lat: ride.pickup_lat, lng: ride.pickup_lng },
           map: googleMapRef.current!,
-          title: `Pickup: ${ride.pickup_address}`,
+          title: `${t("analytics.col.pickup")}: ${ride.pickup_address}`,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 7,
@@ -2710,7 +2708,7 @@ export default function DashboardPage({
         const mk2 = new google.maps.Marker({
           position: { lat: ride.dropoff_lat, lng: ride.dropoff_lng },
           map: googleMapRef.current!,
-          title: `Dropoff: ${ride.dropoff_address}`,
+          title: `${t("analytics.col.dropoff")}: ${ride.dropoff_address}`,
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 7,
@@ -3125,11 +3123,11 @@ export default function DashboardPage({
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!bookPickupCoords) {
-      setBookError("Please select a pickup address from the dropdown.");
+      setBookError(t("booking.errPickupFromList"));
       return;
     }
     if (!bookDropoffCoords) {
-      setBookError("Please select a drop-off address from the dropdown.");
+      setBookError(t("booking.errDropoffFromList"));
       return;
     }
     setBookLoading(true);
@@ -3159,10 +3157,7 @@ export default function DashboardPage({
       // guest-creation branch below, minting a fresh anon user and yet another
       // duplicate profile on this number — on every booking, forever.
       if (passengerLookupError) {
-        setBookError(
-          "More than one passenger profile exists for this number. " +
-            "Resolve the duplicate before booking.",
-        );
+        setBookError(t("booking.errDuplicateProfile"));
         setBookLoading(false);
         return;
       }
@@ -3189,6 +3184,13 @@ export default function DashboardPage({
             },
             body: JSON.stringify({
               phone,
+              // Deliberately NOT translated: this is the `profiles.name` written
+              // for a new guest passenger, read back by drivers in the app and
+              // printed on receipts. A translated default makes the stored name
+              // depend on the language of whoever happened to take the call —
+              // "Invité" on one booking, "Guest" on the next, for the same kind
+              // of passenger. A value that lands in a row is a sentinel, not
+              // copy; translate it where it is DISPLAYED, if anywhere.
               name: bookPassengerName.trim() || "Guest",
             }),
           },
@@ -3198,7 +3200,9 @@ export default function DashboardPage({
           .catch(() => ({ error: res.statusText }));
         if (!res.ok || !guestResult?.id) {
           setBookError(
-            `Could not create guest profile: ${guestResult?.error ?? res.statusText}`,
+            t("booking.errGuestProfile", {
+              reason: guestResult?.error ?? res.statusText,
+            }),
           );
           setBookLoading(false);
           return;
@@ -3230,16 +3234,18 @@ export default function DashboardPage({
         } | null;
 
         if (bookDiscountCode.trim() && discount?.code_status && discount.code_status !== "ok") {
+          // Keys, not prose: the server returns a code and this is the one
+          // place that turns it into words.
           const messages: Record<string, string> = {
-            not_found: "Discount code not found.",
-            inactive: "This discount code is no longer active.",
-            not_started: "This discount code isn't active yet.",
-            expired: "This discount code has expired.",
-            maxed: "This discount code has reached its usage limit.",
-            already_used: "This passenger has already used this code.",
+            not_found: "booking.discountNotFound",
+            inactive: "booking.discountInactive",
+            not_started: "booking.discountNotStarted",
+            expired: "booking.discountExpired",
+            maxed: "booking.discountMaxed",
+            already_used: "booking.discountAlreadyUsed",
           };
           setBookError(
-            messages[discount.code_status] ?? "Couldn't apply that discount code.",
+            t(messages[discount.code_status] ?? "booking.discountFailed"),
           );
           setBookLoading(false);
           return;
@@ -3363,7 +3369,7 @@ export default function DashboardPage({
     );
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({ error: res.statusText }));
-      alert(`Failed to assign driver: ${error}`);
+      alert(t("dispatch.errAssignFailed", { reason: error }));
       setAssigningRide(null);
       return;
     }
@@ -3404,7 +3410,7 @@ export default function DashboardPage({
     const { error } = await invokeFunction(
       "settle-ride",
       { ride_id: rideId, action: "cancel" },
-      "Couldn't cancel this ride — the payment hold could not be released.",
+      t("dispatch.errCancelFailed"),
     );
     if (error) {
       alert(error);
@@ -3499,9 +3505,7 @@ export default function DashboardPage({
     // send a new address string with stale coordinates — the exact fare/route
     // mismatch this whole path exists to prevent.
     if (!editPickupCoords || !editDropoffCoords) {
-      setEditError(
-        "Pick both addresses from the suggestions list so the fare can be recalculated.",
-      );
+      setEditError(t("rideEdit.errPickFromList"));
       return;
     }
 
@@ -3572,7 +3576,7 @@ export default function DashboardPage({
       const { data, error } = await invokeFunction(
         "edit-ride",
         body,
-        "Couldn't save these changes.",
+        t("rideEdit.errSaveFailed"),
       );
 
       if (error) {
@@ -3585,8 +3589,8 @@ export default function DashboardPage({
           if (
             window.confirm(
               `${error}` +
-                (short ? ` They'd be about ${Math.round(short)} min short.` : "") +
-                "\n\nSave anyway?",
+                (short ? ` ${t("rideEdit.minutesShort", { count: Math.round(short) })}` : "") +
+                `\n\n${t("rideEdit.saveAnyway")}`,
             )
           ) {
             saveRideEdits(rideId, true);
@@ -3609,8 +3613,10 @@ export default function DashboardPage({
         Math.abs(Number(serverFare) - Number(previousFare)) >= 0.01
       ) {
         alert(
-          `Fare changed from $${Number(previousFare).toFixed(2)} to ` +
-            `$${Number(serverFare).toFixed(2)}.`,
+          t("rideEdit.fareChanged", {
+            from: Number(previousFare).toFixed(2),
+            to: Number(serverFare).toFixed(2),
+          }),
         );
       }
     }
@@ -3668,13 +3674,13 @@ export default function DashboardPage({
     const driverName = selectedDriver?.profile?.name ?? null;
     if (hasActiveRide) {
       const { data: updated, error } = await supabase.from("profiles").update({ deactivation_pending: true }).eq("id", driverId).select("id, is_active, deactivation_pending");
-      if (error) { console.error("[deactivate] pending update failed:", error); alert(`Deactivation failed: ${error.message}`); return; }
-      if (!updated?.length) { alert("Deactivation failed: no rows updated — check RLS or company_id mismatch."); return; }
+      if (error) { console.error("[deactivate] pending update failed:", error); alert(t("drivers.errDeactivate", { reason: error.message })); return; }
+      if (!updated?.length) { alert(t("drivers.errDeactivateNoRows")); return; }
       patchDriverProfile(driverId, { deactivation_pending: true });
     } else {
       const { data: updated, error } = await supabase.from("profiles").update({ is_active: false, deactivation_pending: false }).eq("id", driverId).select("id, is_active, deactivation_pending");
-      if (error) { console.error("[deactivate] direct update failed:", error); alert(`Deactivation failed: ${error.message}`); return; }
-      if (!updated?.length) { alert("Deactivation failed: no rows updated — check RLS or company_id mismatch."); return; }
+      if (error) { console.error("[deactivate] direct update failed:", error); alert(t("drivers.errDeactivate", { reason: error.message })); return; }
+      if (!updated?.length) { alert(t("drivers.errDeactivateNoRows")); return; }
       patchDriverProfile(driverId, { is_active: false, deactivation_pending: false });
     }
     fetchDrivers();
@@ -3689,7 +3695,7 @@ export default function DashboardPage({
   async function activateDriver(driverId: string) {
     const driverName = selectedDriver?.profile?.name ?? null;
     const { error } = await supabase.from("profiles").update({ is_active: true, deactivation_pending: false }).eq("id", driverId);
-    if (error) { console.error("[activate] update failed:", error); alert(`Activation failed: ${error.message}`); return; }
+    if (error) { console.error("[activate] update failed:", error); alert(t("drivers.errActivate", { reason: error.message })); return; }
     patchDriverProfile(driverId, { is_active: true, deactivation_pending: false });
     fetchDrivers();
     logDispatchEvent({
@@ -3716,7 +3722,7 @@ export default function DashboardPage({
     );
     if (!res.ok) {
       const { error } = await res.json();
-      alert(`Failed to delete driver: ${error}`);
+      alert(t("drivers.errDeleteFailed", { reason: error }));
       return;
     }
     setSelectedDriver(null);
@@ -3829,12 +3835,12 @@ export default function DashboardPage({
       (a, b) => FLAG_REASON_ORDER.indexOf(a) - FLAG_REASON_ORDER.indexOf(b),
     );
     const label =
-      (FLAG_REASON_LABELS[codes[0]] ?? "Passenger reported a problem") +
-      (codes.length > 1 ? ` (+${codes.length - 1} more)` : "");
+      flagLabel(codes[0]) +
+      (codes.length > 1 ? ` ${t("dispatch.plusMore", { n: codes.length - 1 })}` : "");
     setCoverageToast(
       current.size > 1
-        ? `${current.size} rides flagged by passengers — check the board`
-        : `${label} — check the ride`,
+        ? t("dispatch.manyFlagged", { count: current.size })
+        : t("dispatch.oneFlagged", { label }),
     );
     if (coverageToastTimerRef.current) clearTimeout(coverageToastTimerRef.current);
     coverageToastTimerRef.current = setTimeout(() => setCoverageToast(null), 12000);
@@ -3919,18 +3925,21 @@ export default function DashboardPage({
     return true;
   });
   const topbarTitle = showAnalytics
-    ? "Analytics"
+    ? t("nav.analytics")
     : showReports
-      ? "Reports"
+      ? t("nav.reports")
       : showDiscounts
-        ? "Discounts"
+        ? t("nav.discounts")
         : showSettings
-          ? "Settings"
+          ? t("nav.settings")
           : showAnnouncements
-            ? "Announcements"
+            ? t("nav.announcements")
             : showMessages
-              ? "Messages"
-              : tab.charAt(0).toUpperCase() + tab.slice(1);
+              ? t("nav.messages")
+              // Was `tab.charAt(0).toUpperCase() + tab.slice(1)` — a label
+              // COMPUTED from a code identifier, so the English never appeared
+              // as a string anywhere and no scanner of literals could see it.
+              : t(`nav.${tab}`);
 
   const filteredDrivers = (() => {
     const q = driverSearch.trim().toLowerCase();
@@ -3974,7 +3983,7 @@ export default function DashboardPage({
           fontFamily: "system-ui",
         }}
       >
-        Loading…
+        {t("common.loading")}
       </div>
     );
 
@@ -4358,18 +4367,22 @@ export default function DashboardPage({
             )}
           </div>
           <div className="db-nav-items">
-            {NAV_ITEMS.map(({ tab: t, label }) => (
+            {/* `tab: navTab`, NOT the original `tab: t` — that destructuring
+                shadowed the translation function inside this block, so t() here
+                resolved to a Tab string. Caught by tsc the moment the label
+                became a t() call; it would have been a runtime crash. */}
+            {NAV_ITEMS.map(({ tab: navTab, labelKey }) => (
               <button
-                key={t}
-                className={`db-nav-item${tab === t && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages ? " active" : ""}`}
+                key={navTab}
+                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages ? " active" : ""}`}
                 onClick={() => {
-                  setTab(t);
+                  setTab(navTab);
                   navigateTo("main");
                   setSelectedDriver(null);
                 }}
               >
-                <span className="db-nav-icon">{NAV_ICONS[t]}</span>
-                {navExpanded && <span className="db-nav-label">{label}</span>}
+                <span className="db-nav-icon">{NAV_ICONS[navTab]}</span>
+                {navExpanded && <span className="db-nav-label">{t(labelKey)}</span>}
               </button>
             ))}
             <button
@@ -4382,7 +4395,7 @@ export default function DashboardPage({
               <span className="db-nav-icon">
                 <IconAnnouncements />
               </span>
-              {navExpanded && <span className="db-nav-label">Announcements</span>}
+              {navExpanded && <span className="db-nav-label">{t("nav.announcements")}</span>}
             </button>
             <button
               className={`db-nav-item${showMessages ? " active" : ""}`}
@@ -4395,23 +4408,26 @@ export default function DashboardPage({
                 <IconMessages />
                 {driverChatUnreadCount > 0 && !showMessages && <span className="db-badge-dot" />}
               </span>
-              {navExpanded && <span className="db-nav-label">Messages</span>}
+              {navExpanded && <span className="db-nav-label">{t("nav.messages")}</span>}
               {navExpanded && driverChatUnreadCount > 0 && (
                 <span className="db-badge-count">{driverChatUnreadCount}</span>
               )}
             </button>
           </div>
           <div className="db-nav-bottom">
-            <div className="db-nav-profile" title={profile.name ?? "Dispatcher"}>
+            <div className="db-nav-profile" title={profile.name ?? t("settings.role.dispatcher")}>
               <span className="db-nav-avatar">
+                {/* i18n-ok — an AVATAR INITIAL, not a label. */}
                 {(profile.name ?? "?").trim().charAt(0).toUpperCase()}
               </span>
               {navExpanded && (
                 <span className="db-nav-profile-info">
                   <span className="db-nav-profile-name">
-                    {profile.name ?? "Dispatcher"}
+                    {profile.name ?? t("settings.role.dispatcher")}
                   </span>
-                  <span className="db-nav-profile-role">{profile.role}</span>
+                  <span className="db-nav-profile-role">
+                    {t(`settings.role.${profile.role}`)}
+                  </span>
                 </span>
               )}
             </div>
@@ -4428,7 +4444,7 @@ export default function DashboardPage({
                   <span className="db-badge-dot" />
                 )}
               </span>
-              {navExpanded && <span className="db-nav-label">Analytics</span>}
+              {navExpanded && <span className="db-nav-label">{t("nav.analytics")}</span>}
               {navExpanded && flaggedReviews > 0 && (
                 <span className="db-badge-count">{flaggedReviews}</span>
               )}
@@ -4446,7 +4462,7 @@ export default function DashboardPage({
                   <span className="db-badge-dot" />
                 )}
               </span>
-              {navExpanded && <span className="db-nav-label">Reports</span>}
+              {navExpanded && <span className="db-nav-label">{t("nav.reports")}</span>}
               {navExpanded && openReports > 0 && (
                 <span className="db-badge-count">{openReports}</span>
               )}
@@ -4462,7 +4478,7 @@ export default function DashboardPage({
                 <span className="db-nav-icon">
                   <IconDiscounts />
                 </span>
-                {navExpanded && <span className="db-nav-label">Discounts</span>}
+                {navExpanded && <span className="db-nav-label">{t("nav.discounts")}</span>}
               </button>
             )}
             <button
@@ -4475,7 +4491,7 @@ export default function DashboardPage({
               <span className="db-nav-icon">
                 <IconSettings />
               </span>
-              {navExpanded && <span className="db-nav-label">Settings</span>}
+              {navExpanded && <span className="db-nav-label">{t("nav.settings")}</span>}
             </button>
             <button
               className="db-nav-utility db-nav-signout"
@@ -4484,7 +4500,7 @@ export default function DashboardPage({
               <span className="db-nav-icon">
                 <IconSignOut />
               </span>
-              {navExpanded && <span className="db-nav-label">Sign out</span>}
+              {navExpanded && <span className="db-nav-label">{t("common.signOut")}</span>}
             </button>
           </div>
         </nav>
@@ -4493,7 +4509,7 @@ export default function DashboardPage({
           <div className="db-topbar">
             <span className="db-topbar-title">
               {selectedDriver
-                ? (selectedDriver.profile?.name ?? "Driver")
+                ? (selectedDriver.profile?.name ?? t("rideDetail.driver"))
                 : topbarTitle}
             </span>
             {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver && (
@@ -4506,7 +4522,7 @@ export default function DashboardPage({
                     />
                     {stats.activeRides}
                   </span>
-                  <span className="db-stat-label">Active</span>
+                  <span className="db-stat-label">{t("stats.active")}</span>
                 </div>
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -4516,17 +4532,17 @@ export default function DashboardPage({
                     />
                     {stats.driversOnline}
                   </span>
-                  <span className="db-stat-label">Online</span>
+                  <span className="db-stat-label">{t("stats.online")}</span>
                 </div>
                 <div className="db-stat">
                   <span className="db-stat-value">{stats.completedToday}</span>
-                  <span className="db-stat-label">Today</span>
+                  <span className="db-stat-label">{t("stats.today")}</span>
                 </div>
                 <div className="db-stat">
                   <span className="db-stat-value" style={{ color: "#1D9E75" }}>
                     ${stats.revenueToday.toFixed(2)}
                   </span>
-                  <span className="db-stat-label">Revenue</span>
+                  <span className="db-stat-label">{t("stats.revenue")}</span>
                 </div>
               </div>
             )}
@@ -4540,7 +4556,7 @@ export default function DashboardPage({
                     (alerts.some((a) => a.tier === "act_now") ? " hot" : "")
                   }
                   onClick={() => setAlertsOpen((v) => !v)}
-                  title="Needs attention"
+                  title={t("attention.title")}
                 >
                   ⚑ {alerts.length}
                 </button>
@@ -4548,7 +4564,7 @@ export default function DashboardPage({
                   className="db-new-ride-btn"
                   onClick={() => setBookingOpen(true)}
                 >
-                  + New ride
+                  {t("dispatch.newRide")}
                 </button>
               </>
             ) : (
@@ -4562,7 +4578,7 @@ export default function DashboardPage({
                   navigateTo("main");
                 }}
               >
-                ← Back
+                {t("common.back")}
               </button>
             )}
           </div>
@@ -4624,12 +4640,12 @@ export default function DashboardPage({
           {cancelPendingId && (
             <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setCancelPendingId(null)}>
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
-                <div className="dd-confirm-title">Cancel this ride?</div>
+                <div className="dd-confirm-title">{t("dispatch.cancelRideTitle")}</div>
                 <div className="dd-confirm-body">
                   {(() => {
                     const r = rides.find((x) => x.id === cancelPendingId);
-                    if (!r) return "This action cannot be undone.";
-                    const who = `${(r as any).passenger?.name ?? "Passenger"} · ${r.pickup_address}`;
+                    if (!r) return t("dispatch.cannotUndo");
+                    const who = `${(r as any).passenger?.name ?? t("reports.passenger")} · ${r.pickup_address}`;
                     // Mid-ride is a different act from cancelling a ride that
                     // hasn't started: the trip is under way and the driver is
                     // paid nothing for the distance already driven.
@@ -4638,9 +4654,7 @@ export default function DashboardPage({
                         <>
                           {who}
                           <div style={{ marginTop: 8, color: "#F59E0B" }}>
-                            This ride is under way. Any card hold is released and
-                            the driver is not paid for the distance already
-                            driven. Their screen will end the trip.
+                            {t("dispatch.cancelMidRideWarning")}
                           </div>
                         </>
                       );
@@ -4649,12 +4663,12 @@ export default function DashboardPage({
                   })()}
                 </div>
                 <div className="dd-confirm-actions">
-                  <button className="dd-confirm-cancel" onClick={() => setCancelPendingId(null)}>Keep ride</button>
+                  <button className="dd-confirm-cancel" onClick={() => setCancelPendingId(null)}>{t("dispatch.keepRide")}</button>
                   <button
                     className="dd-confirm-ok danger"
                     onClick={() => { cancelRide(cancelPendingId); setCancelPendingId(null); }}
                   >
-                    Cancel ride
+                    {t("dispatch.cancelRide")}
                   </button>
                 </div>
               </div>
@@ -4664,18 +4678,20 @@ export default function DashboardPage({
           {confirmHoldAssign && (
             <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setConfirmHoldAssign(null)}>
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
-                <div className="dd-confirm-title">Assign anyway?</div>
+                <div className="dd-confirm-title">{t("dispatch.assignAnywayTitle")}</div>
                 <div className="dd-confirm-body">
-                  {confirmHoldAssign.name} is due at a scheduled pickup at{" "}
-                  {shortTime(confirmHoldAssign.scheduledAt)}.
+                  {t("dispatch.assignAnywayDue", {
+                    name: confirmHoldAssign.name,
+                    when: shortTime(confirmHoldAssign.scheduledAt),
+                  })}{" "}
                   {confirmHoldAssign.minutesShort != null
-                    ? ` Taking this ride would put them there about ${confirmHoldAssign.minutesShort} minutes late.`
-                    : " Drive times were unavailable, so this can't be checked."}{" "}
-                  Assign anyway only if you know something the estimate doesn't.
+                    ? t("dispatch.assignAnywayLate", { count: confirmHoldAssign.minutesShort })
+                    : t("dispatch.assignAnywayUnknown")}{" "}
+                  {t("dispatch.assignAnywayAdvice")}
                 </div>
                 <div className="dd-confirm-actions">
                   <button className="dd-confirm-cancel" onClick={() => setConfirmHoldAssign(null)}>
-                    Keep held
+                    {t("dispatch.keepHeld")}
                   </button>
                   <button
                     className="dd-confirm-ok danger"
@@ -4684,7 +4700,7 @@ export default function DashboardPage({
                       setConfirmHoldAssign(null);
                     }}
                   >
-                    Assign anyway
+                    {t("dispatch.assignAnyway")}
                   </button>
                 </div>
               </div>
@@ -4707,12 +4723,12 @@ export default function DashboardPage({
               {tab === "rides" && (
                 <>
                   <div className="db-panel-header">
-                    <div className="db-panel-title">Active rides</div>
+                    <div className="db-panel-title">{t("dispatch.activeRides")}</div>
                     <div className="db-panel-count">{activeRides.length}</div>
                   </div>
                   <div className="db-panel-scroll">
                     {activeRides.length === 0 && (
-                      <div className="db-empty">No active rides</div>
+                      <div className="db-empty">{t("dispatch.noActiveRides")}</div>
                     )}
                     {activeRides.map((ride) => (
                       <div
@@ -4736,14 +4752,11 @@ export default function DashboardPage({
                             {rideStatusLabel(ride)}
                           </span>
                           <span className="db-ride-time">
-                            {new Date(ride.created_at).toLocaleTimeString(
-                              "en-CA",
-                              { hour: "numeric", minute: "2-digit" },
-                            )}
+                            {fmtTime(ride.created_at, { hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                         <div className="db-ride-name">
-                          {(ride as any).passenger?.name ?? "Unknown passenger"}
+                          {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
                         </div>
                         <div className="db-ride-addr">
                           {ride.pickup_address}
@@ -4780,16 +4793,15 @@ export default function DashboardPage({
                                 <div className="db-flag-body">
                                   <div className="db-flag-head">
                                     {single
-                                      ? (FLAG_REASON_LABELS[codes[0]] ??
-                                         "Problem reported")
-                                      : `Passenger flagged ${codes.length} issues`}
+                                      ? flagLabel(codes[0])
+                                      : t("dispatch.flaggedIssues", { count: codes.length })}
                                   </div>
                                   {!single && (
                                     <ul className="db-flag-list">
                                       {codes.map((code) => (
                                         <li key={code} className="db-flag-item">
                                           <span>
-                                            {FLAG_REASON_LABELS[code] ?? code}
+                                            {flagLabel(code)}
                                           </span>
                                         </li>
                                       ))}
@@ -4806,7 +4818,7 @@ export default function DashboardPage({
                                       resolveFlag(ride.id);
                                     }}
                                   >
-                                    Mark resolved
+                                    {t("reports.markResolved")}
                                   </button>
                                 </div>
                               </div>
@@ -4819,8 +4831,8 @@ export default function DashboardPage({
                             {assigningRide === ride.id ? (
                               <>
                                 <div className="db-assign-label">
-                                  Assign driver:
-                                  {conflictsLoading ? " checking conflicts…" : ""}
+                                  {t("dispatch.assignDriverLabel")}
+                                  {conflictsLoading ? ` ${t("dispatch.checkingConflicts")}` : ""}
                                 </div>
                                 {[...onlineDrivers]
                                   .sort(
@@ -4834,7 +4846,7 @@ export default function DashboardPage({
                                   .map((d) => {
                                   const conflict = conflicts.get(d.id);
                                   const heldFor = conflict?.misses ? conflict : null;
-                                  const dName = (d as any).profile?.name ?? "Driver";
+                                  const dName = (d as any).profile?.name ?? t("rideDetail.driver");
                                   return (
                                     <button
                                       key={d.id}
@@ -4867,10 +4879,19 @@ export default function DashboardPage({
                                       }}
                                     >
                                       {dName}
-                                      {driverPresence(d as any) === "away" ? " · away" : ""}
-                                      {((ride as any).declined_by ?? []).includes(d.id) ? " (declined)" : ""}
+                                      {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
+                                      {((ride as any).declined_by ?? []).includes(d.id) ? ` ${t("dispatch.declinedSuffix")}` : ""}
                                       {heldFor
-                                        ? ` · ${heldFor.minutes_short != null ? `${heldFor.minutes_short}m late for` : "due at"} ${shortTime(heldFor.commitment_at)}`
+                                        ? ` · ${
+                                            heldFor.minutes_short != null
+                                              ? t("dispatch.lateForBy", {
+                                                  count: heldFor.minutes_short,
+                                                  when: shortTime(heldFor.commitment_at),
+                                                })
+                                              : t("dispatch.dueAt", {
+                                                  when: shortTime(heldFor.commitment_at),
+                                                })
+                                          }`
                                         : ""}
                                     </button>
                                   );
@@ -4882,7 +4903,7 @@ export default function DashboardPage({
                                     setAssigningRide(null);
                                   }}
                                 >
-                                  Cancel
+                                  {t("common.cancel")}
                                 </button>
                               </>
                             ) : (
@@ -4896,8 +4917,8 @@ export default function DashboardPage({
                                   }}
                                 >
                                   {ride.driver_id
-                                    ? "Reassign driver"
-                                    : "Assign driver"}
+                                    ? t("dispatch.reassignDriver")
+                                    : t("dispatch.assignDriver")}
                                 </button>
                                 <button
                                   className="db-assign-btn"
@@ -4908,7 +4929,7 @@ export default function DashboardPage({
                                     startEditRide(ride);
                                   }}
                                 >
-                                  Edit
+                                  {t("common.edit")}
                                 </button>
                                 <button
                                   className="db-cancel-ride-btn"
@@ -4917,7 +4938,7 @@ export default function DashboardPage({
                                     setCancelPendingId(ride.id);
                                   }}
                                 >
-                                  Cancel
+                                  {t("common.cancel")}
                                 </button>
                               </div>
                             )}
@@ -4934,7 +4955,7 @@ export default function DashboardPage({
                                 startEditRide(ride);
                               }}
                             >
-                              Edit
+                              {t("common.edit")}
                             </button>
                             <button
                               className="db-cancel-ride-btn"
@@ -4944,7 +4965,7 @@ export default function DashboardPage({
                                 setCancelPendingId(ride.id);
                               }}
                             >
-                              Cancel ride
+                              {t("dispatch.cancelRide")}
                             </button>
                           </div>
                         )}
@@ -4964,7 +4985,7 @@ export default function DashboardPage({
                                 startEditRide(ride);
                               }}
                             >
-                              Edit
+                              {t("common.edit")}
                             </button>
                             <button
                               className="db-cancel-ride-btn"
@@ -4974,13 +4995,13 @@ export default function DashboardPage({
                                 setCancelPendingId(ride.id);
                               }}
                             >
-                              Cancel ride
+                              {t("dispatch.cancelRide")}
                             </button>
                           </div>
                         )}
                         {ride.status === "offered" && (
                           <div className="db-pending-badge">
-                            ⏳ Awaiting driver confirmation
+                            ⏳ {t("dispatch.awaitingConfirmation")}
                           </div>
                         )}
                       </div>
@@ -4990,7 +5011,7 @@ export default function DashboardPage({
                       <>
                         <div className="db-section-divider">
                           <span className="db-section-divider-title">
-                            Scheduled rides
+                            {t("dispatch.scheduledRides")}
                           </span>
                           <span
                             className="db-section-divider-count"
@@ -5007,10 +5028,13 @@ export default function DashboardPage({
                           const atRisk    = soon.filter((r: any) => r.coverage_status === "at_risk").length;
                           const barColor  = uncovered > 0 ? "#F87171" : atRisk > 0 ? "#F59E0B" : "#1D9E75";
                           const barText   = uncovered > 0
-                            ? `${uncovered} uncovered${atRisk > 0 ? ` · ${atRisk} at risk` : ""}`
+                            ? t("coverage.barUncovered", { count: uncovered }) +
+                              (atRisk > 0 ? ` · ${t("coverage.barAtRiskSuffix", { count: atRisk })}` : "")
                             : atRisk > 0
-                              ? `${atRisk} at risk within 24 h`
-                              : soon.length > 0 ? "All covered within 24 h" : "No rides in next 24 h";
+                              ? t("coverage.barAtRisk", { count: atRisk })
+                              : soon.length > 0
+                                ? t("coverage.barAllCovered")
+                                : t("coverage.barNoRides");
                           return (
                             <div className="db-cov-bar" style={{ borderColor: barColor + "30", background: barColor + "0d" }}>
                               <span className="db-cov-bar-dot" style={{ background: barColor }} />
@@ -5041,7 +5065,7 @@ export default function DashboardPage({
                     )}
 
                     <div className="db-section-divider">
-                      <span className="db-section-divider-title">Recent</span>
+                      <span className="db-section-divider-title">{t("dispatch.recent")}</span>
                       <span
                         className="db-section-divider-count"
                         style={{ color: "#6B7280" }}
@@ -5078,9 +5102,9 @@ export default function DashboardPage({
                           </span>
                         </div>
                         <div className="db-ride-name" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                          <span>{(ride as any).passenger?.name ?? "Unknown"}</span>
+                          <span>{(ride as any).passenger?.name ?? t("common.unknown")}</span>
                           <span style={{ fontSize: 10, color: "#6B7280", fontWeight: 400 }}>
-                            {new Date(ride.created_at).toLocaleString("en-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                            {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                         <div className="db-ride-addr">
@@ -5095,7 +5119,7 @@ export default function DashboardPage({
               {tab === "drivers" && (
                 <>
                   <div className="db-panel-header">
-                    <div className="db-panel-title">Drivers</div>
+                    <div className="db-panel-title">{t("nav.drivers")}</div>
                     <div className="db-panel-count">{drivers.filter(d => !(d as any).profile?.deleted_at).length}</div>
                   </div>
                   <div className="db-panel-scroll">
@@ -5104,7 +5128,7 @@ export default function DashboardPage({
                       style={{ marginTop: 0, borderTop: "none", paddingTop: 4 }}
                     >
                       <span className="db-section-divider-title">
-                        Add driver
+                        {t("drivers.addDriver")}
                       </span>
                     </div>
                     <form
@@ -5114,7 +5138,7 @@ export default function DashboardPage({
                     >
                       <input
                         className="db-invite-input"
-                        placeholder="Full name"
+                        placeholder={t("settings.fullNamePlaceholder")}
                         value={inviteName}
                         onChange={(e) => setInviteName(e.target.value)}
                       />
@@ -5122,6 +5146,7 @@ export default function DashboardPage({
                         <span className="db-phone-prefix">+1</span>
                         <input
                           className="db-phone-input"
+                          /* i18n-ok — a phone-number FORMAT example. */
                           placeholder="(902) 123-4567"
                           value={invitePhone}
                           onChange={(e) => setInvitePhone(formatPhoneInput(e.target.value))}
@@ -5134,7 +5159,7 @@ export default function DashboardPage({
                         type="submit"
                         disabled={inviteLoading}
                       >
-                        {inviteLoading ? "Creating…" : "Generate invite code"}
+                        {inviteLoading ? t("drivers.creating") : t("drivers.generateInvite")}
                       </button>
                     </form>
                     {inviteSuccess && (
@@ -5146,7 +5171,7 @@ export default function DashboardPage({
                             marginBottom: 4,
                           }}
                         >
-                          Invite code created!
+                          {t("drivers.inviteCreated")}
                         </div>
                         <div
                           style={{
@@ -5165,14 +5190,14 @@ export default function DashboardPage({
                             marginTop: 4,
                           }}
                         >
-                          Only works for the registered number.
+                          {t("drivers.inviteNumberOnly")}
                         </div>
                         <button
                           className="db-cancel-assign-btn"
                           style={{ marginTop: 8 }}
                           onClick={() => setInviteSuccess("")}
                         >
-                          Dismiss
+                          {t("drivers.dismiss")}
                         </button>
                       </div>
                     )}
@@ -5180,7 +5205,7 @@ export default function DashboardPage({
                       <>
                         <div className="db-section-divider">
                           <span className="db-section-divider-title">
-                            Pending invites
+                            {t("drivers.pendingInvites")}
                           </span>
                           <span
                             className="db-section-divider-count"
@@ -5203,7 +5228,7 @@ export default function DashboardPage({
                                   border: "1px solid #F59E0B30",
                                 }}
                               >
-                                Pending
+                                {t("drivers.pending")}
                               </span>
                             </div>
                             <div className="db-invite-phone">
@@ -5218,15 +5243,15 @@ export default function DashboardPage({
                                   className="db-revoke-btn"
                                   style={{ fontSize: 11 }}
                                   onClick={() => navigator.clipboard.writeText(invite.code)}
-                                  title="Copy code"
+                                  title={t("discounts.copyCode")}
                                 >
-                                  Copy
+                                  {t("drivers.copy")}
                                 </button>
                                 <button
                                   className="db-revoke-btn"
                                   onClick={() => revokeInvite(invite.id)}
                                 >
-                                  Revoke
+                                  {t("drivers.revoke")}
                                 </button>
                               </div>
                             </div>
@@ -5236,7 +5261,7 @@ export default function DashboardPage({
                     )}
                     <div className="db-section-divider">
                       <span className="db-section-divider-title">
-                        All drivers
+                        {t("reports.allDrivers")}
                       </span>
                       <span
                         className="db-section-divider-count"
@@ -5247,12 +5272,12 @@ export default function DashboardPage({
                     </div>
                     <input
                       className="db-driver-search"
-                      placeholder="Search by name, phone, car or driver number, vehicle or plate…"
+                      placeholder={t("drivers.searchPlaceholder")}
                       value={driverSearch}
                       onChange={e => setDriverSearch(e.target.value)}
                     />
                     {filteredDrivers.length === 0 && (
-                      <div className="db-empty">{driverSearch.trim() ? "No drivers match your search" : "No drivers registered yet"}</div>
+                      <div className="db-empty">{driverSearch.trim() ? t("drivers.noMatches") : t("drivers.noneRegistered")}</div>
                     )}
                     {filteredDrivers.map((driver) => {
                       const driverActiveRide = rides.find(
@@ -5302,7 +5327,7 @@ export default function DashboardPage({
                             <div style={{ flex: 1 }}>
                               <div className="db-driver-name">
                                 <span className="db-driver-name-text">
-                                  {(driver as any).profile?.name ?? "Unknown"}
+                                  {(driver as any).profile?.name ?? t("common.unknown")}
                                 </span>
                                 {/* Dispatch speaks in car numbers, so this sits
                                     on the name row rather than in the small
@@ -5310,7 +5335,7 @@ export default function DashboardPage({
                                     colour stays the only colour on the card. */}
                                 {(driver as any).car_number && (
                                   <span className="db-car-num">
-                                    CAR {(driver as any).car_number}
+                                    {t("drivers.carShort")} {(driver as any).car_number}
                                   </span>
                                 )}
                               </div>
@@ -5324,28 +5349,28 @@ export default function DashboardPage({
                               </div>
                               {!isAccountActive ? (
                                 <div style={{ fontSize: 11, color: "#F87171", marginTop: 3, fontWeight: 500 }}>
-                                  Deactivated
+                                  {t("common.deactivated")}
                                 </div>
                               ) : isDeactivationPending ? (
                                 <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ⏳ Deactivation pending
+                                  ⏳ {t("drivers.deactivationPending")}
                                 </div>
                               ) : presence === "offline" ? null : awaitingReply ? (
                                 <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ◷ Offered — awaiting reply
+                                  ◷ {t("drivers.offeredAwaiting")}
                                 </div>
                               ) : driverActiveRide ? (
                                 <div className="db-driver-status-on-ride">
-                                  ● On a ride
-                                  {presence === "away" ? " · out of contact" : ""}
+                                  ● {t("drivers.onARide")}
+                                  {presence === "away" ? ` · ${t("drivers.outOfContactLower")}` : ""}
                                 </div>
                               ) : presence === "away" ? (
                                 <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ◌ Away{lastSeen ? ` · ${lastSeen}` : ""}
+                                  ◌ {t("drivers.away")}{lastSeen ? ` · ${lastSeen}` : ""}
                                 </div>
                               ) : (
                                 <div className="db-driver-status-available">
-                                  ● Available
+                                  ● {t("drivers.available")}
                                 </div>
                               )}
                             </div>
@@ -5377,7 +5402,7 @@ export default function DashboardPage({
               {alertsOpen && (
                 <div className="db-alerts">
                   <div className="db-alerts-head">
-                    <span className="db-alerts-title">Needs attention</span>
+                    <span className="db-alerts-title">{t("attention.title")}</span>
                     {alerts.length > 0 && (
                       <span className="db-alerts-count">{alerts.length}</span>
                     )}
@@ -5395,8 +5420,8 @@ export default function DashboardPage({
                       }}
                       title={
                         alertSound
-                          ? "Sound on — click to mute"
-                          : "Sound muted — click to unmute"
+                          ? t("attention.soundOn")
+                          : t("attention.soundOff")
                       }
                     >
                       {alertSound ? "🔔" : "🔕"}
@@ -5405,13 +5430,13 @@ export default function DashboardPage({
                       className="db-alerts-close"
                       style={{ marginLeft: 0 }}
                       onClick={() => setAlertsOpen(false)}
-                      title="Close"
+                      title={t("common.close")}
                     >
                       ✕
                     </button>
                   </div>
                   {alerts.length === 0 ? (
-                    <div className="db-alerts-empty">Nothing needs attention.</div>
+                    <div className="db-alerts-empty">{t("attention.empty")}</div>
                   ) : (
                     <div className="db-alerts-scroll">
                       {alerts.map((a) => {
@@ -5441,12 +5466,9 @@ export default function DashboardPage({
                                 <span className="db-alert-detail">{a.detail}</span>
                               )}
                               <span className="db-alert-meta">
-                                {(ride as any)?.passenger?.name ?? "Passenger"}
+                                {(ride as any)?.passenger?.name ?? t("reports.passenger")}
                                 {" · "}
-                                {new Date(a.at).toLocaleTimeString("en-CA", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                })}
+                                {fmtTime(a.at, { hour: "numeric", minute: "2-digit" })}
                               </span>
                             </span>
                           </button>
@@ -5484,12 +5506,12 @@ export default function DashboardPage({
                   <div className="db-trail-head">
                     <div>
                       <div className="db-trail-name">
-                        {trailDriver.profile?.name ?? "Driver"}
+                        {trailDriver.profile?.name ?? t("rideDetail.driver")}
                       </div>
-                      <div className="db-trail-sub">Location history</div>
+                      <div className="db-trail-sub">{t("drivers.locationHistory")}</div>
                     </div>
                     <button className="db-trail-close" onClick={closeTrail} type="button">
-                      Close
+                      {t("common.close")}
                     </button>
                   </div>
 
@@ -5511,33 +5533,28 @@ export default function DashboardPage({
                   </div>
 
                   {trailLoading ? (
-                    <div className="db-trail-empty">Loading…</div>
+                    <div className="db-trail-empty">{t("common.loading")}</div>
                   ) : trailError ? (
-                    <div className="db-trail-empty">Couldn't load: {trailError}</div>
+                    <div className="db-trail-empty">{t("trail.loadFailed", { reason: trailError })}</div>
                   ) : !trail || trail.fixCount === 0 ? (
                     <div className="db-trail-empty">
-                      No location history for this day.
-                      <div className="db-trail-note">
-                        Location history is only recorded while a driver is
-                        online, on a version of the driver app that supports
-                        background location. Until that update reaches drivers,
-                        every day here will be empty.
-                      </div>
+                      {t("trail.noneThisDay")}
+                      <div className="db-trail-note">{t("trail.noneNote")}</div>
                     </div>
                   ) : (
                     <>
                       <div className="db-trail-stats">
                         <div>
                           <span>{formatKm(trail.distanceM)}</span>
-                          driven
+                          {t("trail.driven")}
                         </div>
                         <div>
                           <span>{formatDuration(trail.idleMs)}</span>
-                          stopped
+                          {t("trail.stopped")}
                         </div>
                         <div>
                           <span>{trail.stops.length}</span>
-                          {trail.stops.length === 1 ? "stop" : "stops"}
+                          {t("trail.stops", { count: trail.stops.length })}
                         </div>
                       </div>
 
@@ -5546,7 +5563,7 @@ export default function DashboardPage({
                           <div className="db-trail-scrub-head">
                             <span>{clockOf(trail.firstAt)}</span>
                             <strong>
-                              {scrubT == null ? "Whole day" : clockOf(scrubT)}
+                              {scrubT == null ? t("trail.wholeDay") : clockOf(scrubT)}
                             </strong>
                             <span>{clockOf(trail.lastAt)}</span>
                           </div>
@@ -5564,15 +5581,15 @@ export default function DashboardPage({
                               onClick={() => setScrubT(null)}
                               type="button"
                             >
-                              Show whole day
+                              {t("trail.showWholeDay")}
                             </button>
                           )}
                         </div>
                       )}
 
                       <div className="db-trail-legend">
-                        <span><i className="fare" />On a fare</span>
-                        <span><i className="idle" />Between fares</span>
+                        <span><i className="fare" />{t("trail.onAFare")}</span>
+                        <span><i className="idle" />{t("trail.betweenFares")}</span>
                       </div>
 
                       {trail.stops.length > 0 && (
@@ -5618,34 +5635,31 @@ export default function DashboardPage({
                         {rideStatusLabel(rd)}
                       </span>
                       <span className="db-ride-float-time">
-                        {new Date(rd.created_at).toLocaleTimeString("en-CA", {
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
+                        {fmtTime(rd.created_at, { hour: "numeric", minute: "2-digit" })}
                       </span>
                       <button
                         className="db-ride-float-close"
                         onClick={() => setRideDetail(null)}
-                        title="Close"
+                        title={t("common.close")}
                       >
                         ×
                       </button>
                     </div>
 
-                    <div className="db-ride-float-pax">{pax?.name ?? "Unknown passenger"}</div>
+                    <div className="db-ride-float-pax">{pax?.name ?? t("dispatch.unknownPassenger")}</div>
 
                     {/* Driver */}
                     <div className="db-live-driver">
                       <div>
                         <div className="db-live-driver-name">
-                          {rd.driver_id ? (drvProfile?.name ?? "Driver") : "Unassigned"}
+                          {rd.driver_id ? (drvProfile?.name ?? t("rideDetail.driver")) : t("rideDetail.unassigned")}
                         </div>
                         {vehicle && <div className="db-live-driver-veh">{vehicle}</div>}
                       </div>
                       {rd.driver_id && (
                         <span className="db-live-track" style={{ color: tracking ? "#1D9E75" : "#6B7280" }}>
                           <span className="db-live-dot" style={{ background: tracking ? "#1D9E75" : "#6B7280" }} />
-                          {tracking ? "Live" : "No signal"}
+                          {tracking ? t("dispatch.live") : t("dispatch.noSignal")}
                         </span>
                       )}
                     </div>
@@ -5655,14 +5669,14 @@ export default function DashboardPage({
                       <div className="db-live-stop">
                         <span className="db-live-stop-dot" style={{ background: "#4a9eff" }} />
                         <div>
-                          <div className="db-live-stop-label">Pickup</div>
+                          <div className="db-live-stop-label">{t("reports.pickup")}</div>
                           <div className="db-live-stop-addr">{rd.pickup_address}</div>
                         </div>
                       </div>
                       <div className="db-live-stop">
                         <span className="db-live-stop-dot" style={{ background: "#E8500A" }} />
                         <div>
-                          <div className="db-live-stop-label">Drop-off</div>
+                          <div className="db-live-stop-label">{t("reports.dropoff")}</div>
                           <div className="db-live-stop-addr">{rd.dropoff_address}</div>
                         </div>
                       </div>
@@ -5673,8 +5687,8 @@ export default function DashboardPage({
                       <span className="db-live-chip">
                         {rd.fare_estimate ? `$${rd.fare_estimate.toFixed(2)}` : "—"}
                       </span>
-                      <span className="db-live-chip" style={{ textTransform: "capitalize" }}>
-                        {rd.payment_method}
+                      <span className="db-live-chip">
+                        {rd.payment_method === "cash" ? t("rideDetail.cash") : t("rideDetail.card")}
                       </span>
                     </div>
 
@@ -5683,19 +5697,19 @@ export default function DashboardPage({
                       <div className="db-ride-float-contacts">
                         {pax?.phone && (
                           <div className="db-phone-row">
-                            <span className="db-phone-role">Passenger</span>
+                            <span className="db-phone-role">{t("rideDetail.passenger")}</span>
                             <span className="db-phone-num">{pax.phone}</span>
                             <button className="db-phone-copy" onClick={() => copyPhone(pax.phone)}>
-                              {copiedPhone === pax.phone ? "Copied" : "Copy"}
+                              {copiedPhone === pax.phone ? t("dispatch.copied") : t("drivers.copy")}
                             </button>
                           </div>
                         )}
                         {drvProfile?.phone && (
                           <div className="db-phone-row">
-                            <span className="db-phone-role">Driver</span>
+                            <span className="db-phone-role">{t("rideDetail.driver")}</span>
                             <span className="db-phone-num">{drvProfile.phone}</span>
                             <button className="db-phone-copy" onClick={() => copyPhone(drvProfile.phone)}>
-                              {copiedPhone === drvProfile.phone ? "Copied" : "Copy"}
+                              {copiedPhone === drvProfile.phone ? t("dispatch.copied") : t("drivers.copy")}
                             </button>
                           </div>
                         )}
@@ -5712,16 +5726,17 @@ export default function DashboardPage({
       {bookingOpen && (
         <div className="db-modal-overlay">
           <div className="db-modal">
-            <div className="db-modal-title">New ride</div>
+            <div className="db-modal-title">{t("booking.title")}</div>
             <form
               onSubmit={createManualBooking}
               style={{ display: "flex", flexDirection: "column", gap: 12 }}
             >
               <div>
-                <label className="db-modal-label">Passenger phone *</label>
+                <label className="db-modal-label">{t("booking.passengerPhone")}</label>
                 <input
                   autoFocus
                   className="db-modal-input"
+                  /* i18n-ok — a phone-number FORMAT example. */
                   placeholder="+1 (902) 555-1234"
                   value={bookPassenger}
                   onChange={(e) => {
@@ -5748,7 +5763,7 @@ export default function DashboardPage({
               </div>
               <div>
                 <label className="db-modal-label">
-                  Passenger name{" "}
+                  {t("booking.passengerName")}{" "}
                   {bookPassengerRegistered ? (
                     <span
                       style={{
@@ -5760,7 +5775,7 @@ export default function DashboardPage({
                         letterSpacing: 0,
                       }}
                     >
-                      Registered
+                      {t("booking.registered")}
                     </span>
                   ) : (
                     <span
@@ -5773,13 +5788,13 @@ export default function DashboardPage({
                         letterSpacing: 0,
                       }}
                     >
-                      (if not registered)
+                      {t("booking.ifNotRegistered")}
                     </span>
                   )}
                 </label>
                 <input
                   className="db-modal-input"
-                  placeholder="Guest name"
+                  placeholder={t("booking.guestName")}
                   value={bookPassengerName}
                   onChange={(e) => setBookPassengerName(e.target.value)}
                   readOnly={bookPassengerRegistered}
@@ -5787,11 +5802,11 @@ export default function DashboardPage({
                 />
               </div>
               <div style={{ position: "relative" }}>
-                <label className="db-modal-label">Pickup address *</label>
+                <label className="db-modal-label">{t("booking.pickupAddress")}</label>
                 <input
                   ref={pickupInputRef}
                   className="db-modal-input"
-                  placeholder="Start typing an address…"
+                  placeholder={t("booking.addressPlaceholder")}
                   value={bookPickup}
                   onChange={(e) => {
                     setBookPickup(e.target.value);
@@ -5817,11 +5832,11 @@ export default function DashboardPage({
                 )}
               </div>
               <div style={{ position: "relative" }}>
-                <label className="db-modal-label">Drop-off address *</label>
+                <label className="db-modal-label">{t("booking.dropoffAddress")}</label>
                 <input
                   ref={dropoffInputRef}
                   className="db-modal-input"
-                  placeholder="Start typing an address…"
+                  placeholder={t("booking.addressPlaceholder")}
                   value={bookDropoff}
                   onChange={(e) => {
                     setBookDropoff(e.target.value);
@@ -5848,7 +5863,7 @@ export default function DashboardPage({
               </div>
               <div>
                 <label className="db-modal-label">
-                  Estimated fare
+                  {t("booking.estimatedFare")}
                   {bookFareLoading && (
                     <span
                       style={{
@@ -5858,7 +5873,7 @@ export default function DashboardPage({
                         marginLeft: 6,
                       }}
                     >
-                      Calculating…
+                      {t("booking.calculating")}
                     </span>
                   )}
                   {!bookFareLoading &&
@@ -5873,7 +5888,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        {bookDiscountCode ? "Auto-calculated · discount applied" : "Auto-calculated"}
+                        {bookDiscountCode ? t("booking.autoCalcDiscount") : t("booking.autoCalc")}
                       </span>
                     )}
                 </label>
@@ -5887,23 +5902,23 @@ export default function DashboardPage({
                 />
                 {bookFareError && (
                   <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 4 }}>
-                    Could not auto-calculate — enter a fare manually.
+                    {t("booking.autoCalcFailed")}
                   </div>
                 )}
               </div>
               {vehicleClasses.length > 1 && (
                 <div>
-                  <label className="db-modal-label">Vehicle class</label>
+                  <label className="db-modal-label">{t("drivers.vehicleClass")}</label>
                   <select
                     className="db-modal-select"
                     value={bookVehicleClassId}
                     onChange={(e) => setBookVehicleClassId(e.target.value)}
                   >
-                    <option value="">— Any vehicle —</option>
+                    <option value="">{t("booking.anyVehicle")}</option>
                     {vehicleClasses.map((vc) => (
                       <option key={vc.id} value={vc.id}>
                         {vc.name}
-                        {vc.capacity ? ` · seats ${vc.capacity}` : ""}
+                        {vc.capacity ? ` · ${t("drivers.seats", { count: vc.capacity })}` : ""}
                         {vc.surcharge_percent ? ` · +${vc.surcharge_percent}%` : ""}
                       </option>
                     ))}
@@ -5912,7 +5927,7 @@ export default function DashboardPage({
               )}
               <div>
                 <label className="db-modal-label">
-                  Discount code{" "}
+                  {t("booking.discountCode")}{" "}
                   <span
                     style={{
                       fontSize: 10,
@@ -5923,7 +5938,7 @@ export default function DashboardPage({
                       letterSpacing: 0,
                     }}
                   >
-                    (optional — overridden by a verified student discount)
+                    {t("booking.discountCodeHint")}
                   </span>
                 </label>
                 <select
@@ -5931,20 +5946,20 @@ export default function DashboardPage({
                   value={bookDiscountCode}
                   onChange={(e) => setBookDiscountCode(e.target.value)}
                 >
-                  <option value="">— No discount —</option>
+                  <option value="">{t("booking.noDiscount")}</option>
                   {availableDiscountCodes.map((c) => (
                     <option key={c.id} value={c.code}>
                       {c.code}
                       {c.label ? ` — ${c.label}` : ""} ·{" "}
                       {c.amount_type === "percent"
-                        ? `${c.amount}% off`
-                        : `$${c.amount.toFixed(2)} off`}
+                        ? t("booking.percentOff", { n: c.amount })
+                        : t("booking.amountOff", { amount: c.amount.toFixed(2) })}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="db-modal-label">Assign driver</label>
+                <label className="db-modal-label">{t("dispatch.assignDriver")}</label>
                 <select
                   className="db-modal-select"
                   value={bookDriver}
@@ -5956,18 +5971,18 @@ export default function DashboardPage({
                     }
                   }}
                 >
-                  <option value="">— No driver yet —</option>
+                  <option value="">{t("booking.noDriverYet")}</option>
                   {onlineDrivers.map((d) => (
                     <option key={d.id} value={d.id}>
-                      {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                      {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
                       {d.vehicle_model}
-                      {driverPresence(d as any) === "away" ? " · away" : ""}
+                      {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="db-modal-label">Schedule for</label>
+                <label className="db-modal-label">{t("booking.scheduleFor")}</label>
                 <input
                   className="db-modal-input"
                   type="datetime-local"
@@ -5978,7 +5993,7 @@ export default function DashboardPage({
               {bookScheduled && !bookDriver && (
                 <div>
                   <label className="db-modal-label">
-                    Preferred driver{" "}
+                    {t("booking.preferredDriver")}{" "}
                     <span
                       style={{
                         fontSize: 10,
@@ -5989,7 +6004,7 @@ export default function DashboardPage({
                         letterSpacing: 0,
                       }}
                     >
-                      (optional — release stays automatic, this just biases who it goes to)
+                      {t("booking.preferredDriverHint")}
                     </span>
                   </label>
                   <select
@@ -5997,7 +6012,7 @@ export default function DashboardPage({
                     value={bookPreferredDriver}
                     onChange={(e) => setBookPreferredDriver(e.target.value)}
                   >
-                    <option value="">— No preference —</option>
+                    <option value="">{t("booking.noPreference")}</option>
                     {drivers
                       .filter(
                         (d) =>
@@ -6008,7 +6023,7 @@ export default function DashboardPage({
                       )
                       .map((d) => (
                         <option key={d.id} value={d.id}>
-                          {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                          {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
                           {d.vehicle_model}
                         </option>
                       ))}
@@ -6030,7 +6045,7 @@ export default function DashboardPage({
                         checked={bookPreferredExclusive}
                         onChange={(e) => setBookPreferredExclusive(e.target.checked)}
                       />
-                      Exclusive — only offer to this driver, never substitute
+                      {t("booking.exclusive")}
                     </label>
                   )}
                 </div>
@@ -6061,14 +6076,14 @@ export default function DashboardPage({
                     setBookPassengerRegistered(false);
                   }}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   className="db-modal-submit-btn"
                   type="submit"
                   disabled={bookLoading}
                 >
-                  {bookLoading ? "Creating…" : "Create ride"}
+                  {bookLoading ? t("drivers.creating") : t("booking.createRide")}
                 </button>
               </div>
             </form>
@@ -6098,7 +6113,7 @@ export default function DashboardPage({
               }}
             >
               <div className="db-modal-title" style={{ marginBottom: 0 }}>
-                {editingRide ? "Edit ride" : "Ride details"}
+                {editingRide ? t("rideEdit.editRide") : t("rideEdit.rideDetails")}
                 {/* The reference a passenger or driver will quote on the phone.
                     Selectable so a dispatcher can copy it into a report.
                     No null guard: ride_ref is NOT NULL in the DB (20260774). */}
@@ -6141,7 +6156,7 @@ export default function DashboardPage({
                 {rideStatusLabel(rideDetail)}
               </span>
               <span style={{ fontSize: 12, color: "#6B7280" }}>
-                {new Date(rideDetail.created_at).toLocaleString("en-CA", {
+                {fmtDateTime(rideDetail.created_at, {
                   dateStyle: "medium",
                   timeStyle: "short",
                 })}
@@ -6155,16 +6170,16 @@ export default function DashboardPage({
                     so lock the field rather than let dispatch type an edit the
                     server will reject. */}
                 <div style={{ position: "relative" }}>
-                  <label className="db-modal-label">Pickup address</label>
+                  <label className="db-modal-label">{t("rideEdit.pickupAddress")}</label>
                   <input
                     ref={editPickupInputRef}
                     className="db-modal-input"
-                    placeholder="Start typing an address…"
+                    placeholder={t("booking.addressPlaceholder")}
                     value={editPickup}
                     disabled={rideDetail.status === "in_progress"}
                     title={
                       rideDetail.status === "in_progress"
-                        ? "The passenger is already aboard — pickup can't be changed."
+                        ? t("rideEdit.pickupLockedTitle")
                         : undefined
                     }
                     onChange={(e) => {
@@ -6175,7 +6190,7 @@ export default function DashboardPage({
                   />
                   {rideDetail.status === "in_progress" && (
                     <div className="db-modal-hint">
-                      Passenger is aboard — pickup can't be changed.
+                      {t("rideEdit.pickupLockedHint")}
                     </div>
                   )}
                   {editPickupCoords && (
@@ -6193,11 +6208,11 @@ export default function DashboardPage({
                   )}
                 </div>
                 <div style={{ position: "relative" }}>
-                  <label className="db-modal-label">Drop-off address</label>
+                  <label className="db-modal-label">{t("rideEdit.dropoffAddress")}</label>
                   <input
                     ref={editDropoffInputRef}
                     className="db-modal-input"
-                    placeholder="Start typing an address…"
+                    placeholder={t("booking.addressPlaceholder")}
                     value={editDropoff}
                     onChange={(e) => {
                       setEditDropoff(e.target.value);
@@ -6221,7 +6236,7 @@ export default function DashboardPage({
                 </div>
                 <div>
                   <label className="db-modal-label">
-                    Fare estimate
+                    {t("rideDetail.fareEstimate")}
                     {editFareLoading && (
                       <span
                         style={{
@@ -6231,7 +6246,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        Calculating…
+                        {t("booking.calculating")}
                       </span>
                     )}
                     {!editFareLoading && editAddressChanged && !editFareTouched && (
@@ -6243,7 +6258,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        Preview — confirmed on save
+                        {t("rideEdit.farePreview")}
                       </span>
                     )}
                     {editFareTouched && (
@@ -6255,7 +6270,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        Manual — overrides the calculated fare
+                        {t("rideEdit.fareManual")}
                       </span>
                     )}
                   </label>
@@ -6272,9 +6287,7 @@ export default function DashboardPage({
                   />
                   {rideDetail.status === "in_progress" && !editFareTouched && (
                     <div className="db-modal-hint">
-                      Ride under way — the fare is recalculated on save as the
-                      distance already driven plus the distance still to drive,
-                      so it won't match this preview.
+                      {t("rideEdit.fareMidRideHint")}
                     </div>
                   )}
                 </div>
@@ -6283,7 +6296,7 @@ export default function DashboardPage({
                     Dispatch corrects the money with the fare box instead. */}
                 {vehicleClasses.length > 1 && rideDetail.status !== "in_progress" && (
                   <div>
-                    <label className="db-modal-label">Vehicle class</label>
+                    <label className="db-modal-label">{t("drivers.vehicleClass")}</label>
                     <select
                       className="db-modal-select"
                       value={editVehicleClassId}
@@ -6292,11 +6305,11 @@ export default function DashboardPage({
                         setEditVehicleClassTouched(true);
                       }}
                     >
-                      <option value="">— Any vehicle —</option>
+                      <option value="">{t("booking.anyVehicle")}</option>
                       {vehicleClasses.map((vc) => (
                         <option key={vc.id} value={vc.id}>
                           {vc.name}
-                          {vc.capacity ? ` · seats ${vc.capacity}` : ""}
+                          {vc.capacity ? ` · ${t("drivers.seats", { count: vc.capacity })}` : ""}
                           {vc.surcharge_percent ? ` · +${vc.surcharge_percent}%` : ""}
                         </option>
                       ))}
@@ -6304,17 +6317,17 @@ export default function DashboardPage({
                   </div>
                 )}
                 <div>
-                  <label className="db-modal-label">Payment method</label>
+                  <label className="db-modal-label">{t("rideEdit.paymentMethod")}</label>
                   <select
                     className="db-modal-select"
                     value={editPayment}
                     disabled
-                    title="Payment method is fixed at booking and can't be changed here."
+                    title={t("rideEdit.paymentLockedTitle")}
                   >
-                    <option value="cash">Cash</option>
-                    <option value="card">Card</option>
+                    <option value="cash">{t("rideDetail.cash")}</option>
+                    <option value="card">{t("rideDetail.card")}</option>
                   </select>
-                  <div className="db-modal-hint">Set at booking — can't be changed here.</div>
+                  <div className="db-modal-hint">{t("rideEdit.paymentLockedHint")}</div>
                 </div>
                 {/* A booked time can move until the pickup actually happens —
                     edit-ride allows it through `assigned`, and dispatch moving
@@ -6325,7 +6338,7 @@ export default function DashboardPage({
                     rideDetail.status,
                   ) && (
                   <div>
-                    <label className="db-modal-label">Scheduled for</label>
+                    <label className="db-modal-label">{t("booking.scheduleFor")}</label>
                     <input
                       className="db-modal-input"
                       type="datetime-local"
@@ -6337,7 +6350,7 @@ export default function DashboardPage({
                 {rideDetail.status === "scheduled" && !rideDetail.driver_id && (
                   <div>
                     <label className="db-modal-label">
-                      Preferred driver{" "}
+                      {t("booking.preferredDriver")}{" "}
                       <span
                         style={{
                           fontSize: 10,
@@ -6348,7 +6361,7 @@ export default function DashboardPage({
                           letterSpacing: 0,
                         }}
                       >
-                        (optional — release stays automatic, this just biases who it goes to)
+                        {t("booking.preferredDriverHint")}
                       </span>
                     </label>
                     <select
@@ -6356,7 +6369,7 @@ export default function DashboardPage({
                       value={editPreferredDriver}
                       onChange={(e) => setEditPreferredDriver(e.target.value)}
                     >
-                      <option value="">— No preference —</option>
+                      <option value="">{t("booking.noPreference")}</option>
                       {drivers
                         .filter(
                           (d) =>
@@ -6367,7 +6380,7 @@ export default function DashboardPage({
                         )
                         .map((d) => (
                           <option key={d.id} value={d.id}>
-                            {(d as any).profile?.name ?? "Driver"} · {d.vehicle_make}{" "}
+                            {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
                             {d.vehicle_model}
                           </option>
                         ))}
@@ -6389,7 +6402,7 @@ export default function DashboardPage({
                           checked={editPreferredExclusive}
                           onChange={(e) => setEditPreferredExclusive(e.target.checked)}
                         />
-                        Exclusive — only offer to this driver, never substitute
+                        {t("booking.exclusive")}
                       </label>
                     )}
                   </div>
@@ -6417,7 +6430,7 @@ export default function DashboardPage({
                       setEditError(null);
                     }}
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                   <button
                     className="db-modal-submit-btn"
@@ -6425,7 +6438,7 @@ export default function DashboardPage({
                     disabled={editSaving}
                     onClick={() => saveRideEdits(rideDetail.id)}
                   >
-                    {editSaving ? "Saving…" : "Save changes"}
+                    {editSaving ? t("common.saving") : t("discounts.saveChanges")}
                   </button>
                 </div>
               </div>
@@ -6434,40 +6447,45 @@ export default function DashboardPage({
                 {(
                   [
                     [
-                      "Passenger",
-                      (rideDetail as any).passenger?.name ?? "Unknown",
+                      t("rideDetail.passenger"),
+                      (rideDetail as any).passenger?.name ?? t("common.unknown"),
                     ],
-                    ["Phone", (rideDetail as any).passenger?.phone ?? "—"],
+                    [t("rideDetail.phone"), (rideDetail as any).passenger?.phone ?? "—"],
                     [
-                      "Driver",
+                      t("rideDetail.driver"),
                       rideDetail.driver_id
-                        ? `${(rideDetail as any).driver?.profile?.name ?? "Driver"}${
+                        ? `${(rideDetail as any).driver?.profile?.name ?? t("rideDetail.driver")}${
                             rideDetail.status === "scheduled" &&
                             !(rideDetail as any).confirmed_by_driver
-                              ? " (pending confirmation)"
+                              ? ` ${t("rideDetail.pendingConfirmation")}`
                               : ""
                           }`
-                        : "Unassigned",
+                        : t("rideDetail.unassigned"),
                     ],
-                    ["Pickup", rideDetail.pickup_address],
-                    ["Drop-off", rideDetail.dropoff_address],
+                    [t("rideDetail.pickup"), rideDetail.pickup_address],
+                    [t("rideDetail.dropoff"), rideDetail.dropoff_address],
                     [
-                      "Fare estimate",
+                      t("rideDetail.fareEstimate"),
                       rideDetail.fare_estimate
                         ? `$${rideDetail.fare_estimate.toFixed(2)}`
                         : "—",
                     ],
                     [
-                      "Fare final",
+                      t("rideDetail.fareFinal"),
                       rideDetail.fare_final
                         ? `$${rideDetail.fare_final.toFixed(2)}`
                         : "—",
                     ],
-                    ["Payment", rideDetail.payment_method],
+                    [
+                      t("rideDetail.payment"),
+                      rideDetail.payment_method === "cash"
+                        ? t("rideDetail.cash")
+                        : t("rideDetail.card"),
+                    ],
                     ...(rideDetail.payment_method === "card" && rideDetail.settlement_route
                       ? ([
                           [
-                            "Vellon fee",
+                            t("rideDetail.vellonFee"),
                             rideDetail.fare_final != null &&
                             rideDetail.platform_fee_percent_at_completion != null
                               ? `$${(
@@ -6477,13 +6495,13 @@ export default function DashboardPage({
                               : "—",
                           ],
                           [
-                            "Card processing fee",
+                            t("rideDetail.cardFee"),
                             rideDetail.stripe_fee != null
                               ? `$${rideDetail.stripe_fee.toFixed(2)}`
-                              : "Pending",
+                              : t("rideDetail.pending"),
                           ],
                           [
-                            "Net settled",
+                            t("rideDetail.netSettled"),
                             rideDetail.fare_final != null &&
                             rideDetail.platform_fee_percent_at_completion != null &&
                             rideDetail.stripe_fee != null
@@ -6495,26 +6513,22 @@ export default function DashboardPage({
                                 ).toFixed(2)}`
                               : "—",
                           ],
-                          [
-                            "Settlement",
-                            SETTLEMENT_ROUTE_LABELS[rideDetail.settlement_route] ??
-                              rideDetail.settlement_route,
-                          ],
+                          [settlementLabel, settlementRouteLabel(rideDetail.settlement_route)],
                           ...(rideDetail.refunded_amount_cents &&
                           rideDetail.refunded_amount_cents > 0
                             ? ([
                                 [
-                                  "Refunded to passenger",
+                                  t("rideDetail.refundedToPassenger"),
                                   `$${(rideDetail.refunded_amount_cents / 100).toFixed(2)}` +
                                     (rideDetail.refund_reason
-                                      ? ` (${REFUND_REASON_LABELS[rideDetail.refund_reason] ?? rideDetail.refund_reason})`
+                                      ? ` (${refundReasonLabel(rideDetail.refund_reason)})`
                                       : ""),
                                 ],
                                 ...(rideDetail.transfer_reversed_cents &&
                                 rideDetail.transfer_reversed_cents > 0
                                   ? ([
                                       [
-                                        "Clawed back from payout",
+                                        t("rideDetail.clawedBack"),
                                         `$${(rideDetail.transfer_reversed_cents / 100).toFixed(2)}`,
                                       ],
                                     ] as [string, string][])
@@ -6529,20 +6543,21 @@ export default function DashboardPage({
                     // resolving it live would answer a dispute about last March
                     // with whoever holds Car 7 today.
                     ...((rideDetail as any).car_number_at_assignment
-                      ? ([["Car", `Car ${(rideDetail as any).car_number_at_assignment}`]] as [string, string][])
+                      ? ([[
+                          t("rideDetail.car"),
+                          t("rideDetail.carNumber", { n: (rideDetail as any).car_number_at_assignment }),
+                        ]] as [string, string][])
                       : []),
                     [
-                      "Scheduled",
+                      t("rideDetail.scheduled"),
                       rideDetail.scheduled_at
-                        ? new Date(rideDetail.scheduled_at).toLocaleString(
-                            "en-CA",
-                          )
-                        : "Immediate",
+                        ? fmtDateTime(rideDetail.scheduled_at)
+                        : t("rideDetail.immediate"),
                     ],
                     ...(rideDetail.status === "cancelled" && rideDetail.cancelled_reason
                       ? ([[
-                          "Cancelled reason",
-                          CANCEL_REASON_LABELS[rideDetail.cancelled_reason] ?? rideDetail.cancelled_reason,
+                          t("rideDetail.cancelledReason"),
+                          cancelReasonLabel(rideDetail.cancelled_reason),
                         ]] as [string, string][])
                       : []),
                     ...((): [string, string][] => {
@@ -6550,23 +6565,25 @@ export default function DashboardPage({
                         rideDetail.arrived_at,
                         rideDetail.no_show_at,
                       );
-                      return waited ? [["Driver waited", waited]] : [];
+                      return waited ? [[t("rideDetail.driverWaited"), waited]] : [];
                     })(),
                     ...(rideDetail.declined_by && rideDetail.declined_by.length > 0
                       ? ([[
-                          "Declined by",
+                          t("rideDetail.declinedBy"),
                           [...new Set(rideDetail.declined_by)]
-                            .map((id) => drivers.find((d) => d.id === id)?.profile?.name ?? "Unknown driver")
+                            .map((id) => drivers.find((d) => d.id === id)?.profile?.name ?? t("rideDetail.unknownDriver"))
                             .join(", "),
                         ]] as [string, string][])
                       : []),
                   ] as [string, string][]
                 ).map(([label, value]) => {
+                  // Compared against `settlementLabel`, the SAME t() call used
+                  // to build the row — not a literal. This used to read
+                  // `label === "Settlement"`, which a translation silently
+                  // turns into never-true: the warning styling would vanish in
+                  // French with nothing failing.
                   const isSettlementWarning =
-                    label === "Settlement" &&
-                    ["transfer_failed", "transfer_reversed", "refund_reversed", "refund_review", "reversal_failed", "retransfer_failed"].includes(
-                      rideDetail.settlement_route ?? "",
-                    );
+                    label === settlementLabel && settlementRouteIsWarning;
                   return (
                     <div
                       key={label}
@@ -6587,7 +6604,7 @@ export default function DashboardPage({
                     style={{ flex: 1 }}
                     onClick={() => setRideDetail(null)}
                   >
-                    Close
+                    {t("common.close")}
                   </button>
                   {!NON_EDITABLE_STATUSES.has(rideDetail.status) && (
                     <button
@@ -6595,7 +6612,7 @@ export default function DashboardPage({
                       style={{ flex: 1 }}
                       onClick={() => startEditRide(rideDetail)}
                     >
-                      Edit
+                      {t("common.edit")}
                     </button>
                   )}
                 </div>

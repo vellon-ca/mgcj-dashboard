@@ -30,6 +30,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { loadGoogleMaps, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM } from "../lib/serviceAreaFraming";
+import { Trans, useTranslation } from "react-i18next";
 
 interface Props {
   companyId: string;
@@ -98,6 +99,7 @@ function geoJsonToPaths(
 function ringToEwkt(path: google.maps.LatLngLiteral[]): string {
   const pts = path.map(p => `${p.lng} ${p.lat}`);
   if (pts.length && pts[0] !== pts[pts.length - 1]) pts.push(pts[0]);
+  // i18n-ok — EWKT, a wire format PostGIS parses. Not copy.
   return `SRID=4326;MULTIPOLYGON(((${pts.join(",")})))`;
 }
 
@@ -105,6 +107,7 @@ const toLiterals = (path: google.maps.LatLng[]): google.maps.LatLngLiteral[] =>
   path.map(p => ({ lat: p.lat(), lng: p.lng() }));
 
 export default function ServiceAreasSection({ companyId }: Props) {
+  const { t } = useTranslation();
   const [areas, setAreas] = useState<ServiceArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -313,7 +316,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
         }
       })
       .catch(() => {
-        if (!cancelled) setError("Google Maps failed to load.");
+        if (!cancelled) setError(t("serviceAreas.mapsFailed"));
       });
 
     return () => {
@@ -483,7 +486,14 @@ export default function ServiceAreasSection({ companyId }: Props) {
 
     const row: Record<string, unknown> = {
       company_id: companyId,
-      name: spec.name ?? (spec.kind === "circle" ? "New area" : "New service area"),
+      // Translated deliberately, unlike the guest-passenger default in
+      // DashboardPage (see the comment there). This value is also written to a
+      // row, but it is the dispatcher's own label for their own area, shown to
+      // them immediately in an editable field and renamed on the spot; nothing
+      // matches on it and nobody else ever reads it. The line to watch is
+      // whether a stored string is a SENTINEL other code or other people
+      // depend on — this one is not.
+      name: spec.name ?? (spec.kind === "circle" ? t("serviceAreas.newArea") : t("serviceAreas.newServiceArea")),
       shape_kind: spec.kind,
       allows_pickup: spec.allowsPickup ?? true,
       allows_dropoff: true,
@@ -558,7 +568,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
   }
 
   async function removeArea(id: string) {
-    if (!confirm("Delete this service area? Bookings there will be refused once enforcement is on.")) return;
+    if (!confirm(t("serviceAreas.confirmDelete"))) return;
     setSaving(true);
     const { error } = await supabase.from("service_areas").delete().eq("id", id);
     setSaving(false);
@@ -627,69 +637,68 @@ export default function ServiceAreasSection({ companyId }: Props) {
 
       <div className="st-header">
         <div>
-          <div className="st-title">Service Areas</div>
-          <div className="st-subtitle">
-            Where you pick up and where you'll drive to. Draw your town freehand, and
-            add far destinations — the airport, the next city — by searching for them.
-            Anywhere you haven't drawn is somewhere you don't serve.
-          </div>
+          <div className="st-title">{t("settings.sections.serviceAreas")}</div>
+          <div className="st-subtitle">{t("serviceAreas.subtitle")}</div>
         </div>
       </div>
 
       {areas.length === 0 && !loading && (
         <div className="sa-impact ok">
-          No areas drawn yet, so you currently serve <strong>everywhere</strong>.
-          Nothing is refused until you draw your first area.
+          <Trans i18nKey="serviceAreas.noneDrawn" components={{ s: <strong /> }} />
         </div>
       )}
 
       {noPickupArea && (
         <div className="sa-warn">
-          None of your active areas allow <strong>pickups</strong>. Tick "pick up here"
-          on the area you work out of — otherwise this list only describes where you'll
-          drive to.
+          <Trans i18nKey="serviceAreas.noPickupArea" components={{ s: <strong /> }} />
         </div>
       )}
       {noDropoffArea && (
         <div className="sa-warn">
-          None of your active areas allow <strong>drop-offs</strong>.
+          <Trans i18nKey="serviceAreas.noDropoffArea" components={{ s: <strong /> }} />
         </div>
       )}
 
       {impact && impact.total > 0 && (impact.pickup_refused > 0 || impact.dropoff_refused > 0) && (
         <div className="sa-impact warn">
-          Of your last {impact.total} rides, these areas would have refused{" "}
-          <strong>{impact.pickup_refused}</strong> on pickup and{" "}
-          <strong>{impact.dropoff_refused}</strong> on drop-off.
+          {/* One sentence, one key, with the three numbers interpolated: the
+              clause order differs in French, so splitting it around the <strong>
+              tags would bake English word order into the component. */}
+          <Trans
+            i18nKey="serviceAreas.impactRefused"
+            values={{
+              total: impact.total,
+              pickup: impact.pickup_refused,
+              dropoff: impact.dropoff_refused,
+            }}
+            components={{ s: <strong /> }}
+          />
         </div>
       )}
       {impact && impact.total > 0 && impact.pickup_refused === 0 && impact.dropoff_refused === 0 && areas.length > 0 && (
         <div className="sa-impact ok">
-          These areas cover all of your last {impact.total} rides.
+          {t("serviceAreas.impactCoversAll", { count: impact.total })}
         </div>
       )}
 
       {impactBlocked && (
-        <div className="sa-warn">
-          Can't check these areas against your recent rides — this account's
-          company doesn't match the one being edited.
-        </div>
+        <div className="sa-warn">{t("serviceAreas.impactBlocked")}</div>
       )}
 
       {error && <div className="sa-warn">{error}</div>}
 
       <div className="sa-city">
-        <span className="sa-city-label">Your city</span>
+        <span className="sa-city-label">{t("serviceAreas.yourCity")}</span>
         <input
           ref={cityInputRef}
           className="sa-search"
           defaultValue={city?.service_city ?? ""}
-          placeholder="Search your city — e.g. Moncton, NB"
+          placeholder={t("serviceAreas.cityPlaceholder")}
         />
         <span className="sa-meta">
           {city?.service_city
-            ? "Frames your maps until you draw an area."
-            : "Not set — your maps have nothing to open on."}
+            ? t("serviceAreas.cityFrames")
+            : t("serviceAreas.cityUnset")}
         </span>
       </div>
 
@@ -700,19 +709,19 @@ export default function ServiceAreasSection({ companyId }: Props) {
         >
           {drawMode === "polygon"
             ? draftCount === 0
-              ? "Click the map to start…"
-              : `${draftCount} point${draftCount === 1 ? "" : "s"} — double-click to close`
-            : "Draw an area"}
+              ? t("serviceAreas.clickToStart")
+              : t("serviceAreas.pointsDrawn", { count: draftCount })
+            : t("serviceAreas.drawArea")}
         </button>
 
         {drawMode === "polygon" && draftCount >= 3 && (
           <button className="sa-btn active" onClick={finishPolygon}>
-            Finish area
+            {t("serviceAreas.finishArea")}
           </button>
         )}
         {drawMode === "polygon" && draftCount > 0 && (
           <button className="sa-btn" onClick={clearDraft}>
-            Clear
+            {t("common.clear")}
           </button>
         )}
 
@@ -720,25 +729,23 @@ export default function ServiceAreasSection({ companyId }: Props) {
           className={`sa-btn${drawMode === "circle" ? " active" : ""}`}
           onClick={() => setDrawMode(drawMode === "circle" ? null : "circle")}
         >
-          {drawMode === "circle" ? "Click a centre point…" : "Drop a circle"}
+          {drawMode === "circle" ? t("serviceAreas.clickCentre") : t("serviceAreas.dropCircle")}
         </button>
         <input
           ref={searchInputRef}
           className="sa-search"
-          placeholder="Or search a destination — airport, hospital, next town…"
+          placeholder={t("serviceAreas.destinationPlaceholder")}
         />
-        {saving && <span className="sa-meta">Saving…</span>}
+        {saving && <span className="sa-meta">{t("common.saving")}</span>}
       </div>
 
       <div className="sa-grid">
         <div ref={mapDivRef} className="sa-map" />
 
         <div className="sa-list">
-          {loading && <div className="sa-empty">Loading…</div>}
+          {loading && <div className="sa-empty">{t("common.loading")}</div>}
           {!loading && areas.length === 0 && (
-            <div className="sa-empty">
-              Nothing drawn yet. Start with the town you work out of.
-            </div>
+            <div className="sa-empty">{t("serviceAreas.nothingDrawn")}</div>
           )}
           {areas.map(a => (
             <div
@@ -757,9 +764,11 @@ export default function ServiceAreasSection({ companyId }: Props) {
               />
               <div className="sa-meta">
                 {a.shape_kind === "circle"
-                  ? `Circle · ${(Number(a.radius_m ?? 0) / 1000).toFixed(1)} km radius`
-                  : "Drawn area"}
-                {!a.active && " · inactive"}
+                  ? t("serviceAreas.circleRadius", {
+                      km: (Number(a.radius_m ?? 0) / 1000).toFixed(1),
+                    })
+                  : t("serviceAreas.drawnArea")}
+                {!a.active && ` · ${t("common.inactiveLower")}`}
               </div>
 
               <label className="sa-check" onClick={e => e.stopPropagation()}>
@@ -768,7 +777,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
                   checked={a.allows_pickup}
                   onChange={e => patch(a.id, { allows_pickup: e.target.checked })}
                 />
-                Pick up here
+                {t("serviceAreas.pickUpHere")}
               </label>
               <label className="sa-check" onClick={e => e.stopPropagation()}>
                 <input
@@ -776,7 +785,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
                   checked={a.allows_dropoff}
                   onChange={e => patch(a.id, { allows_dropoff: e.target.checked })}
                 />
-                Drop off here
+                {t("serviceAreas.dropOffHere")}
               </label>
               <label className="sa-check" onClick={e => e.stopPropagation()}>
                 <input
@@ -784,21 +793,20 @@ export default function ServiceAreasSection({ companyId }: Props) {
                   checked={a.active}
                   onChange={e => patch(a.id, { active: e.target.checked })}
                 />
-                Active
+                {t("common.active")}
               </label>
 
               <button
                 className="sa-del"
                 onClick={e => { e.stopPropagation(); removeArea(a.id); }}
               >
-                Delete
+                {t("common.delete")}
               </button>
             </div>
           ))}
           {selected && (
             <div className="sa-meta" style={{ marginTop: 10 }}>
-              Selected areas can be reshaped on the map — drag a vertex, or drag the
-              circle's edge. Changes save as you go.
+              {t("serviceAreas.reshapeHint")}
             </div>
           )}
         </div>
