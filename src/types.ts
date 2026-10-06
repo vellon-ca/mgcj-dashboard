@@ -21,7 +21,12 @@ export interface Driver {
   vehicle_model: string | null;
   vehicle_year: number | null;
   plate_number: string | null;
+  // RESTRICTED-TIER MEMBERSHIP, normally null — not "the driver's class".
+  // Matching reads `seats`; see migration 20261005010000.
   vehicle_class_id: string | null;
+  seats: number | null;
+  // Admin-set only: a false claim strands a wheelchair user at the curb.
+  wheelchair_accessible: boolean | null;
   is_active: boolean;
   current_lat: number | null;
   current_lng: number | null;
@@ -37,6 +42,15 @@ export interface Ride {
   // The car that did the ride, frozen at assignment (20260775). Not the
   // driver's current car_number: a car number is a reassignable slot.
   car_number_at_assignment: string | null;
+  // A passenger's accessibility requirement. A hard dispatch filter, never
+  // priced — see migration 20261005010000.
+  requires_wheelchair: boolean | null;
+  // Set by scheduled-release in the final minutes before a pickup it would
+  // otherwise miss, permitting a LARGER vehicle. Server-controlled.
+  allow_larger_vehicle: boolean | null;
+  // Frozen class name/surcharge, so a rename or delete cannot rewrite history.
+  vehicle_class_name_at_booking: string | null;
+  vehicle_class_surcharge_at_booking: number | null;
   status:
     | "pending"
     | "offered"

@@ -16,7 +16,9 @@
     "seatsChange": "Places {{from}} → {{to}}",
     "supportEmailCleared": "courriel d'assistance effacé",
     "supportEmailSet": "courriel d'assistance défini",
-    "surchargeChange": "Supplément {{from}} % → {{to}} %"
+    "surchargeChange": "Supplément {{from}} % → {{to}} %",
+    "rampOn": "Marqué accessible en fauteuil roulant",
+    "rampOff": "Plus accessible en fauteuil roulant"
   },
   "analytics": {
     "acrossReviews_one": "sur {{count}} évaluation",
@@ -258,7 +260,9 @@
     "registered": "Inscrit",
     "scheduleFor": "Planifier pour",
     "title": "Nouvelle course",
-    "errInvalidPhone": "Saisissez un numéro de téléphone de passager valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays."
+    "errInvalidPhone": "Saisissez un numéro de téléphone de passager valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays.",
+    "wheelchairRequired": "Véhicule accessible en fauteuil roulant requis",
+    "wheelchairHint": "Sans frais supplémentaires"
   },
   "cancelReason": {
     "dispatchCancelled": "Annulée par la répartition",
@@ -458,7 +462,10 @@
     "recent": "Récentes",
     "scheduledRides": "Courses planifiées",
     "unknownPassenger": "Passager inconnu",
-    "waitingForConfirm": "En attente de la confirmation de {{name}}"
+    "waitingForConfirm": "En attente de la confirmation de {{name}}",
+    "mismatchWheelchair": "cette course exige un véhicule accessible en fauteuil roulant et celui-ci n'est pas marqué comme tel",
+    "mismatchSeats": "cette course exige {{needs}} places et ce véhicule en a {{has}}",
+    "confirmMismatch": "Attribuer quand même ?\n\nLe véhicule de ce chauffeur ne convient peut-être pas à la course — {{reason}}."
   },
   "drivers": {
     "activateBody": "{{name}} retrouvera l'accès complet à l'appli et recommencera à recevoir des courses.",
@@ -498,7 +505,6 @@
     "makePlaceholder": "ex. Dodge",
     "model": "Modèle",
     "modelPlaceholder": "ex. Grand Caravan",
-    "noClass": "Aucune catégorie",
     "noMatches": "Aucun chauffeur ne correspond à votre recherche",
     "noneRegistered": "Aucun chauffeur inscrit",
     "noRidesYet": "Aucune course",
@@ -523,7 +529,14 @@
     "viewTrail": "Voir le trajet de ce chauffeur",
     "viewTrailHint": "Où il a conduit, et où il s'est arrêté",
     "year": "Année",
-    "inviteInvalidPhone": "Saisissez un numéro de téléphone valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays."
+    "inviteInvalidPhone": "Saisissez un numéro de téléphone valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays.",
+    "seatsField": "Places",
+    "seatsHint": "La taille du véhicule. C'est là-dessus que la répartition fait la correspondance — le chauffeur la choisit dans la même liste dans l'application.",
+    "wheelchairAccessible": "Accessible en fauteuil roulant",
+    "wheelchairHint": "Équipé d'une rampe ou d'un système d'arrimage. Vous seul pouvez le définir — les chauffeurs le voient en lecture seule.",
+    "restrictedTier": "Catégorie restreinte",
+    "noRestrictedTier": "Aucune",
+    "restrictedTierHint": "Nécessaire uniquement pour les catégories marquées restreintes. Toutes les autres sont attribuées selon la taille du véhicule."
   },
   "escReason": {
     "driverNeverCame": "Le chauffeur n'est jamais arrivé",
@@ -573,7 +586,8 @@
     "staffCreated": "Membre d'équipe ajouté",
     "staffDeactivated": "Membre d'équipe désactivé",
     "staffReactivated": "Membre d'équipe réactivé",
-    "staffUpdated": "Membre d'équipe modifié"
+    "staffUpdated": "Membre d'équipe modifié",
+    "driverAccessibilityUpdated": "Accessibilité modifiée"
   },
   "flagReason": {
     "driverNeverCame": "Le chauffeur n'est jamais arrivé",
@@ -780,7 +794,10 @@
     "settlement": "Règlement",
     "unassigned": "Non assignée",
     "unknownDriver": "Chauffeur inconnu",
-    "vellonFee": "Frais Vellon"
+    "vellonFee": "Frais Vellon",
+    "vehicleClass": "Catégorie de véhicule",
+    "accessibility": "Accessibilité",
+    "wheelchairRequired": "Véhicule accessible en fauteuil roulant"
   },
   "rideEdit": {
     "dropoffAddress": "Adresse de dépôt",
@@ -931,7 +948,23 @@
     "vcSubtitle": "Définissez les types de véhicules de votre flotte. Les passagers choisissent une catégorie à la réservation; le supplément s'ajoute à votre tarif de base au kilomètre.",
     "vcSurcharge": "Supplément",
     "vcSurchargePct": "Supplément %",
-    "you": "(vous)"
+    "you": "(vous)",
+    "vcMinSeats": "Places minimales",
+    "vcIcon": "Icône",
+    "vcAccess": "Appartenance",
+    "vcRestricted": "Sur attribution",
+    "vcBySize": "Selon la taille",
+    "vcRestrictedHint": "Restreinte : seuls les chauffeurs que vous désignez peuvent assurer cette catégorie. Sinon, tout véhicule ayant assez de places est admissible.",
+    "vcFleetSizes": "Tailles de votre parc : {{sizes}} places. Les chauffeurs choisissent parmi celles-ci.",
+    "vcWarnRestricted": "{{count}} chauffeur(s) peuvent l'assurer aujourd'hui selon la taille du véhicule et cesseront de le faire jusqu'à ce que vous les y affectiez dans leur fiche",
+    "vcWarnCapacity": "{{count}} chauffeur(s) qui l'assurent aujourd'hui ont moins de {{seats}} places et cesseront de l'assurer",
+    "vcWarnConfirm": "Enregistrer quand même ?\n\n{{reason}}. Les courses déjà réservées dans cette catégorie peuvent s'afficher comme non couvertes jusqu'à ce qu'un chauffeur soit admissible.",
+    "vcIconSedan": "Berline",
+    "vcIconVan": "Fourgonnette",
+    "vcIconSuv": "VUS",
+    "vcIconLuxury": "Luxe / haut de gamme",
+    "vcIconTruck": "Camionnette",
+    "vcIconBus": "Autobus / navette"
   },
   "settle": {
     "afterVellonFee": "après les frais Vellon",
