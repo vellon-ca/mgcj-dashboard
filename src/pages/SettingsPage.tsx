@@ -64,6 +64,31 @@ interface StaffMember {
   created_at: string;
 }
 
+// The icons an admin may choose, stored as a slug in `vehicle_classes.icon`.
+//
+// THE SLUGS MUST MATCH `CLASS_ICONS` in mgcj-app's PassengerHomeScreen, which
+// is what actually renders them to passengers. The emoji here are previews
+// only — this repo has no icon library (checked: no react-icons, no lucide),
+// and the picker's job is to let an admin recognise the choice, not to render
+// the final artwork.
+//
+// Stored explicitly rather than derived from the class NAME, which is what the
+// app used to do: keying an icon off `name.toLowerCase()` silently punished the
+// free naming the column allows, so "Family Van" or "Big" got a generic sedan.
+const CLASS_ICON_CHOICES: { slug: string; emoji: string }[] = [
+  { slug: "sedan",      emoji: "\u{1F697}" },
+  { slug: "van",        emoji: "\u{1F690}" },
+  { slug: "suv",        emoji: "\u{1F699}" },
+  { slug: "luxury",     emoji: "\u{1F3CE}\u{FE0F}" },
+  { slug: "truck",      emoji: "\u{1F6FB}" },
+  { slug: "wheelchair", emoji: "\u{267F}" },
+  { slug: "bus",        emoji: "\u{1F68C}" },
+];
+
+function iconEmoji(slug: string | null): string {
+  return CLASS_ICON_CHOICES.find(c => c.slug === slug)?.emoji ?? "\u{1F697}";
+}
+
 export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const { t } = useTranslation();
   const { localeMode, setLocaleMode, available } = useLocale();
@@ -125,8 +150,22 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
   const [numError, setNumError] = useState<string | null>(null);
 
   // Vehicle classes state
-  interface VehicleClass { id: string; name: string; capacity: number; surcharge_percent: number; display_order: number; is_active: boolean; }
+  // `capacity` is the MINIMUM SEATS a vehicle needs to serve this class, and
+  // the figure shown to passengers — one number for both, so the booking card
+  // cannot promise seven while matching demands five. `restricted` means
+  // membership is granted by dispatch rather than earned by size. See migration
+  // 20261005010000.
+  interface VehicleClass { id: string; name: string; capacity: number; surcharge_percent: number; display_order: number; is_active: boolean; restricted: boolean; icon: string | null; }
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClass[]>([]);
+  const [editRestricted, setEditRestricted] = useState(false);
+  const [editIcon, setEditIcon] = useState<string>("sedan");
+  const [newRestricted, setNewRestricted] = useState(false);
+  const [newIcon, setNewIcon] = useState<string>("sedan");
+  const fleetSizes = useMemo(
+    () => [...new Set(vehicleClasses.filter(v => v.is_active).map(v => v.capacity))]
+            .sort((a, b) => a - b),
+    [vehicleClasses],
+  );
   const [vcLoading, setVcLoading] = useState(true);
   const [editingClassId, setEditingClassId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -366,7 +405,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     setVcLoading(true);
     const { data } = await supabase
       .from("vehicle_classes")
-      .select("id, name, capacity, surcharge_percent, display_order, is_active")
+      .select("id, name, capacity, surcharge_percent, display_order, is_active, restricted, icon")
       .eq("company_id", companyId)
       .order("display_order");
     setVehicleClasses(data ?? []);
@@ -378,25 +417,67 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     setEditName(vc.name);
     setEditCapacity(String(vc.capacity));
     setEditSurcharge(String(vc.surcharge_percent));
+    setEditRestricted(vc.restricted);
+    setEditIcon(vc.icon ?? "sedan");
     setEditError(null);
   }
 
   async function saveEditClass() {
     if (!editingClassId) return;
     const before = vehicleClasses.find(v => v.id === editingClassId);
+    if (!before) return;
     const cap = parseInt(editCapacity);
     const sur = parseFloat(editSurcharge);
     if (!editName.trim()) { setEditError(t("settings.errNameRequired")); return; }
     if (isNaN(cap) || cap < 1) { setEditError(t("settings.errCapacityMin")); return; }
     if (isNaN(sur) || sur < 0) { setEditError(t("settings.errSurchargeMin")); return; }
+    // ── Warn before silently shrinking who can serve this class ────────────
+    //
+    // Both of these are one-click ways to make a class unservable, with nothing
+    // on screen explaining why afterwards: rides already booked on it go
+    // `uncovered` and assign-ride returns `no_drivers`. That is the same shape
+    // as the deactivate-a-class bug this whole change fixes, so it would be
+    // careless to close one door and leave the other open.
+    //
+    // Counted against the live table rather than any local state: `drivers` is
+    // not loaded on this page, and a stale count is worse than no count when
+    // the whole point is to say how many people are affected.
+    const turningRestricted = editRestricted && !before.restricted;
+    const raisingCapacity = cap > before.capacity;
+    if (turningRestricted || raisingCapacity) {
+      // Who serves it TODAY and would stop: everyone meeting the old floor
+      // who either fails the new floor, or loses it to explicit membership.
+      // The migration nulled every `vehicle_class_id`, so a newly restricted
+      // class starts with nobody admitted — the count is the full set.
+      let q = supabase
+        .from("drivers")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .gte("seats", before.capacity);
+      if (raisingCapacity && !turningRestricted) q = q.lt("seats", cap);
+      const { count } = await q;
+      if (count && count > 0) {
+        const reason = turningRestricted
+          ? t("settings.vcWarnRestricted", { count })
+          : t("settings.vcWarnCapacity", { count, seats: cap });
+        if (!confirm(t("settings.vcWarnConfirm", { reason }))) return;
+      }
+    }
+
     setEditSaving(true);
     const { error: err } = await supabase
       .from("vehicle_classes")
-      .update({ name: editName.trim(), capacity: cap, surcharge_percent: sur })
+      .update({
+        name: editName.trim(),
+        capacity: cap,
+        surcharge_percent: sur,
+        restricted: editRestricted,
+        icon: editIcon,
+      })
       .eq("id", editingClassId);
     setEditSaving(false);
     if (err) { setEditError(err.message); return; }
-    if (before) {
+    {
       logDispatchEvent({
         companyId,
         dispatcherId: adminId,
@@ -409,6 +490,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           capacity_to: cap,
           surcharge_percent_from: before.surcharge_percent,
           surcharge_percent_to: sur,
+          restricted_from: before.restricted,
+          restricted_to: editRestricted,
         },
       });
     }
@@ -442,6 +525,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
       surcharge_percent: sur,
       display_order: nextOrder,
       is_active: true,
+      restricted: newRestricted,
+      icon: newIcon,
     });
     setAddSaving(false);
     if (err) { setAddError(err.message); return; }
@@ -449,10 +534,11 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
       companyId,
       dispatcherId: adminId,
       eventType: "settings.vehicle_class_created",
-      details: { name: newName.trim(), capacity: cap, surcharge_percent: sur },
+      details: { name: newName.trim(), capacity: cap, surcharge_percent: sur, restricted: newRestricted },
     });
     setAddingClass(false);
     setNewName(''); setNewCapacity(''); setNewSurcharge('0');
+    setNewRestricted(false); setNewIcon('sedan');
     fetchVehicleClasses();
   }
 
@@ -663,6 +749,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .vc-add-class-btn { background: none; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px; color: #6B7280; font-size: 13px; padding: 9px 16px; cursor: pointer; font-family: system-ui, sans-serif; display: flex; align-items: center; gap: 6px; margin-top: 8px; transition: color 0.12s; max-width: 620px; width: 100%; }
         .vc-add-class-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
         .vc-error { font-size: 12px; color: #F87171; margin-top: 6px; }
+        .vc-fleet-sizes { font-size: 12px; color: #6B7280; margin: 4px 0 12px; }
 
         .st-select { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 9px 10px; outline: none; width: 100%; box-sizing: border-box; margin-bottom: 14px; }
         .st-textarea { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 10px; outline: none; width: 100%; box-sizing: border-box; min-height: 100px; resize: vertical; }
@@ -716,9 +803,10 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                     <thead>
                       <tr>
                         <th className="vc-th">{t("settings.vcClass")}</th>
-                        <th className="vc-th">{t("settings.vcSeats")}</th>
+                        <th className="vc-th">{t("settings.vcMinSeats")}</th>
                         <th className="vc-th">{t("settings.vcSurcharge")}</th>
                         <th className="vc-th">{t("settings.vcEffectiveRate")}</th>
+                        <th className="vc-th">{t("settings.vcAccess")}</th>
                         <th className="vc-th">{t("common.status")}</th>
                         <th className="vc-th" />
                       </tr>
@@ -733,9 +821,26 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         return (
                           <tr key={vc.id} className="vc-row">
                             <td className="vc-td" style={{ minWidth: 120 }}>
-                              {isEditing
-                                ? <input className="vc-input" value={editName} onChange={e => setEditName(e.target.value)} />
-                                : <strong>{vc.name}</strong>}
+                              {isEditing ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <select
+                                    className="vc-input narrow"
+                                    value={editIcon}
+                                    onChange={e => setEditIcon(e.target.value)}
+                                    aria-label={t("settings.vcIcon")}
+                                  >
+                                    {CLASS_ICON_CHOICES.map(c => (
+                                      <option key={c.slug} value={c.slug}>{c.emoji}</option>
+                                    ))}
+                                  </select>
+                                  <input className="vc-input" value={editName} onChange={e => setEditName(e.target.value)} />
+                                </div>
+                              ) : (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <span aria-hidden="true">{iconEmoji(vc.icon)}</span>
+                                  <strong>{vc.name}</strong>
+                                </span>
+                              )}
                             </td>
                             <td className="vc-td">
                               {isEditing
@@ -756,6 +861,22 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                               {isEditing
                                 ? <span className="vc-rate-preview">${previewRate.toFixed(2)}{t("common.perKm")}</span>
                                 : <span className={vc.is_active ? "vc-rate-preview" : "vc-td muted"}>${effectiveRate.toFixed(2)}{t("common.perKm")}</span>}
+                            </td>
+                            <td className="vc-td">
+                              {isEditing ? (
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={editRestricted}
+                                    onChange={e => setEditRestricted(e.target.checked)}
+                                  />
+                                  <span style={{ fontSize: 12 }}>{t("settings.vcRestricted")}</span>
+                                </label>
+                              ) : (
+                                <span style={{ fontSize: 12, color: '#6B7280' }}>
+                                  {vc.restricted ? t("settings.vcRestricted") : t("settings.vcBySize")}
+                                </span>
+                              )}
                             </td>
                             <td className="vc-td">
                               <span className={vc.is_active ? "vc-badge-active" : "vc-badge-inactive"}>
@@ -786,6 +907,17 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   </table>
                   {editError && <div className="vc-error">{editError}</div>}
 
+                  {/* Derived, never a second list to maintain: the sizes a
+                      driver is offered in the app are exactly the distinct
+                      capacities of the active classes above. Shown so an admin
+                      can see what their drivers will be asked, which is the
+                      whole reason the two are the same list. */}
+                  {fleetSizes.length > 0 && (
+                    <div className="vc-fleet-sizes">
+                      {t("settings.vcFleetSizes", { sizes: fleetSizes.join(", ") })}
+                    </div>
+                  )}
+
                   {addingClass ? (
                     <div className="vc-add-row">
                       <div className="vc-add-grid">
@@ -794,7 +926,15 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                           <input className="vc-input" placeholder={t("settings.vcClassNamePlaceholder")} value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
                         </div>
                         <div className="vc-add-field">
-                          <div className="vc-add-label">{t("settings.vcSeats")}</div>
+                          <div className="vc-add-label">{t("settings.vcIcon")}</div>
+                          <select className="vc-input" value={newIcon} onChange={e => setNewIcon(e.target.value)}>
+                            {CLASS_ICON_CHOICES.map(c => (
+                              <option key={c.slug} value={c.slug}>{c.emoji}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="vc-add-field">
+                          <div className="vc-add-label">{t("settings.vcMinSeats")}</div>
                           <input className="vc-input" type="number" min="1" placeholder="5" value={newCapacity} onChange={e => setNewCapacity(e.target.value)} />
                         </div>
                         <div className="vc-add-field">
@@ -805,6 +945,14 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                           </div>
                         </div>
                       </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={newRestricted}
+                          onChange={e => setNewRestricted(e.target.checked)}
+                        />
+                        <span style={{ fontSize: 12, color: '#6B7280' }}>{t("settings.vcRestrictedHint")}</span>
+                      </label>
                       {newSurcharge && !isNaN(parseFloat(newSurcharge)) && (
                         <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
                           {t("settings.vcEffectiveRateInline")} <span className="vc-rate-preview">${((parseFloat(savedRatePerKm) || 0) * (1 + parseFloat(newSurcharge) / 100)).toFixed(2)}{t("common.perKm")}</span>

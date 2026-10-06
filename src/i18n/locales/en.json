@@ -16,7 +16,9 @@
     "seatsChange": "Seats {{from}} → {{to}}",
     "supportEmailCleared": "support email cleared",
     "supportEmailSet": "support email set",
-    "surchargeChange": "Surcharge {{from}}% → {{to}}%"
+    "surchargeChange": "Surcharge {{from}}% → {{to}}%",
+    "rampOn": "Marked wheelchair accessible",
+    "rampOff": "No longer wheelchair accessible"
   },
   "analytics": {
     "acrossReviews_one": "across {{count}} review",
@@ -258,7 +260,9 @@
     "registered": "Registered",
     "scheduleFor": "Schedule for",
     "title": "New ride",
-    "errInvalidPhone": "Enter a valid passenger phone number. For a number outside Canada or the US, start with + and the country code."
+    "errInvalidPhone": "Enter a valid passenger phone number. For a number outside Canada or the US, start with + and the country code.",
+    "wheelchairRequired": "Wheelchair-accessible vehicle required",
+    "wheelchairHint": "No extra charge"
   },
   "cancelReason": {
     "dispatchCancelled": "Cancelled by dispatch",
@@ -458,7 +462,10 @@
     "recent": "Recent",
     "scheduledRides": "Scheduled rides",
     "unknownPassenger": "Unknown passenger",
-    "waitingForConfirm": "Waiting for {{name}} to confirm"
+    "waitingForConfirm": "Waiting for {{name}} to confirm",
+    "mismatchWheelchair": "this ride needs a wheelchair-accessible vehicle and this one isn't marked as one",
+    "mismatchSeats": "this ride needs {{needs}} seats and this vehicle has {{has}}",
+    "confirmMismatch": "Assign anyway?\n\nThis driver's vehicle may not suit the ride — {{reason}}."
   },
   "drivers": {
     "activateBody": "{{name}} will regain full access to the app and start receiving rides again.",
@@ -498,7 +505,6 @@
     "makePlaceholder": "e.g. Dodge",
     "model": "Model",
     "modelPlaceholder": "e.g. Grand Caravan",
-    "noClass": "No class",
     "noMatches": "No drivers match your search",
     "noneRegistered": "No drivers registered yet",
     "noRidesYet": "No rides yet",
@@ -523,7 +529,14 @@
     "viewTrail": "View this driver's trail",
     "viewTrailHint": "Where they drove, and where they stopped",
     "year": "Year",
-    "inviteInvalidPhone": "Enter a valid phone number. For a number outside Canada or the US, start with + and the country code."
+    "inviteInvalidPhone": "Enter a valid phone number. For a number outside Canada or the US, start with + and the country code.",
+    "seatsField": "Seats",
+    "seatsHint": "The size of the vehicle. Dispatch matches on this — a driver picks it from the same list in the app.",
+    "wheelchairAccessible": "Wheelchair accessible",
+    "wheelchairHint": "Ramp or securement equipped. Only you can set this — drivers see it read-only.",
+    "restrictedTier": "Restricted tier",
+    "noRestrictedTier": "None",
+    "restrictedTierHint": "Only needed for classes you have marked restricted. Every other class is matched on vehicle size alone."
   },
   "escReason": {
     "driverNeverCame": "Driver never arrived",
@@ -573,7 +586,8 @@
     "staffCreated": "Added team member",
     "staffDeactivated": "Deactivated team member",
     "staffReactivated": "Reactivated team member",
-    "staffUpdated": "Edited team member"
+    "staffUpdated": "Edited team member",
+    "driverAccessibilityUpdated": "Updated accessibility"
   },
   "flagReason": {
     "driverNeverCame": "Driver never arrived",
@@ -780,7 +794,10 @@
     "settlement": "Settlement",
     "unassigned": "Unassigned",
     "unknownDriver": "Unknown driver",
-    "vellonFee": "Vellon fee"
+    "vellonFee": "Vellon fee",
+    "vehicleClass": "Vehicle class",
+    "accessibility": "Accessibility",
+    "wheelchairRequired": "Wheelchair-accessible vehicle"
   },
   "rideEdit": {
     "dropoffAddress": "Drop-off address",
@@ -931,7 +948,17 @@
     "vcSubtitle": "Define the vehicle types your fleet offers. Passengers choose a class at booking; the surcharge is applied on top of your base rate per km.",
     "vcSurcharge": "Surcharge",
     "vcSurchargePct": "Surcharge %",
-    "you": "(you)"
+    "you": "(you)",
+    "vcMinSeats": "Minimum seats",
+    "vcIcon": "Icon",
+    "vcAccess": "Membership",
+    "vcRestricted": "Assigned",
+    "vcBySize": "By size",
+    "vcRestrictedHint": "Restricted: only drivers you assign can serve this class. Leave off and any vehicle with enough seats qualifies.",
+    "vcFleetSizes": "Your fleet sizes: {{sizes}} seats. Drivers choose from these.",
+    "vcWarnRestricted": "{{count}} driver(s) can serve it today on vehicle size alone, and will stop until you assign them to it on their driver record",
+    "vcWarnCapacity": "{{count}} driver(s) serving it today have fewer than {{seats}} seats and will stop serving it",
+    "vcWarnConfirm": "Save anyway?\n\n{{reason}}. Rides already booked on this class may show as uncovered until a driver qualifies."
   },
   "settle": {
     "afterVellonFee": "after Vellon fee",

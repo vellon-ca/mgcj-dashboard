@@ -219,6 +219,7 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
   "driver.reactivated": "event.driverReactivated",
   "driver.deleted": "event.driverDeleted",
   "driver.vehicle_updated": "event.driverVehicleUpdated",
+  "driver.accessibility_updated": "event.driverAccessibilityUpdated",
   "invite.created": "event.inviteCreated",
   "invite.revoked": "event.inviteRevoked",
   "discount.created": "event.discountCreated",
@@ -264,6 +265,7 @@ const EVENT_COLORS: Record<string, string> = {
   "driver.reactivated": "#1D9E75",
   "driver.deleted": "#E24B4A",
   "driver.vehicle_updated": "#60A5FA",
+  "driver.accessibility_updated": "#60A5FA",
   "invite.created": "#1D9E75",
   "invite.revoked": "#E24B4A",
   "discount.created": "#E8500A",
@@ -342,9 +344,15 @@ function formatEventDetails(type: string, details: any): string {
         [details.make, details.model, details.year].filter(Boolean).join(" ") || null,
         details.plate || null,
         details.vehicle_class || null,
+        details.seats != null ? i18next.t("drivers.seats", { count: details.seats }) : null,
       ].filter(Boolean);
       return parts.join(" · ") || "—";
     }
+    case "driver.accessibility_updated":
+      return [
+        details.driver_name,
+        i18next.t(details.wheelchair_accessible ? "activity.rampOn" : "activity.rampOff"),
+      ].filter(Boolean).join(" · ");
     case "invite.created":
       return `${i18next.t("activity.code")}: ${details.code}${details.name ? ` · ${details.name}` : ""}`;
     case "invite.revoked":
@@ -5458,6 +5466,7 @@ export default function AnalyticsPage({
                       <option value="driver.reactivated">{eventLabel("driver.reactivated")}</option>
                       <option value="driver.deleted">{eventLabel("driver.deleted")}</option>
                       <option value="driver.vehicle_updated">{eventLabel("driver.vehicle_updated")}</option>
+                      <option value="driver.accessibility_updated">{eventLabel("driver.accessibility_updated")}</option>
                       <option value="invite.created">{eventLabel("invite.created")}</option>
                       <option value="invite.revoked">{eventLabel("invite.revoked")}</option>
                     </optgroup>

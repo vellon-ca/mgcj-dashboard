@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { segment, navigate, VIEW_PATHS, type View } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { driverPresence, lastSeenLabel } from "../lib/presence";
@@ -455,10 +455,45 @@ interface DiscountCodeOption {
 interface VehicleClassOption {
   id: string;
   name: string;
+  // The MINIMUM SEATS a vehicle needs to serve this class (20261005010000).
   capacity: number | null;
   surcharge_percent: number | null;
   is_active: boolean;
   display_order: number | null;
+  restricted: boolean | null;
+}
+
+// The dashboard's copy of the capability predicate. The authority is
+// supabase/functions/_shared/vehicleMatch.ts — change one, change both.
+//
+// This replaces `!bookVehicleClassId || !d.vehicle_class_id || d.vehicle_class_id === bookVehicleClassId`,
+// which was one of four disagreeing answers to the same question and would now
+// be badly wrong: after 20261005010000 `vehicle_class_id` holds restricted-tier
+// membership and is NULL for nearly every driver, so the `!d.vehicle_class_id`
+// arm would wave every driver through for every class regardless of size.
+//
+// EXACT SIZE unless the ride carries scheduled-release's substitution
+// permission. A seven-seat van is not offered as a candidate for a four-seat
+// booking, because it is the only vehicle that can serve a seven-seat booking
+// and the fare is frozen to the class actually booked — so sending it on a
+// cheaper job both strands the next large party and quietly forfeits the
+// surcharge. Dispatch can still override: this filters the dropdown, and
+// dispatch-assign-ride turns a mismatch into a confirmable warning rather than
+// a refusal.
+function driverFitsClass(
+  d: { seats: number | null; wheelchair_accessible: boolean | null; vehicle_class_id: string | null },
+  cls: VehicleClassOption | undefined,
+  needsWheelchair: boolean,
+  allowLarger = false,
+): boolean {
+  if (cls) {
+    const seats = d.seats ?? 0;
+    const need = cls.capacity ?? 0;
+    if (allowLarger ? seats < need : seats !== need) return false;
+    if (cls.restricted && d.vehicle_class_id !== cls.id) return false;
+  }
+  if (needsWheelchair && !d.wheelchair_accessible) return false;
+  return true;
 }
 
 interface Stats {
@@ -509,8 +544,6 @@ function applyDiscountPreview(baseFare: number, code: DiscountCodeOption | undef
   return Math.ceil(baseFare - amount);
 }
 
-const VAN_KEYWORDS = ['caravan', 'sienna', 'odyssey', 'transit', 'sprinter', 'express', 'savana', 'villager', 'entourage', 'sedona', 'routan', 'quest', 'windstar', 'promaster', 'econoline'];
-const SUV_KEYWORDS = ['explorer', 'tahoe', 'suburban', 'yukon', 'expedition', 'navigator', 'pathfinder', 'armada', 'sequoia', '4runner', 'highlander', 'pilot', 'traverse', 'enclave', 'acadia', 'terrain', 'equinox', 'escape', 'edge', 'flex', 'cx-9', 'qx', 'mdx', 'rdx', 'xt5', 'xt6', 'rav4', 'forester', 'outback', 'ascent', 'santa fe', 'tucson', 'telluride', 'sorento', 'palisade'];
 
 function DriverDetailPanel({
   driver,
@@ -561,12 +594,24 @@ function DriverDetailPanel({
   const [vYear, setVYear] = useState('');
   const [vPlate, setVPlate] = useState('');
   const [vClassId, setVClassId] = useState('');
+  const [vSeats, setVSeats] = useState('');
+  // The sizes this company runs, and the tiers that need explicit admission.
+  // Several classes can share a capacity (Standard and Luxury are both
+  // four-seaters) and the driver is picking a SIZE, so they collapse.
+  const seatOptions = useMemo(
+    () => [...new Set(vehicleClasses.map((c: any) => c.capacity as number))].sort((a, b) => a - b),
+    [vehicleClasses],
+  );
+  const restrictedClasses = useMemo(
+    () => vehicleClasses.filter((c: any) => c.restricted),
+    [vehicleClasses],
+  );
+  const [vWheelchair, setVWheelchair] = useState(false);
   const [vCarNumber, setVCarNumber] = useState('');
   // Suggestion only — shown as the input's placeholder, never auto-filled.
   // next_car_number() returns the LOWEST unused number rather than a counter,
   // because a retired Car 7 should be offered again to the next driver.
   const [suggestedCar, setSuggestedCar] = useState<number | null>(null);
-  const [classTouched, setClassTouched] = useState(false);
   const [vehicleSaving, setVehicleSaving] = useState(false);
   const [vehicleError, setVehicleError] = useState<string | null>(null);
 
@@ -594,7 +639,7 @@ function DriverDetailPanel({
   useEffect(() => {
     supabase
       .from('vehicle_classes')
-      .select('id, name, capacity, surcharge_percent, display_order')
+      .select('id, name, capacity, surcharge_percent, display_order, restricted')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('display_order')
@@ -651,18 +696,6 @@ function DriverDetailPanel({
     setLoading(false);
   }
 
-  function suggestClassId(model: string): string {
-    const m = model.toLowerCase();
-    // i18n-ok (both lines) — these are matched against the company's own
-    // vehicle-class NAMES in the database, not rendered. Translating them
-    // would stop the suggestion matching any row.
-    let target = 'Sedan';
-    if (VAN_KEYWORDS.some(w => m.includes(w))) target = 'Van';
-    else if (SUV_KEYWORDS.some(w => m.includes(w))) target = 'SUV';
-    const found = vehicleClasses.find((c: any) => c.name.toLowerCase() === target.toLowerCase());
-    return found?.id ?? vehicleClasses[0]?.id ?? '';
-  }
-
   function openVehicleEdit() {
     setVCarNumber(driver.car_number ?? '');
     setSuggestedCar(null);
@@ -682,18 +715,26 @@ function DriverDetailPanel({
     setVModel(driver.vehicle_model ?? '');
     setVYear(driver.vehicle_year ? String(driver.vehicle_year) : '');
     setVPlate(driver.plate_number ?? '');
-    setVClassId(driver.vehicle_class_id ?? vehicleClasses[0]?.id ?? '');
-    setClassTouched(false);
+    // No longer defaulted to the first class: an empty value is the NORMAL
+    // state now. This column means "a restricted tier this driver has been
+    // admitted to", so pre-filling it would silently grant every driver
+    // membership of whatever class happens to sort first.
+    setVClassId(driver.vehicle_class_id ?? '');
+    setVSeats(driver.seats != null ? String(driver.seats) : '');
+    setVWheelchair(!!driver.wheelchair_accessible);
     setVehicleError(null);
     setEditingVehicle(true);
   }
 
+  // Guessing a class from the model name is gone with migration
+  // 20261005010000: `vehicle_class_id` now means restricted-tier membership,
+  // which is a deliberate dispatch decision, and SIZE comes from `seats`. The
+  // old suggestion also matched hardcoded 'Sedan'/'Van'/'SUV' against the
+  // company's own class names, so it silently did nothing for any company that
+  // named its fleet something else — then fell back to the first class, which
+  // reads as a working feature and is wrong about half the time.
   function handleModelChange(val: string) {
     setVModel(val);
-    if (!classTouched && vehicleClasses.length > 1) {
-      const suggested = suggestClassId(val);
-      if (suggested) setVClassId(suggested);
-    }
   }
 
   async function saveVehicle() {
@@ -707,6 +748,10 @@ function DriverDetailPanel({
         vehicle_year: vYear ? parseInt(vYear) : null,
         plate_number: vPlate.trim() || null,
         vehicle_class_id: vClassId || null,
+        // Omitted rather than nulled when blank: `seats` is NOT NULL, with a
+        // per-company default the server applied at insert.
+        ...(vSeats.trim() ? { seats: parseInt(vSeats) } : {}),
+        wheelchair_accessible: vWheelchair,
         ...(isAdmin ? { car_number: vCarNumber.trim() || null } : {}),
       })
       .eq('id', driver.id);
@@ -736,6 +781,8 @@ function DriverDetailPanel({
       vehicle_year: vYear ? parseInt(vYear) : null,
       plate_number: vPlate.trim() || null,
       vehicle_class_id: vClassId || null,
+      ...(vSeats.trim() ? { seats: parseInt(vSeats) } : {}),
+      wheelchair_accessible: vWheelchair,
     });
     logDispatchEvent({
       companyId,
@@ -749,8 +796,25 @@ function DriverDetailPanel({
         year: vYear ? parseInt(vYear) : null,
         plate: vPlate.trim() || null,
         vehicle_class: updatedClass?.name ?? null,
+        seats: vSeats.trim() ? parseInt(vSeats) : null,
       },
     });
+    // A separate audit line, not a field on the one above: accessibility is a
+    // safety-relevant claim about a vehicle, and "who marked this van as
+    // ramp-equipped, and when" is a question worth being able to answer on its
+    // own rather than buried in a vehicle-details diff.
+    if (vWheelchair !== !!driver.wheelchair_accessible) {
+      logDispatchEvent({
+        companyId,
+        dispatcherId,
+        eventType: 'driver.accessibility_updated',
+        details: {
+          driver_id: driver.id,
+          driver_name: driver.profile?.name ?? null,
+          wheelchair_accessible: vWheelchair,
+        },
+      });
+    }
   }
 
   const name = driver.profile?.name ?? t("common.unknown");
@@ -928,7 +992,18 @@ function DriverDetailPanel({
             <div className="dd-profile-sub">
               {driver.vehicle_make} {driver.vehicle_model} ·{" "}
               {driver.plate_number ?? "—"}
-              {vehicleClasses.length > 0 && ` · ${vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id)?.name ?? t("drivers.noClass")}`}
+              {/* SEATS first, then the restricted tier only if there is one,
+                  then the ramp marker. This used to print the driver's single
+                  "class", which after 20261005010000 is restricted-tier
+                  membership and NULL for almost everyone — so it would have
+                  read "No class" against every normal driver. Misleading
+                  rather than broken, which is the kind that survives. */}
+              {driver.seats != null && ` · ${t("drivers.seats", { count: driver.seats })}`}
+              {(() => {
+                const tier = vehicleClasses.find((c: any) => c.id === driver.vehicle_class_id);
+                return tier ? ` · ${tier.name}` : "";
+              })()}
+              {driver.wheelchair_accessible ? " · \u267F" : ""}
             </div>
             <div className="dd-profile-phone">
               {driver.profile?.phone ?? "—"}
@@ -1045,15 +1120,66 @@ function DriverDetailPanel({
                   )}
                 </div>
               </div>
-              {vehicleClasses.length > 0 && (
+              {/* Seats — the size of the vehicle, which is what dispatch
+                  matches on. The driver picks this from the same list in the
+                  app; dispatch can override and is not held to the list, since
+                  the closed options exist to stop a driver guessing, not to
+                  stop dispatch recording the truth about an odd vehicle. */}
+              {seatOptions.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
-                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>{t("drivers.vehicleClass")}</div>
+                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>{t("drivers.seatsField")}</div>
                   <div className="dd-class-picker">
-                    {vehicleClasses.map((vc: any) => (
+                    {seatOptions.map((n: number) => (
+                      <button
+                        key={n}
+                        className={`dd-class-option${vSeats === String(n) ? ' selected' : ''}`}
+                        onClick={() => setVSeats(String(n))}
+                        type="button"
+                      >
+                        <div className="dd-class-name">{n}</div>
+                        <div className="dd-class-cap">{t("drivers.seats", { count: n })}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="dd-class-hint">{t("drivers.seatsHint")}</div>
+                </div>
+              )}
+
+              {/* Accessibility — admin-only by design: a false claim strands a
+                  wheelchair user at the curb, so the driver app shows this
+                  read-only and guard_driver_capability rejects a driver
+                  writing it. Never priced. */}
+              <label className="dd-access-toggle" style={{ marginBottom: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={vWheelchair}
+                  onChange={e => setVWheelchair(e.target.checked)}
+                />
+                <span>
+                  <span className="dd-class-name">{t("drivers.wheelchairAccessible")}</span>
+                  <span className="dd-class-hint">{t("drivers.wheelchairHint")}</span>
+                </span>
+              </label>
+
+              {/* Restricted tiers only. An unrestricted class needs no
+                  membership — a vehicle qualifies for it on size alone — so
+                  showing every class here would invite a meaningless choice. */}
+              {restrictedClasses.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div className="dd-vehicle-field-label" style={{ marginBottom: 6 }}>{t("drivers.restrictedTier")}</div>
+                  <div className="dd-class-picker">
+                    <button
+                      className={`dd-class-option${vClassId === '' ? ' selected' : ''}`}
+                      onClick={() => setVClassId('')}
+                      type="button"
+                    >
+                      <div className="dd-class-name">{t("drivers.noRestrictedTier")}</div>
+                    </button>
+                    {restrictedClasses.map((vc: any) => (
                       <button
                         key={vc.id}
                         className={`dd-class-option${vClassId === vc.id ? ' selected' : ''}`}
-                        onClick={() => { setVClassId(vc.id); setClassTouched(true); }}
+                        onClick={() => setVClassId(vc.id)}
                         type="button"
                       >
                         <div className="dd-class-name">{vc.name}</div>
@@ -1061,6 +1187,7 @@ function DriverDetailPanel({
                       </button>
                     ))}
                   </div>
+                  <div className="dd-class-hint">{t("drivers.restrictedTierHint")}</div>
                 </div>
               )}
               {vehicleError && <div className="dd-vehicle-error" style={{ marginBottom: 10 }}>{vehicleError}</div>}
@@ -1734,6 +1861,9 @@ export default function DashboardPage({
   const [bookDiscountCode, setBookDiscountCode] = useState("");
   const [discountCodes, setDiscountCodes] = useState<DiscountCodeOption[]>([]);
   const [bookVehicleClassId, setBookVehicleClassId] = useState("");
+  // A requirement, not a tier, and never priced — there is no surcharge for
+  // accessible service anywhere in this system (20261005010000).
+  const [bookWheelchair, setBookWheelchair] = useState(false);
   const [bookDistanceMetres, setBookDistanceMetres] = useState<number | null>(null);
   const [bookBaseFare, setBookBaseFare] = useState<number | null>(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
@@ -1791,6 +1921,7 @@ export default function DashboardPage({
   // as an override; otherwise the box is a preview and the server prices.
   const [editFareTouched, setEditFareTouched] = useState(false);
   const [editVehicleClassId, setEditVehicleClassId] = useState("");
+  const [editWheelchair, setEditWheelchair] = useState(false);
   const [editVehicleClassTouched, setEditVehicleClassTouched] = useState(false);
   const [editDistanceMetres, setEditDistanceMetres] = useState<number | null>(null);
   const [editPayment, setEditPayment] = useState("");
@@ -2190,7 +2321,7 @@ export default function DashboardPage({
     if (!profile?.company_id) return;
     const { data } = await supabase
       .from("vehicle_classes")
-      .select("id, name, capacity, surcharge_percent, is_active, display_order")
+      .select("id, name, capacity, surcharge_percent, is_active, display_order, restricted")
       .eq("company_id", profile.company_id)
       .eq("is_active", true)
       .order("display_order", { ascending: true });
@@ -3324,6 +3455,7 @@ export default function DashboardPage({
         discount_code_id: discountCodeId,
         payment_method: "cash",
         vehicle_class_id: bookVehicleClassId || null,
+        requires_wheelchair: bookWheelchair,
       };
       if (bookScheduled) {
         rideData.status = "scheduled";
@@ -3384,7 +3516,7 @@ export default function DashboardPage({
     }
   }
 
-  async function assignDriver(rideId: string, driverId: string) {
+  async function assignDriver(rideId: string, driverId: string, confirmMismatch = false) {
     const ride = rides.find((r) => r.id === rideId);
     // (the scheduled-vs-immediate branch now lives in dispatch-assign-ride)
     const prevDriverId = ride?.driver_id ?? null;
@@ -3405,12 +3537,34 @@ export default function DashboardPage({
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ ride_id: rideId, driver_id: driverId }),
+        body: JSON.stringify({
+          ride_id: rideId,
+          driver_id: driverId,
+          ...(confirmMismatch ? { confirm_mismatch: true } : {}),
+        }),
       },
     );
     if (!res.ok) {
-      const { error } = await res.json().catch(() => ({ error: res.statusText }));
-      alert(t("dispatch.errAssignFailed", { reason: error }));
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      // A capability mismatch is a warning for dispatch, not a refusal — same
+      // shape as the commitment clash in saveRideEdits, and for the same
+      // reason: a dispatcher may know something the seat count does not. The
+      // server refuses once and accepts on the confirmed retry, so the override
+      // is a deliberate act rather than a silent one.
+      if (res.status === 409 && body.error === "vehicle_mismatch") {
+        const reason = body.requires_wheelchair
+          ? t("dispatch.mismatchWheelchair")
+          : t("dispatch.mismatchSeats", {
+              needs: body.needs_seats ?? "?",
+              has: body.driver_seats ?? "?",
+            });
+        if (confirm(t("dispatch.confirmMismatch", { reason }))) {
+          return assignDriver(rideId, driverId, true);
+        }
+        setAssigningRide(null);
+        return;
+      }
+      alert(t("dispatch.errAssignFailed", { reason: body.error }));
       setAssigningRide(null);
       return;
     }
@@ -3520,6 +3674,7 @@ export default function DashboardPage({
     setEditFareTouched(false);
     setEditPreferredDriver(ride.preferred_driver_id ?? "");
     setEditPreferredExclusive(ride.preferred_driver_exclusive ?? false);
+    setEditWheelchair(ride.requires_wheelchair ?? false);
     setEditError(null);
     setEditingRide(true);
   }
@@ -3568,6 +3723,11 @@ export default function DashboardPage({
       editDropoffCoords, editDropoff, ride.dropoff_lat, ride.dropoff_lng, ride.dropoff_address,
     );
 
+    // No pricing consequence, deliberately — accessible service carries no
+    // surcharge — but it does change which vehicles qualify, so edit-ride
+    // detaches an assigned or claiming driver whose vehicle cannot serve it.
+    const accessMoved = editWheelchair !== !!ride.requires_wheelchair;
+
     const newScheduledISO = editScheduled
       ? new Date(editScheduled).toISOString()
       : null;
@@ -3594,7 +3754,7 @@ export default function DashboardPage({
 
     if (
       !pickupMoved && !dropoffMoved && !scheduledMoved &&
-      !classMoved && !preferredMoved && fareOverride == null
+      !classMoved && !accessMoved && !preferredMoved && fareOverride == null
     ) {
       setEditingRide(false);
       return;
@@ -3603,7 +3763,7 @@ export default function DashboardPage({
     setEditSaving(true);
     setEditError(null);
 
-    if (pickupMoved || dropoffMoved || scheduledMoved || classMoved || fareOverride != null) {
+    if (pickupMoved || dropoffMoved || scheduledMoved || classMoved || accessMoved || fareOverride != null) {
       const body: Record<string, unknown> = { ride_id: rideId, action: "relocate" };
       if (pickupMoved)
         body.pickup = { ...editPickupCoords, address: editPickup.trim() };
@@ -3611,6 +3771,7 @@ export default function DashboardPage({
         body.dropoff = { ...editDropoffCoords, address: editDropoff.trim() };
       if (scheduledMoved) body.scheduled_at = newScheduledISO;
       if (classMoved) body.vehicle_class_id = editVehicleClassId || null;
+      if (accessMoved) body.requires_wheelchair = editWheelchair;
       if (fareOverride != null) body.fare_override = fareOverride;
       if (confirmConflict) body.confirm_conflict = true;
 
@@ -4408,6 +4569,10 @@ export default function DashboardPage({
         .dd-class-option.selected { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
         .dd-class-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
         .dd-class-cap { font-size: 11px; color: #6B7280; margin-top: 1px; }
+        .dd-class-hint { display: block; font-size: 11px; color: #6B7280; margin-top: 6px; }
+        .db-access-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; cursor: pointer; font-size: 13px; color: #E2E8F0; }
+        .db-access-toggle:has(input:checked) { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
+        .db-access-hint { font-size: 11px; color: #6B7280; }
         .dd-vehicle-error { font-size: 12px; color: #F87171; margin-top: 8px; }
         .dd-vehicle-actions { display: flex; gap: 8px; margin-top: 12px; }
         .dd-vehicle-cancel { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
@@ -5406,7 +5571,9 @@ export default function DashboardPage({
                                   : ""}
                                 {driver.vehicle_make} {driver.vehicle_model} ·{" "}
                                 {driver.plate_number}
+                                {driver.seats != null ? ` · ${t("drivers.seats", { count: driver.seats })}` : ""}
                                 {(driver as any).vehicle_class_name ? ` · ${(driver as any).vehicle_class_name}` : ""}
+                                {driver.wheelchair_accessible ? " \u00B7 \u267F" : ""}
                               </div>
                               {!isAccountActive ? (
                                 <div style={{ fontSize: 11, color: "#F87171", marginTop: 3, fontWeight: 500 }}>
@@ -5985,6 +6152,18 @@ export default function DashboardPage({
                   </select>
                 </div>
               )}
+              {/* Accessibility — a requirement, not a tier, so it sits with
+                  the vehicle choice rather than appearing as another class
+                  with its own price. No surcharge, by design. */}
+              <label className="db-access-toggle">
+                <input
+                  type="checkbox"
+                  checked={bookWheelchair}
+                  onChange={(e) => setBookWheelchair(e.target.checked)}
+                />
+                <span>{t("booking.wheelchairRequired")}</span>
+                <span className="db-access-hint">{t("booking.wheelchairHint")}</span>
+              </label>
               <div>
                 <label className="db-modal-label">
                   {t("booking.discountCode")}{" "}
@@ -6077,9 +6256,11 @@ export default function DashboardPage({
                       .filter(
                         (d) =>
                           d.is_active &&
-                          (!bookVehicleClassId ||
-                            !d.vehicle_class_id ||
-                            d.vehicle_class_id === bookVehicleClassId),
+                          driverFitsClass(
+                            d,
+                            vehicleClasses.find((c) => c.id === bookVehicleClassId),
+                            bookWheelchair,
+                          ),
                       )
                       .map((d) => (
                         <option key={d.id} value={d.id}>
@@ -6370,6 +6551,19 @@ export default function DashboardPage({
                     </select>
                   </div>
                 )}
+                {/* Accessibility — no surcharge, by design. Turning it ON
+                    detaches an assigned or claiming driver whose vehicle
+                    cannot serve it; edit-ride does that server-side, because
+                    re-asking a driver with no ramp just gets another yes. */}
+                <label className="db-access-toggle">
+                  <input
+                    type="checkbox"
+                    checked={editWheelchair}
+                    onChange={(e) => setEditWheelchair(e.target.checked)}
+                  />
+                  <span>{t("booking.wheelchairRequired")}</span>
+                  <span className="db-access-hint">{t("booking.wheelchairHint")}</span>
+                </label>
                 <div>
                   <label className="db-modal-label">{t("rideEdit.paymentMethod")}</label>
                   <select
@@ -6428,9 +6622,14 @@ export default function DashboardPage({
                         .filter(
                           (d) =>
                             d.is_active &&
-                            (!editVehicleClassId ||
-                              !d.vehicle_class_id ||
-                              d.vehicle_class_id === editVehicleClassId),
+                            driverFitsClass(
+                              d,
+                              vehicleClasses.find((c) => c.id === editVehicleClassId),
+                              editWheelchair,
+                              // A ride scheduled-release already widened keeps
+                              // showing the larger vehicles it was widened to.
+                              rideDetail.allow_larger_vehicle === true,
+                            ),
                         )
                         .map((d) => (
                           <option key={d.id} value={d.id}>
@@ -6518,6 +6717,27 @@ export default function DashboardPage({
                     ],
                     [t("rideDetail.pickup"), rideDetail.pickup_address],
                     [t("rideDetail.dropoff"), rideDetail.dropoff_address],
+                    // Read from the SNAPSHOT, never by joining vehicle_classes
+                    // live. Classes can be freely renamed and deleted, and a
+                    // live join would retroactively rewrite what this ride was
+                    // booked as — the same reason completed_at and
+                    // platform_fee_percent_at_completion are frozen. It also
+                    // gives those columns a reader, without which they are
+                    // write-only bookkeeping.
+                    ...(rideDetail.vehicle_class_name_at_booking
+                      ? ([[
+                          t("rideDetail.vehicleClass"),
+                          rideDetail.vehicle_class_surcharge_at_booking
+                            ? `${rideDetail.vehicle_class_name_at_booking} · +${rideDetail.vehicle_class_surcharge_at_booking}%`
+                            : rideDetail.vehicle_class_name_at_booking,
+                        ]] as [string, string][])
+                      : []),
+                    ...(rideDetail.requires_wheelchair
+                      ? ([[
+                          t("rideDetail.accessibility"),
+                          t("rideDetail.wheelchairRequired"),
+                        ]] as [string, string][])
+                      : []),
                     [
                       t("rideDetail.fareEstimate"),
                       rideDetail.fare_estimate

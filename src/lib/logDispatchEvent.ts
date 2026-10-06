@@ -17,6 +17,7 @@ export type DispatchEventType =
   | "driver.reactivated"
   | "driver.deleted"
   | "driver.vehicle_updated"
+  | "driver.accessibility_updated"
   | "invite.created"
   | "invite.revoked"
   | "discount.created"
