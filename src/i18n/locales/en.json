@@ -958,7 +958,13 @@
     "vcFleetSizes": "Your fleet sizes: {{sizes}} seats. Drivers choose from these.",
     "vcWarnRestricted": "{{count}} driver(s) can serve it today on vehicle size alone, and will stop until you assign them to it on their driver record",
     "vcWarnCapacity": "{{count}} driver(s) serving it today have fewer than {{seats}} seats and will stop serving it",
-    "vcWarnConfirm": "Save anyway?\n\n{{reason}}. Rides already booked on this class may show as uncovered until a driver qualifies."
+    "vcWarnConfirm": "Save anyway?\n\n{{reason}}. Rides already booked on this class may show as uncovered until a driver qualifies.",
+    "vcIconSedan": "Sedan",
+    "vcIconVan": "Van",
+    "vcIconSuv": "SUV",
+    "vcIconLuxury": "Luxury / premium",
+    "vcIconTruck": "Truck",
+    "vcIconBus": "Bus / shuttle"
   },
   "settle": {
     "afterVellonFee": "after Vellon fee",

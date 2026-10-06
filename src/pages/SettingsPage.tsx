@@ -75,17 +75,33 @@ interface StaffMember {
 // Stored explicitly rather than derived from the class NAME, which is what the
 // app used to do: keying an icon off `name.toLowerCase()` silently punished the
 // free naming the column allows, so "Family Van" or "Big" got a generic sedan.
-const CLASS_ICON_CHOICES: { slug: string; emoji: string }[] = [
-  { slug: "sedan",      emoji: "\u{1F697}" },
-  { slug: "van",        emoji: "\u{1F690}" },
-  { slug: "suv",        emoji: "\u{1F699}" },
-  { slug: "luxury",     emoji: "\u{1F3CE}\u{FE0F}" },
-  { slug: "truck",      emoji: "\u{1F6FB}" },
-  { slug: "wheelchair", emoji: "\u{267F}" },
-  { slug: "bus",        emoji: "\u{1F68C}" },
+// NO WHEELCHAIR ICON HERE, deliberately (Victor, 2026-10-06). Offering one
+// invites a company to build an "Accessible" vehicle class — and a class
+// carries `surcharge_percent`, so the obvious next step is putting a number on
+// it. Charging extra for accessible service is a discrimination exposure under
+// the NS Human Rights Act and is commonly barred outright by municipal taxi
+// bylaws, which is exactly why accessibility was modelled as a per-vehicle
+// attribute with no price field at all (20261005010000). An icon is a small
+// thing, but it is the doorway to the wrong model, so the doorway is closed.
+//
+// `wheelchair` stays in mgcj-app's render map so any class that somehow carries
+// the slug still draws correctly — removing it from the PICKER stops it being
+// chosen, which is the part that matters.
+//
+// `label` is a translation key, not prose: these are shown to dispatchers and
+// this app ships en + fr.
+const CLASS_ICON_CHOICES: { slug: string; emoji: string; label: string }[] = [
+  { slug: "sedan",  emoji: "\u{1F697}",          label: "settings.vcIconSedan" },
+  { slug: "van",    emoji: "\u{1F690}",          label: "settings.vcIconVan" },
+  { slug: "suv",    emoji: "\u{1F699}",          label: "settings.vcIconSuv" },
+  { slug: "luxury", emoji: "\u{1F3CE}\u{FE0F}", label: "settings.vcIconLuxury" },
+  { slug: "truck",  emoji: "\u{1F6FB}",          label: "settings.vcIconTruck" },
+  { slug: "bus",    emoji: "\u{1F68C}",          label: "settings.vcIconBus" },
 ];
 
 function iconEmoji(slug: string | null): string {
+  // Falls back to the sedan rather than to nothing: a class created before
+  // `icon` existed, or carrying the retired wheelchair slug, still shows a car.
   return CLASS_ICON_CHOICES.find(c => c.slug === slug)?.emoji ?? "\u{1F697}";
 }
 
@@ -731,6 +747,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .vc-input { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 5px 9px; outline: none; width: 100%; box-sizing: border-box; }
         .vc-input:focus { border-color: rgba(74,158,255,0.4); }
         .vc-input.narrow { width: 64px; }
+        /* Fits "\u{1F3CE}\u{FE0F} Luxury / premium" without clipping, and does not grow
+           at the name field's expense. */
+        .vc-icon-select { width: 150px; flex: 0 0 auto; }
         .vc-badge-active { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
         .vc-badge-inactive { background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
         .vc-btn { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #6B7280; font-size: 12px; font-weight: 600; padding: 4px 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
@@ -820,20 +839,32 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                         const previewRate = baseRate * (1 + editSurchargeNum / 100);
                         return (
                           <tr key={vc.id} className="vc-row">
-                            <td className="vc-td" style={{ minWidth: 120 }}>
+                            {/* Wide enough for the icon select AND a readable
+                                name. It was minWidth 120 with the select at a
+                                fixed 64px, which left about two characters of
+                                the name visible while editing. */}
+                            <td className="vc-td" style={{ minWidth: 300 }}>
                               {isEditing ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <select
-                                    className="vc-input narrow"
+                                    className="vc-input vc-icon-select"
                                     value={editIcon}
                                     onChange={e => setEditIcon(e.target.value)}
                                     aria-label={t("settings.vcIcon")}
                                   >
                                     {CLASS_ICON_CHOICES.map(c => (
-                                      <option key={c.slug} value={c.slug}>{c.emoji}</option>
+                                      <option key={c.slug} value={c.slug}>
+                                        {c.emoji} {t(c.label)}
+                                      </option>
                                     ))}
                                   </select>
-                                  <input className="vc-input" value={editName} onChange={e => setEditName(e.target.value)} />
+                                  <input
+                                    className="vc-input"
+                                    style={{ flex: 1, minWidth: 0 }}
+                                    value={editName}
+                                    onChange={e => setEditName(e.target.value)}
+                                    aria-label={t("settings.vcClassName")}
+                                  />
                                 </div>
                               ) : (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -929,7 +960,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                           <div className="vc-add-label">{t("settings.vcIcon")}</div>
                           <select className="vc-input" value={newIcon} onChange={e => setNewIcon(e.target.value)}>
                             {CLASS_ICON_CHOICES.map(c => (
-                              <option key={c.slug} value={c.slug}>{c.emoji}</option>
+                              <option key={c.slug} value={c.slug}>
+                                {c.emoji} {t(c.label)}
+                              </option>
                             ))}
                           </select>
                         </div>

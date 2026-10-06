@@ -958,7 +958,13 @@
     "vcFleetSizes": "Tailles de votre parc : {{sizes}} places. Les chauffeurs choisissent parmi celles-ci.",
     "vcWarnRestricted": "{{count}} chauffeur(s) peuvent l'assurer aujourd'hui selon la taille du véhicule et cesseront de le faire jusqu'à ce que vous les y affectiez dans leur fiche",
     "vcWarnCapacity": "{{count}} chauffeur(s) qui l'assurent aujourd'hui ont moins de {{seats}} places et cesseront de l'assurer",
-    "vcWarnConfirm": "Enregistrer quand même ?\n\n{{reason}}. Les courses déjà réservées dans cette catégorie peuvent s'afficher comme non couvertes jusqu'à ce qu'un chauffeur soit admissible."
+    "vcWarnConfirm": "Enregistrer quand même ?\n\n{{reason}}. Les courses déjà réservées dans cette catégorie peuvent s'afficher comme non couvertes jusqu'à ce qu'un chauffeur soit admissible.",
+    "vcIconSedan": "Berline",
+    "vcIconVan": "Fourgonnette",
+    "vcIconSuv": "VUS",
+    "vcIconLuxury": "Luxe / haut de gamme",
+    "vcIconTruck": "Camionnette",
+    "vcIconBus": "Autobus / navette"
   },
   "settle": {
     "afterVellonFee": "après les frais Vellon",
