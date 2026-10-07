@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from './hooks/useAuth'
-import { useLocaleSync } from './i18n/useLocaleSync'
 import { goToLogin, consumeReturnPath } from './lib/viewPath'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -10,13 +9,6 @@ export default function App() {
   const { session, profile, companyName, loading, signOut } = useAuth()
   const { t } = useTranslation()
   const [stuck, setStuck] = useState(false)
-
-  // Reads `profiles.locale` in as source 2 of the locale precedence, and
-  // mirrors an explicit pick back out. Mounted HERE rather than inside
-  // LocaleProvider on purpose: the provider sits above the auth tree and must
-  // never touch the Supabase client — see useLocaleSync for the deadlock that
-  // rule exists for.
-  useLocaleSync(profile)
 
   // Signed out (on arrival or after signing out): park where we were and show
   // /login in the address bar. Gated on !loading — doing this while the session

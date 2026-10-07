@@ -603,7 +603,7 @@
     "noDriversTitle": "Aucun chauffeur en ligne"
   },
   "language": {
-    "description": "Change la langue du tableau de bord pour vous seulement. Votre choix suit votre compte sur tout ordinateur où vous vous connectez.",
+    "description": "Change la langue du tableau de bord pour vous seulement, sur ce navigateur. Les autres ordinateurs et navigateurs conservent leur propre réglage.",
     "system": "Automatique",
     "systemHint": "Suivre la langue de ce navigateur",
     "title": "Langue"

@@ -5,10 +5,11 @@
 // drifting the runtimes apart is how that glossary drifts too. Differences from
 // the app's copy are flagged in comments where they exist.
 //
-// Deliberately NOT using a language detector plugin: detection is three
-// ordered sources here (explicit pick > profiles.locale > navigator.languages)
-// and the account half of that lives behind Supabase auth, which no detector
-// plugin can see. See LocaleContext for the precedence and why it is that way.
+// Deliberately NOT using a language detector plugin: the pick is read from
+// localStorage synchronously at module load so the first paint is already in
+// the right language, and a plugin's own cache would be a second, competing
+// copy of that state. See LocaleContext for the precedence (explicit pick >
+// navigator.languages) and why the scope is the browser, not the account.
 
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";

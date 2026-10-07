@@ -1415,11 +1415,10 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               </div>
 
               <div className="st-card">
-                {/* "Automatic" is listed first and is the DEFAULT, not a reset:
-                    it means "nothing chosen in this browser", which is what
-                    lets `profiles.locale` — a choice made at another desk —
-                    take effect here. Picking a language explicitly outranks it.
-                    See src/i18n/LocaleContext.tsx for the full precedence. */}
+                {/* "Automatic" is listed first and is the DEFAULT, not a
+                    reset: it means "nothing chosen in this browser", which
+                    falls back to navigator.languages. The pick is per-browser
+                    and never leaves this machine — see LocaleContext.tsx. */}
                 <button
                   className={`st-section-btn${localeMode === "system" ? " active" : ""}`}
                   style={{ width: "100%", textAlign: "left" }}
