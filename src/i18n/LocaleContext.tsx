@@ -7,31 +7,41 @@
 // useTranslation() — threading a second copy of the same value through props
 // would be strictly more plumbing for the same thing.
 //
-// ── PRECEDENCE: explicit local pick > profiles.locale > navigator.languages ──
+// ── PRECEDENCE: explicit pick in THIS browser > navigator.languages ──
 //
-// The app has two sources (its own override, then the device). The dashboard has
-// three, and the ordering is the load-bearing part:
+// Two sources, and the scope is the BROWSER, not the account. Same model as the
+// board map's saved opening view (`db-map-home:` in DashboardPage.tsx):
+// localStorage with nothing in `profiles` behind it, because a desk preference
+// belongs to the desk. A dispatcher who works in French at the office and in
+// English on a laptop at home gets both; nothing they pick on one machine
+// reaches the other.
 //
-//   1. An explicit pick in THIS browser wins. It is the most recent statement of
-//      intent and it must not be overridden by anything asynchronous — a value
-//      arriving later and winning is a language that visibly flips after login.
-//   2. `profiles.locale` next, so a dispatcher who set French at the office desk
-//      gets French on a machine they have never touched. This is the ONLY reason
-//      the column is read here; staff are explicitly out of scope for the
-//      server-composed copy it exists for in the app (see the two skipped
-//      notify-* functions in mgcj-app/.claude/notes/i18n-design.md).
-//   3. `navigator.languages` last, as the zero-configuration default.
+//   1. An explicit pick in this browser wins. It is read synchronously at
+//      module load, so it is honored on the very first paint with no correcting
+//      flash — unlike the app, whose override lives in AsyncStorage and cannot
+//      be read synchronously.
+//   2. `navigator.languages` otherwise, as the zero-configuration default.
 //
 // "system" as a mode therefore means "I have not chosen on this browser", not
 // "follow the OS" — which is why there is no AppState-resume equivalent of the
 // app's re-sync. A browser language change means a reload.
 //
-// THE MIRROR-WRITE FIRES ONLY ON AN EXPLICIT PICK, and it lives in
-// useLocaleSync(), not here. Stamping the profile from browser detection would
-// destroy the distinction between "chosen" and "merely detected": the detected
-// value would come back as source 2 forever, and would then be indistinguishable
-// from a deliberate choice made elsewhere. This provider deliberately does not
-// import the Supabase client at all.
+// THIS PROVIDER DELIBERATELY DOES NOT IMPORT THE SUPABASE CLIENT, and nothing
+// here reads or writes `profiles.locale`. That column still exists and is still
+// load-bearing — the Edge Functions compose push/email copy from it for
+// passengers and drivers (see mgcj-app/.claude/notes/i18n-design.md) — it is
+// just not a dashboard input. It was one until 2026-10-07: picking French at
+// one desk came back as a precedence source on every other browser where the
+// mode was "system", so a choice made at the office silently turned the home
+// laptop French. Staff are explicitly out of scope for the server-composed copy
+// the column exists for, so the dashboard had no other reason to touch it.
+//
+// THE BARE STORAGE KEY IS NOT AN OVERSIGHT. The saved map view is keyed by
+// profile id because workstations are shared; this cannot be, because the
+// locale resolves at module load, before any session exists. A per-profile key
+// would mean booting in the browser language and flipping after login — the
+// visible post-login flip this whole file is ordered to avoid. Pre-auth there
+// is no identity to key on, so the browser is the only coherent scope.
 
 import React, {
   createContext,
@@ -65,14 +75,11 @@ interface LocaleContextType {
   meta: LocaleMeta;
   available: readonly LocaleMeta[];
   setLocaleMode: (mode: LocaleMode) => void;
-  /** Source 2. Fed by useLocaleSync() once the signed-in profile has loaded;
-   *  used only while localeMode is "system". */
-  setAccountLocale: (tag: string | null) => void;
 }
 
 const LocaleContext = createContext<LocaleContextType | null>(null);
 
-/** Source 3. The ORDERED list (not navigator.language) so a browser set to
+/** Source 2. The ORDERED list (not navigator.language) so a browser set to
  *  [ar, fr, en] gets French rather than English. */
 function browserLocale(): string {
   try {
@@ -96,24 +103,15 @@ function storedMode(): LocaleMode {
 }
 
 // Start i18next before the first render so no screen ever renders raw keys.
-// Unlike the app — whose override lives in AsyncStorage and so cannot be read
-// synchronously — localStorage IS available here, so an explicit pick is honored
-// on the very first paint with no correcting flash.
 const BOOT_MODE = storedMode();
 const BOOT_LOCALE = BOOT_MODE === "system" ? browserLocale() : BOOT_MODE;
 startI18n(BOOT_LOCALE);
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
   const [localeMode, setLocaleModeState] = useState<LocaleMode>(BOOT_MODE);
-  const [accountLocale, setAccountLocale] = useState<string | null>(null);
   const { i18n } = useTranslation();
 
-  const locale =
-    localeMode !== "system"
-      ? localeMode
-      : isSupported(accountLocale)
-        ? (accountLocale as string)
-        : browserLocale();
+  const locale = localeMode !== "system" ? localeMode : browserLocale();
 
   const meta = useMemo(() => metaFor(locale), [locale]);
 
@@ -144,7 +142,6 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
       meta,
       available: LOCALES,
       setLocaleMode,
-      setAccountLocale,
     }),
     [localeMode, locale, meta, setLocaleMode],
   );

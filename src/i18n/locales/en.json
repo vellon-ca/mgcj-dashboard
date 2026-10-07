@@ -603,7 +603,7 @@
     "noDriversTitle": "No drivers online"
   },
   "language": {
-    "description": "Changes the dashboard's language for you only. Your choice follows your account to any computer you sign in on.",
+    "description": "Changes the dashboard's language for you only, on this browser. Other computers and browsers keep their own setting.",
     "system": "Automatic",
     "systemHint": "Follow this browser's language",
     "title": "Language"

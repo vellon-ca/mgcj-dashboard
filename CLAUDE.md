@@ -96,24 +96,34 @@ not its word count.
 out of scope ("staff-facing, small known audience"); Victor reversed it on
 2026-10-04 and the note now says so. Don't re-close it from the old line.
 
-### Precedence: explicit pick > `profiles.locale` > `navigator.languages`
+### Precedence: explicit pick in THIS browser > `navigator.languages`
 
-Three sources, not the app's two, and the order is load-bearing — the full
-reasoning is at the top of `src/i18n/LocaleContext.tsx`. Two rules from it:
+Two sources, and **the scope is the browser, not the account** — the full
+reasoning is at the top of `src/i18n/LocaleContext.tsx`. Same model as the board
+map's saved opening view (`db-map-home:` in `DashboardPage.tsx`): localStorage
+with nothing in `profiles` behind it, because a desk preference belongs to the
+desk. Two rules from it:
 
-- **`"system"` means "nothing chosen in THIS browser"**, not "follow the OS". It
-  is what lets a choice made at another desk take effect here.
-- **The mirror-write fires only on an explicit pick** (`src/i18n/useLocaleSync.ts`,
-  mounted in `App.tsx` — never in the provider, which must not touch the Supabase
-  client; see that file for the `onAuthStateChange` deadlock it avoids).
-  Stamping `profiles.locale` from browser detection would make a detected
-  language indistinguishable from a deliberate one, forever.
+- **`"system"` means "nothing chosen in THIS browser"**, not "follow the OS", so
+  there is no resume-time re-sync — a browser language change means a reload.
+- **The storage key is bare, not keyed by profile id**, unlike `savedViewKey`.
+  Deliberate: the locale resolves at *module load*, before any session exists, so
+  a per-profile key would boot in the browser language and flip after login. The
+  consequence is that dispatchers sharing a workstation share a language pick.
 
-`locale` is in `PROFILE_COLUMNS` (edit 3 of the `profiles` three-edit rule). The
-grant already exists — `mgcj-app` migration `20261003000000`, applied and verified
-on both projects — so no migration was needed here. **A `profiles` column with no
-grant reads EMPTY rather than failing**, so if source 2 ever appears dead, check
-`has_column_privilege` before suspecting this code.
+**It used to be three sources, with `profiles.locale` in the middle, mirrored by
+`src/i18n/useLocaleSync.ts`. Both are gone (2026-10-07).** A pick made at the
+office came back as source 2 on every other browser still on `"system"`, so
+choosing French at one desk silently turned the home laptop French — the opposite
+of per-station. Don't reintroduce the mirror-write; if a dispatcher's language
+should ever follow them between machines, that is a new decision, not a
+regression to fix.
+
+**The column itself stays and is still load-bearing** — the Edge Functions
+compose push/email copy from `profiles.locale` for passengers and drivers
+(`mgcj-app` migration `20261003000000`). It is simply not a dashboard input any
+more, and `locale` is out of `PROFILE_COLUMNS`. Staff were always out of scope
+for the server-composed copy the column exists for.
 
 ### What the scanner cannot see, and what was wrong because of it
 
