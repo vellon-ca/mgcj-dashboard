@@ -633,6 +633,13 @@
     "verify": "Vérifier et se connecter",
     "verifying": "Vérification…"
   },
+  "mapView": {
+    "recenterDefault": "Recentrer",
+    "recenterSaved": "Revenir à votre vue enregistrée",
+    "save": "Enregistrer comme votre vue",
+    "saved": "Enregistrée",
+    "update": "Mettre à jour votre vue enregistrée"
+  },
   "messages": {
     "drivers": "Chauffeurs",
     "noDrivers": "Aucun chauffeur.",

@@ -436,6 +436,71 @@ function IconMenu() {
   );
 }
 
+// A dispatcher's own opening view for the board map.
+//
+// The company frame (service areas, or their city) answers "where is this
+// company" and is the right answer for a brand-new account. It is not
+// necessarily where a given dispatcher wants to be looking: one desk covers the
+// town, another watches the highway out to the airport. This is their override,
+// and it is deliberately EXPLICIT — an auto-remembered last view traps whoever
+// panned out once to check a far-away car, and makes that their every morning.
+//
+// localStorage, not a `profiles` column: it is a per-station view preference,
+// and a column would drag in the column grants, the `20260923` guard-trigger
+// allowlist and a hand-applied migration. Keyed by profile id because
+// dispatchers share workstations — a bare key would make one person's view
+// silently become everyone's.
+interface SavedMapView { lat: number; lng: number; zoom: number }
+
+function savedViewKey(profileId: string) {
+  return `db-map-home:${profileId}`;
+}
+
+function readSavedView(profileId: string): SavedMapView | null {
+  try {
+    const raw = localStorage.getItem(savedViewKey(profileId));
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    // A half-written or hand-edited value must not strand the map somewhere
+    // unrecoverable, so every field is checked rather than trusted.
+    if (
+      typeof v?.lat !== "number" || typeof v?.lng !== "number" ||
+      typeof v?.zoom !== "number" || !Number.isFinite(v.lat) ||
+      !Number.isFinite(v.lng) || !Number.isFinite(v.zoom)
+    ) return null;
+    return { lat: v.lat, lng: v.lng, zoom: v.zoom };
+  } catch {
+    return null;
+  }
+}
+
+function IconCrosshair() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <line x1="12" y1="2" x2="12" y2="5" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+      <line x1="2" y1="12" x2="5" y2="12" />
+      <line x1="19" y1="12" x2="22" y2="12" />
+    </svg>
+  );
+}
+
+// Deliberately one appearance, saved or not: saving and updating are the same
+// gesture, so a second icon state just asks the dispatcher to learn a glyph for
+// a distinction they don't act on. The tooltip carries it instead.
+function IconPin() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z" />
+      <circle cx="12" cy="10" r="2.4" />
+    </svg>
+  );
+}
+
 const NAV_ICONS: Record<Tab, React.ReactElement> = {
   rides: <IconRides />,
   drivers: <IconDrivers />,
@@ -1563,6 +1628,17 @@ export default function DashboardPage({
   // frame that is silently wrong by the time you click back to Rides.
   const companyFrameRef = useRef<CompanyFrame | null>(null);
   const frameAppliedRef = useRef(false);
+  // This dispatcher's saved opening view, if they have set one. Read once, from
+  // localStorage, so `initMap` can apply it SYNCHRONOUSLY: anything later shows
+  // a visible neutral -> company frame -> saved view double jump on every load.
+  const [savedView, setSavedView] = useState<SavedMapView | null>(() =>
+    readSavedView(profile.id),
+  );
+  // Mirrored into a ref because initMap and maybeApplyCompanyFrame both run
+  // from a []-dep effect and would otherwise close over the first value
+  // forever. Written only by the two setters below, never during render.
+  const savedViewRef = useRef<SavedMapView | null>(savedView);
+  const [viewJustSaved, setViewJustSaved] = useState(false);
   const applyCompanyFrameRef = useRef<(() => void) | null>(null);
   const latestDriversForMapRef = useRef<any[] | null>(null);
   // Road-snapped route drawn on-click for the focused ride (snapshot, not live).
@@ -1990,6 +2066,10 @@ export default function DashboardPage({
       const frame = companyFrameRef.current;
       if (!map || !frame || frameAppliedRef.current) return;
       if (mapUserMovedRef.current) return;
+      // A saved view is this dispatcher's answer to the same question, and it
+      // was already applied in initMap. The company frame is the default, and a
+      // default does not get to overrule a preference.
+      if (savedViewRef.current) { frameAppliedRef.current = true; return; }
       if (!mapRef.current || mapRef.current.clientWidth === 0) return;
       frameAppliedRef.current = true;
       // Floor the zoom at 11 — the fixed zoom this board opened at before it
@@ -1997,7 +2077,13 @@ export default function DashboardPage({
       // editor and wrong here: a dispatch board is for watching cars move down
       // streets, and a company whose areas reach out to an airport or the next
       // county would open on a view where the actual work is a few pixels wide.
-      // Centre still comes from their territory; only the extent is overruled.
+      //
+      // The CENTRE no longer comes from the union of their areas either, which
+      // is what made that case genuinely bad rather than merely wide: the
+      // midpoint of {town, airport 60 km out} is farmland, and the floor then
+      // held the map there. `prefer: "locality"` asks for the city instead (see
+      // fetchCompanyFrame), so the floor now tightens a view that was already
+      // pointed at the right place.
       applyFrame(map, frame, { minZoom: 11 });
     }
     applyCompanyFrameRef.current = maybeApplyCompanyFrame;
@@ -2005,13 +2091,16 @@ export default function DashboardPage({
     function initMap() {
       if (mapInitialized.current || !mapRef.current) return;
       mapInitialized.current = true;
+      const home = savedViewRef.current;
       googleMapRef.current = new google.maps.Map(mapRef.current, {
-        // Opening values only, and deliberately a wide continental view rather
-        // than any particular city: the real frame (this company's areas, or
-        // their city) lands a moment later, and a map of the WRONG city in the
-        // meantime reads as a bug where a zoomed-out one reads as loading.
-        center: NEUTRAL_CENTER,
-        zoom: NEUTRAL_ZOOM,
+        // A saved view opens exactly where its owner left it, with no
+        // intermediate frame. Otherwise: opening values only, and deliberately
+        // a wide continental view rather than any particular city — the real
+        // frame (this company's city, or their areas) lands a moment later, and
+        // a map of the WRONG city in the meantime reads as a bug where a
+        // zoomed-out one reads as loading.
+        center: home ? { lat: home.lat, lng: home.lng } : NEUTRAL_CENTER,
+        zoom: home ? home.zoom : NEUTRAL_ZOOM,
         styles: darkMapStyle,
         disableDefaultUI: true,
         zoomControl: true,
@@ -2026,7 +2115,7 @@ export default function DashboardPage({
       // is the only thing standing between a dispatcher in another province and
       // a permanent view of the Annapolis Valley.
       if (profile.company_id) {
-        fetchCompanyFrame(profile.company_id)
+        fetchCompanyFrame(profile.company_id, { prefer: "locality" })
           .then(frame => {
             // Don't yank the map out from under someone who has already started
             // panning — framing is a starting position, not a leash.
@@ -2073,6 +2162,62 @@ export default function DashboardPage({
       }, 50);
     }
   }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, selectedDriver]);
+
+  // --- the dispatcher's own opening view -------------------------------------
+  const flashTimerRef = useRef<number | null>(null);
+  useEffect(() => () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current); }, []);
+
+  function saveMapView() {
+    const map = googleMapRef.current;
+    const c = map?.getCenter();
+    const z = map?.getZoom();
+    if (!map || !c || z == null) return;
+    const view: SavedMapView = { lat: c.lat(), lng: c.lng(), zoom: z };
+    try {
+      localStorage.setItem(savedViewKey(profile.id), JSON.stringify(view));
+    } catch {
+      // Private-mode / quota. The view still applies for this session; it just
+      // won't survive a reload, which is better than throwing at a click.
+    }
+    savedViewRef.current = view;
+    setSavedView(view);
+    setViewJustSaved(true);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => setViewJustSaved(false), 1800);
+  }
+
+  // Back to the opening view: theirs if they have saved one, the company's
+  // otherwise. Re-arming both guards is what lets the company frame run a
+  // second time — it is normally once-per-load on purpose.
+  function recenterMap(frame: CompanyFrame | null = companyFrameRef.current) {
+    const map = googleMapRef.current;
+    if (!map) return;
+    const home = savedViewRef.current;
+    if (home) {
+      map.panTo({ lat: home.lat, lng: home.lng });
+      map.setZoom(home.zoom);
+      return;
+    }
+    if (!frame) {
+      // The frame fetch at init can fail (its .catch is deliberately quiet, so
+      // a dead network doesn't strand the board). Without this the crosshair
+      // would be a permanent no-op for the rest of the session.
+      if (profile.company_id) {
+        fetchCompanyFrame(profile.company_id, { prefer: "locality" })
+          .then(f => {
+            companyFrameRef.current = f;
+            frameAppliedRef.current = false;
+            mapUserMovedRef.current = false;
+            applyCompanyFrameRef.current?.();
+          })
+          .catch(() => { /* still nothing to centre on */ });
+      }
+      return;
+    }
+    frameAppliedRef.current = false;
+    mapUserMovedRef.current = false;
+    applyCompanyFrameRef.current?.();
+  }
 
   // Mirror the active view into the URL path so a refresh restores it. The first
   // sync (normalizing e.g. "/" to "/rides", or a no-op on a matching deep link)
@@ -4264,7 +4409,13 @@ export default function DashboardPage({
         .db-ride-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
         .db-ride-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
         .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
-        .db-ride-card.dimmed { opacity: 0.7; }
+        /* Recents used to be opacity 0.7 on top of a #6B7280 secondary
+           grey, which composited to roughly 2.3:1 on the card — below AA
+           and genuinely hard to read. Past rides are de-emphasised by
+           being below the divider, not by being dimmed. */
+        .db-ride-card.recent .db-ride-addr,
+        .db-ride-card.recent .db-ride-fare,
+        .db-ride-card.recent .db-ride-time { color: #94A3B8; }
         .db-ride-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
         .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; font-family: system-ui, -apple-system, sans-serif; }
         .db-ride-time { font-size: 11px; color: #6B7280; }
@@ -4494,6 +4645,17 @@ export default function DashboardPage({
         .dd-trail-hint { display: block; font-size: 11px; font-weight: 400; color: #6B7280; margin-top: 2px; }
 
         /* Trail overlay — floats over the always-mounted map, never replaces it. */
+        /* The dispatcher's view controls. Bottom-LEFT at 34px up: bottom-right
+           is Google's zoom control and terms link, and bottom-0 is their logo,
+           which must not be covered. */
+        .db-map-view-ctl { position: absolute; left: 12px; bottom: 34px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: rgba(17,24,39,0.72); backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); border: 1px solid rgba(255,255,255,0.09); box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-family: system-ui, -apple-system, sans-serif; }
+        .db-map-view-btn { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: #94A3B8; border-radius: 8px; cursor: pointer; transition: background 0.12s, color 0.12s, transform 0.12s; }
+        .db-map-view-btn:hover { background: rgba(255,255,255,0.09); color: #F1F5F9; }
+        .db-map-view-btn:active { transform: scale(0.92); }
+        .db-map-view-btn:focus-visible { outline: 2px solid #E8500A; outline-offset: 1px; }
+        .db-map-view-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.12); margin: 0 2px; }
+        .db-map-view-flash { font-size: 11px; font-weight: 600; color: #1D9E75; padding: 0 8px 0 4px; white-space: nowrap; animation: dbViewFlash 0.18s ease-out; }
+        @keyframes dbViewFlash { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
         .db-trail { position: absolute; top: 16px; left: 16px; width: 300px; max-height: calc(100% - 32px); overflow-y: auto; background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 14px; z-index: 5; }
         .db-trail-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
         .db-trail-name { font-size: 14px; font-weight: 700; color: #111827; }
@@ -5307,7 +5469,7 @@ export default function DashboardPage({
                     {recentRides.map((ride) => (
                       <div
                         key={ride.id}
-                        className="db-ride-card dimmed"
+                        className="db-ride-card recent"
                         onClick={() => setRideDetail(ride)}
                       >
                         <div className="db-ride-card-top">
@@ -5334,7 +5496,7 @@ export default function DashboardPage({
                         </div>
                         <div className="db-ride-name" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                           <span>{(ride as any).passenger?.name ?? t("common.unknown")}</span>
-                          <span style={{ fontSize: 10, color: "#6B7280", fontWeight: 400 }}>
+                          <span className="db-ride-time" style={{ fontSize: 10, fontWeight: 400 }}>
                             {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
@@ -5728,6 +5890,35 @@ export default function DashboardPage({
                 className="db-map"
                 style={{ visibility: selectedDriver && !trailDriver ? "hidden" : "visible" }}
               />
+
+              {/* Hidden with the map it controls — a driver detail panel covers
+                  the board entirely. */}
+              {!(selectedDriver && !trailDriver) && (
+                <div className="db-map-view-ctl">
+                  <button
+                    type="button"
+                    className="db-map-view-btn"
+                    onClick={() => recenterMap()}
+                    title={savedView ? t("mapView.recenterSaved") : t("mapView.recenterDefault")}
+                    aria-label={savedView ? t("mapView.recenterSaved") : t("mapView.recenterDefault")}
+                  >
+                    <IconCrosshair />
+                  </button>
+                  <span className="db-map-view-sep" />
+                  <button
+                    type="button"
+                    className="db-map-view-btn"
+                    onClick={saveMapView}
+                    title={savedView ? t("mapView.update") : t("mapView.save")}
+                    aria-label={savedView ? t("mapView.update") : t("mapView.save")}
+                  >
+                    <IconPin />
+                  </button>
+                  {viewJustSaved && (
+                    <span className="db-map-view-flash">{t("mapView.saved")}</span>
+                  )}
+                </div>
+              )}
 
               {trailDriver && (
                 <div className="db-trail">
