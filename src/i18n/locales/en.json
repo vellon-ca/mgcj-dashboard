@@ -633,6 +633,13 @@
     "verify": "Verify & sign in",
     "verifying": "Verifying…"
   },
+  "mapView": {
+    "recenterDefault": "Recenter",
+    "recenterSaved": "Back to your saved view",
+    "save": "Save this as your view",
+    "saved": "Saved",
+    "update": "Update your saved view"
+  },
   "messages": {
     "drivers": "Drivers",
     "noDrivers": "No drivers yet.",

@@ -15,6 +15,16 @@
 //
 // Order: drawn areas -> the company's city. Two rungs, both real, no constant.
 //
+// ...except for WHERE TO LOOK, which is a different question from how far the
+// territory reaches. `prefer: "locality"` flips the order to city-first, and
+// the dispatch board asks for it. A union bbox answers extent honestly and
+// answers position badly: add an area 60 km out for the airport and the
+// midpoint of the union lands in empty farmland between the two clusters, so
+// the board opened on nothing. The city is the one coordinate that means "where
+// the work is". When a company has no city set, the areas rung under
+// "locality" falls back to the centre of their LARGEST area rather than the
+// union midpoint, for the same reason — the big polygon is the town.
+//
 // There used to be a third: a hardcoded Kentville. It is deleted. A Nova Scotia
 // coordinate is not a sensible default for a company in Moncton, and leaving it
 // as the floor meant the wrong answer was always available — so nothing ever
@@ -47,7 +57,32 @@ interface AreaRow {
   area_geojson: { coordinates: number[][][][] } | null;
 }
 
-export async function fetchCompanyFrame(companyId: string): Promise<CompanyFrame> {
+interface Box { north: number; south: number; east: number; west: number }
+
+function boxCenter(b: Box): google.maps.LatLngLiteral {
+  return { lat: (b.north + b.south) / 2, lng: (b.east + b.west) / 2 };
+}
+
+/** Planar shoelace area, only ever compared against other rings from the same
+ *  company, so the unit does not matter — but the longitude scaling does: a
+ *  degree of longitude is ~0.7 of a degree of latitude at 45 N, so without the
+ *  cosine a wide-but-short area can outrank a genuinely larger one. Scaled by
+ *  the ring's own mean latitude, which over one town is as good as exact. */
+function ringArea(ring: number[][]): number {
+  let latSum = 0;
+  for (const [, lat] of ring) latSum += lat;
+  const kx = Math.cos((latSum / ring.length) * Math.PI / 180);
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += (ring[j][0] * kx) * ring[i][1] - (ring[i][0] * kx) * ring[j][1];
+  }
+  return Math.abs(a / 2);
+}
+
+export async function fetchCompanyFrame(
+  companyId: string,
+  opts?: { prefer?: "extent" | "locality" },
+): Promise<CompanyFrame> {
   const [areasRes, companyRes] = await Promise.all([
     supabase
       .from("service_areas_geo")
@@ -66,26 +101,44 @@ export async function fetchCompanyFrame(companyId: string): Promise<CompanyFrame
 
   const areas = (areasRes.data ?? []) as AreaRow[];
 
-  let north = -Infinity, south = Infinity, east = -Infinity, west = Infinity;
-  let any = false;
+  let union: Box | null = null;
+  let biggest: { area: number; box: Box } | null = null;
   for (const a of areas) {
     for (const polygon of a.area_geojson?.coordinates ?? []) {
-      for (const ring of polygon) {
-        for (const [lng, lat] of ring) {
-          north = Math.max(north, lat); south = Math.min(south, lat);
-          east = Math.max(east, lng);  west = Math.min(west, lng);
-          any = true;
-        }
+      // GeoJSON: ring 0 is the outer boundary, the rest are holes. A hole
+      // neither extends the box nor counts toward "which area is biggest".
+      const outer = polygon[0];
+      if (!outer?.length) continue;
+      let box: Box = { north: -Infinity, south: Infinity, east: -Infinity, west: Infinity };
+      for (const [lng, lat] of outer) {
+        box = {
+          north: Math.max(box.north, lat), south: Math.min(box.south, lat),
+          east: Math.max(box.east, lng),   west: Math.min(box.west, lng),
+        };
       }
+      union = union
+        ? {
+            north: Math.max(union.north, box.north), south: Math.min(union.south, box.south),
+            east: Math.max(union.east, box.east),    west: Math.min(union.west, box.west),
+          }
+        : box;
+      const size = ringArea(outer);
+      if (!biggest || size > biggest.area) biggest = { area: size, box };
     }
   }
 
-  if (any) {
-    return {
-      bounds: { north, south, east, west },
-      center: { lat: (north + south) / 2, lng: (east + west) / 2 },
-      source: "areas",
-    };
+  const prefer = opts?.prefer ?? "extent";
+  const areaFrame = (): CompanyFrame | null => {
+    if (!union) return null;
+    // "extent" wants the whole territory; "locality" wants the main town, so it
+    // frames the largest single area and ignores the far-flung ones.
+    const box = prefer === "locality" && biggest ? biggest.box : union;
+    return { bounds: box, center: boxCenter(box), source: "areas" };
+  };
+
+  if (prefer === "extent") {
+    const f = areaFrame();
+    if (f) return f;
   }
 
   const c = companyRes.data;
@@ -106,6 +159,11 @@ export async function fetchCompanyFrame(companyId: string): Promise<CompanyFrame
       source: "city",
     };
   }
+
+  // Reached only by "locality", and only for a company with no city set: the
+  // areas rung is still far better than a continental view.
+  const f = areaFrame();
+  if (f) return f;
 
   return { bounds: null, center: NEUTRAL_CENTER, source: "neutral" };
 }
