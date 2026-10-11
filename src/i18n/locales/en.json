@@ -874,6 +874,35 @@
     "baseFare": "Base fare",
     "baseFareHint": "Flat fee at the start of every ride",
     "carNumbersNext": "Car numbers · next:",
+    "card": {
+      "subtitle": "Card fares are paid straight into your own Stripe account. Fill in Stripe's form once; after that you don't need to open Stripe.",
+      "continue": "Continue setup",
+      "update": "Update details",
+      "opening": "Opening…",
+      "retry": "Try again",
+      "notCreatedTitle": "Not set up yet",
+      "notCreatedBody": "Vellon creates your payments account before you fill anything in. Until then your rides are cash only. Contact support@vellon.ca to get started.",
+      "accountLabel": "Your Stripe account",
+      "cardRow": "Taking card payments",
+      "payoutRow": "Payouts to your bank",
+      "cardHint": {
+        "ok": "Passengers can pay by card.",
+        "wait": "Stripe is reviewing your details.",
+        "todo": "Stripe needs more information before passengers can pay by card."
+      },
+      "payoutHint": {
+        "ok": "Stripe pays your card fares into your bank account.",
+        "wait": "Stripe is reviewing your details.",
+        "todo": "Stripe needs more information before it can pay you."
+      },
+      "status": {
+        "ok": "Active",
+        "wait": "In review",
+        "todo": "Needs information"
+      },
+      "outstanding": "Stripe still needs",
+      "formNote": "The form opens on Stripe and brings you back here when you finish."
+    },
     "companyReports": "Company reports",
     "contactSubtitle": "How passengers and drivers reach <s>you</s> from the apps — not how you reach Vellon, which is under Support",
     "describeProblem": "Describe the problem…",
@@ -925,6 +954,7 @@
     "sections": {
       "contact": "Contact",
       "numbering": "Numbering",
+      "payments": "Card payments",
       "pricing": "Pricing",
       "serviceAreas": "Service Areas",
       "support": "Support",

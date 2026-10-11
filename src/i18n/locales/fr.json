@@ -874,6 +874,35 @@
     "baseFare": "Tarif de base",
     "baseFareHint": "Montant fixe au début de chaque course",
     "carNumbersNext": "Numéros de voiture · prochain :",
+    "card": {
+      "subtitle": "Les courses payées par carte sont versées directement dans votre propre compte Stripe. Remplissez le formulaire de Stripe une fois; vous n'aurez plus à ouvrir Stripe ensuite.",
+      "continue": "Continuer la configuration",
+      "update": "Mettre à jour",
+      "opening": "Ouverture…",
+      "retry": "Réessayer",
+      "notCreatedTitle": "Pas encore configuré",
+      "notCreatedBody": "Vellon crée votre compte de paiement avant que vous ayez quoi que ce soit à remplir. D'ici là, vos courses sont payables en argent comptant seulement. Écrivez à support@vellon.ca pour commencer.",
+      "accountLabel": "Votre compte Stripe",
+      "cardRow": "Paiements par carte",
+      "payoutRow": "Virements à votre banque",
+      "cardHint": {
+        "ok": "Les passagers peuvent payer par carte.",
+        "wait": "Stripe examine vos renseignements.",
+        "todo": "Stripe a besoin de plus de renseignements avant que les passagers puissent payer par carte."
+      },
+      "payoutHint": {
+        "ok": "Stripe verse vos courses payées par carte dans votre compte bancaire.",
+        "wait": "Stripe examine vos renseignements.",
+        "todo": "Stripe a besoin de plus de renseignements avant de pouvoir vous payer."
+      },
+      "status": {
+        "ok": "Actif",
+        "wait": "En examen",
+        "todo": "Renseignements requis"
+      },
+      "outstanding": "Stripe a encore besoin de",
+      "formNote": "Le formulaire s'ouvre sur Stripe et vous ramène ici une fois terminé."
+    },
     "companyReports": "Signalements de l'entreprise",
     "contactSubtitle": "Comment les passagers et les chauffeurs <s>vous</s> joignent depuis les applis — et non comment vous joignez Vellon, ce qui se trouve sous Assistance",
     "describeProblem": "Décrivez le problème…",
@@ -925,6 +954,7 @@
     "sections": {
       "contact": "Coordonnées",
       "numbering": "Numérotation",
+      "payments": "Paiements par carte",
       "pricing": "Tarification",
       "serviceAreas": "Zones de service",
       "support": "Assistance",
