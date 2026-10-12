@@ -11,9 +11,28 @@ import { COMPANY_REFUND_REASONS, REFUND_REASON_KEYS } from "../lib/labels";
  * this modal was opened with), the refund itself, the audit event and the
  * passenger's push. This only collects amount + reason and shows the answer.
  *
- * Rendered inside DashboardPage, whose <style> block defines the db-modal-*
- * classes.
+ * Carries its own styles (rf-*): it opens from the live board AND from
+ * Analytics, and those two pages each define their own modal classes. An older
+ * ride is only reachable from Analytics — the board loads the latest 150.
  */
+// i18n-ok: CSS, not copy.
+const STYLES = `
+  .rf-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1100; backdrop-filter: blur(3px); }
+  .rf-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 420px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; }
+  .rf-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
+  .rf-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
+  .rf-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .rf-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; box-sizing: border-box; font-family: inherit; margin-bottom: 14px; }
+  .rf-input:focus { border-color: rgba(232,80,10,0.4); }
+  .rf-hint { font-size: 11px; line-height: 1.5; color: #6B7280; margin-bottom: 12px; }
+  .rf-error { color: #F87171; font-size: 13px; margin-bottom: 12px; }
+  .rf-actions { display: flex; gap: 10px; }
+  .rf-btn { flex: 1; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; font-family: inherit; }
+  .rf-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .rf-btn.cancel { background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); }
+  .rf-btn.go { background: #E24B4A; color: #fff; border: none; font-weight: 600; }
+`;
+
 export default function RefundRideModal({
   ride,
   onClose,
@@ -71,18 +90,19 @@ export default function RefundRideModal({
   }
 
   return (
-    <div className="db-modal-overlay" style={{ zIndex: 1100 }} onClick={busy ? undefined : onClose}>
-      <div className="db-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-        <div className="db-modal-title">
+    <div className="rf-overlay" onClick={busy ? undefined : onClose}>
+      <style>{STYLES}</style>
+      <div className="rf-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="rf-title">
           {t("refund.title")}
-          <span className="db-ride-ref">{formatRideRef(ride.ride_ref)}</span>
+          <span className="rf-ref">{formatRideRef(ride.ride_ref)}</span>
         </div>
 
-        <label className="db-modal-label">
+        <label className="rf-label">
           {t("refund.amount", { max: `$${(remaining / 100).toFixed(2)}` })}
         </label>
         <input
-          className="db-modal-input"
+          className="rf-input"
           type="number"
           min="0.01"
           step="0.01"
@@ -90,16 +110,14 @@ export default function RefundRideModal({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           disabled={busy}
-          style={{ marginBottom: 14 }}
         />
 
-        <label className="db-modal-label">{t("refund.reason")}</label>
+        <label className="rf-label">{t("refund.reason")}</label>
         <select
-          className="db-modal-select"
+          className="rf-input"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           disabled={busy}
-          style={{ marginBottom: 14 }}
         >
           <option value="">{t("refund.chooseReason")}</option>
           {COMPANY_REFUND_REASONS.map((r) => (
@@ -109,39 +127,32 @@ export default function RefundRideModal({
           ))}
         </select>
 
-        <label className="db-modal-label">
+        <label className="rf-label">
           {reason === "other" ? t("refund.noteRequired") : t("refund.noteOptional")}
         </label>
         <textarea
-          className="db-modal-input"
+          className="rf-input"
           rows={2}
           maxLength={500}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           disabled={busy}
-          style={{ marginBottom: 12, resize: "vertical" }}
+          style={{ resize: "vertical" }}
         />
 
-        <div className="db-modal-hint" style={{ marginBottom: 12 }}>
-          {t("refund.explainer")}
-        </div>
+        <div className="rf-hint">{t("refund.explainer")}</div>
 
         {error && (
-          <div role="alert" style={{ color: "#F87171", fontSize: 13, marginBottom: 12 }}>
+          <div role="alert" className="rf-error">
             {error}
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <button className="db-modal-cancel-btn" style={{ flex: 1 }} onClick={onClose} disabled={busy}>
+        <div className="rf-actions">
+          <button className="rf-btn cancel" onClick={onClose} disabled={busy}>
             {t("common.cancel")}
           </button>
-          <button
-            className="db-modal-submit-btn"
-            style={{ flex: 1, opacity: canSubmit ? 1 : 0.5 }}
-            onClick={submit}
-            disabled={!canSubmit}
-          >
+          <button className="rf-btn go" onClick={submit} disabled={!canSubmit}>
             {busy
               ? t("refund.working")
               : t("refund.confirm", { amount: amountOk ? `$${(cents / 100).toFixed(2)}` : "" }).trim()}

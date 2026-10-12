@@ -4985,7 +4985,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
           >
-            <AnalyticsPage companyName={companyName} companyId={profile.company_id!} dispatcherId={profile.id} />
+            <AnalyticsPage companyName={companyName} companyId={profile.company_id!} dispatcherId={profile.id} isAdmin={isAdmin} />
           </div>
           <div
             className="db-overlay"

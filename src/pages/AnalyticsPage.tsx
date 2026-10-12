@@ -19,7 +19,8 @@ import {
   rideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import RefundRideModal from "../components/RefundRideModal";
 
 // Module-scope wrappers, because half this file's label lookups live in
 // non-component helpers (the CSV builders, the print-HTML builders, the
@@ -761,12 +762,16 @@ export default function AnalyticsPage({
   companyName,
   companyId,
   dispatcherId,
+  isAdmin,
 }: {
   companyName?: string | null;
   companyId: string;
   dispatcherId: string;
+  // Gates the Refund action only; the server checks the role again.
+  isAdmin: boolean;
 }) {
   const { t } = useTranslation();
+  const [refundTarget, setRefundTarget] = useState<RideRow | null>(null);
   // These two are rendered AND compared against (the receipt's total row gets
   // emphasis, the settlement row gets a warning style). Comparing a rendered
   // label against a raw English literal is true in English and never true in
@@ -6016,6 +6021,18 @@ export default function AnalyticsPage({
                 {printingRide ? t("analytics.preparing") : t("analytics.printReceipt")}
               </button>
             )}
+            {/* A fare charged on the company's own Stripe account; admins
+                only. This is the way to an older ride — the live board only
+                loads the most recent ones. */}
+            {isAdmin && canOfferRefund(rideDetail.ride) && (
+              <button
+                className="an-download-btn"
+                style={{ width: "100%", marginTop: 10, textAlign: "center", color: "#F87171" }}
+                onClick={() => setRefundTarget(rideDetail.ride)}
+              >
+                {t("refund.button")}
+              </button>
+            )}
             <button
               className="an-modal-close"
               onClick={() => setRideDetail(null)}
@@ -6024,6 +6041,19 @@ export default function AnalyticsPage({
             </button>
           </div>
         </div>
+      )}
+      {refundTarget && (
+        <RefundRideModal
+          ride={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onDone={(message) => {
+            // The detail was opened from a snapshot of the ride; close it so a
+            // stale "refundable" row is not left on screen.
+            setRefundTarget(null);
+            setRideDetail(null);
+            alert(message);
+          }}
+        />
       )}
     </>
   );
