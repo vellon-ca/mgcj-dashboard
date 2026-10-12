@@ -21,6 +21,7 @@ export type SettlementFields = {
   platform_fee_percent_at_completion: number | null;
   stripe_charge_account_id?: string | null;
   application_fee_cents?: number | null;
+  application_fee_tax_cents?: number | null;
   stripe_processing_fee_cents?: number | null;
   refunded_amount_cents?: number | null;
 };
@@ -35,11 +36,16 @@ export const settlementRouteOf = (r: SettlementFields): string | null =>
 /** Dollars. Each is null while the figure it needs is not recorded yet. */
 export function settlementFigures(r: SettlementFields): {
   vellonFee: number | null;
+  /** GST/HST Vellon added on top of its fee; 0 when the fee was not taxed. */
+  feeTax: number;
   cardFee: number | null;
   net: number | null;
 } {
+  // On a direct charge Stripe's application fee is Vellon's fee PLUS the tax
+  // on it. Shown as two rows so the fee still reads as the agreed percent.
+  const feeTax = isDirectCharge(r) ? (r.application_fee_tax_cents ?? 0) / 100 : 0;
   const vellonFee = isDirectCharge(r)
-    ? (r.application_fee_cents as number) / 100
+    ? (r.application_fee_cents as number) / 100 - feeTax
     : r.fare_final != null && r.platform_fee_percent_at_completion != null
       ? r.fare_final * (r.platform_fee_percent_at_completion / 100)
       : null;
@@ -54,9 +60,9 @@ export function settlementFigures(r: SettlementFields): {
   const refunded = isDirectCharge(r) ? (r.refunded_amount_cents ?? 0) / 100 : 0;
   const net =
     r.fare_final != null && vellonFee != null && cardFee != null
-      ? r.fare_final - vellonFee - cardFee - refunded
+      ? r.fare_final - vellonFee - feeTax - cardFee - refunded
       : null;
-  return { vellonFee, cardFee, net };
+  return { vellonFee, feeTax, cardFee, net };
 }
 
 /** Whether the dashboard should offer Refund on this ride. The server decides

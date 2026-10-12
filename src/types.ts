@@ -91,6 +91,8 @@ export interface Ride {
   // Direct charges (the company's own Stripe account); all null on a platform charge.
   stripe_charge_account_id: string | null;
   application_fee_cents: number | null;
+  // GST/HST on Vellon's fee, inside application_fee_cents. Null = untaxed.
+  application_fee_tax_cents: number | null;
   stripe_processing_fee_cents: number | null;
   refund_note: string | null;
   // Synced from Stripe (stripe-webhook / capture-payment); never written here.

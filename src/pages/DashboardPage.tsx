@@ -6977,6 +6977,14 @@ export default function DashboardPage({
                                 }`
                               : "—",
                           ],
+                          ...(settlementFigures(rideDetail).feeTax > 0
+                            ? ([
+                                [
+                                  t("rideDetail.vellonFeeTax"),
+                                  `$${settlementFigures(rideDetail).feeTax.toFixed(2)}`,
+                                ],
+                              ] as [string, string][])
+                            : []),
                           [
                             t("rideDetail.cardFee"),
                             settlementFigures(rideDetail).cardFee != null

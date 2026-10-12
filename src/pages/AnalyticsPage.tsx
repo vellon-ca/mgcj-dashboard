@@ -857,6 +857,8 @@ export default function AnalyticsPage({
     cash_rides: number;
     cash_fares: number;
     cash_fee_owed: number;
+    // GST/HST on that fee (0 while Vellon's fee is untaxed).
+    cash_fee_tax: number;
   } | null>(null);
   const [cashSettlementLoading, setCashSettlementLoading] = useState(true);
   // Card fee breakdown (company_settles view). Gross fares decomposed into what
@@ -871,6 +873,8 @@ export default function AnalyticsPage({
     net_total: number;
     // Refunded by the company out of its own Stripe balance (direct charges).
     refunded: number;
+    // GST/HST Vellon charged on top of its fee (0 while untaxed).
+    fee_tax: number;
   } | null>(null);
   const [feeBreakdownLoading, setFeeBreakdownLoading] = useState(true);
   // Donut hover for the fee-composition chart: "net" | "vellon" | "stripe".
@@ -1420,6 +1424,7 @@ export default function AnalyticsPage({
           cash_rides: Number(row?.cash_rides ?? 0),
           cash_fares: Number(row?.cash_fares ?? 0),
           cash_fee_owed: Number(row?.cash_fee_owed ?? 0),
+          cash_fee_tax: Number(row?.cash_fee_tax ?? 0),
         });
       }
     } finally {
@@ -1460,6 +1465,7 @@ export default function AnalyticsPage({
           stripe_fee: Number(row?.stripe_fee ?? 0),
           net_total: Number(row?.net_total ?? 0),
           refunded: Number(row?.refunded ?? 0),
+          fee_tax: Number(row?.fee_tax ?? 0),
         });
       }
     } finally {
@@ -1703,6 +1709,7 @@ export default function AnalyticsPage({
       ? [
           { key: "net", name: "Net to you", color: "#4a9eff", amt: feeBreakdown.net_total },
           { key: "vellon", name: "Vellon fee", color: "#E8500A", amt: feeBreakdown.vellon_fee },
+          { key: "feeTax", name: i18next.t("rideDetail.vellonFeeTax"), color: "#B45309", amt: feeBreakdown.fee_tax },
           { key: "stripe", name: "Stripe fee", color: "#8B93A7", amt: feeBreakdown.stripe_fee },
           { key: "refunded", name: i18next.t("settle.refunded"), color: "#E24B4A", amt: feeBreakdown.refunded },
         ]
@@ -2102,7 +2109,12 @@ export default function AnalyticsPage({
                       : ""
                   }`
                 : "—"
-            }</td></tr>
+            }</td></tr>${
+              figures.feeTax > 0
+                ? `
+            <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.vellonFeeTax"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">$${figures.feeTax.toFixed(2)}</td></tr>`
+                : ""
+            }
             <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.cardFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
               figures.cardFee != null ? `$${figures.cardFee.toFixed(2)}` : esc(t("rideDetail.pending"))
             }</td></tr>
@@ -3898,6 +3910,8 @@ export default function AnalyticsPage({
                                 pct: ((feeBreakdown.vellon_fee / feeBreakdown.gross_fares) * 100).toFixed(1),
                               })
                             : t("settle.platformFee")}
+                          {feeBreakdown.fee_tax > 0 &&
+                            ` · ${t("settle.plusTax", { amount: feeBreakdown.fee_tax.toFixed(2) })}`}
                         </div>
                       </div>
 
@@ -4105,6 +4119,8 @@ export default function AnalyticsPage({
                         </div>
                         <div className="an-hero-sub">
                           {periodPhrase} · {t("settle.invoicedMonthly")}
+                          {cashSettlement.cash_fee_tax > 0 &&
+                            ` · ${t("settle.plusTax", { amount: cashSettlement.cash_fee_tax.toFixed(2) })}`}
                         </div>
                       </div>
                     </div>
@@ -5362,6 +5378,14 @@ export default function AnalyticsPage({
                             }`
                           : "—",
                       ],
+                      ...(settlementFigures(rideDetail.ride).feeTax > 0
+                        ? ([
+                            [
+                              t("rideDetail.vellonFeeTax"),
+                              `$${settlementFigures(rideDetail.ride).feeTax.toFixed(2)}`,
+                            ],
+                          ] as [string, string][])
+                        : []),
                       [
                         t("rideDetail.cardFee"),
                         settlementFigures(rideDetail.ride).cardFee != null
