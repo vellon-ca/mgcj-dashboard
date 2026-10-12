@@ -1537,7 +1537,7 @@ export default function AnalyticsPage({
 
       const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, stripe_processing_fee_cents, refunded_amount_cents")
+        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, application_fee_returned_cents, stripe_processing_fee_cents, refunded_amount_cents")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .eq("status", "completed")
@@ -1567,7 +1567,7 @@ export default function AnalyticsPage({
           transfer_amount_cents:
             isDirectCharge(r) && r.fare_final != null
               ? Math.round(r.fare_final * 100) -
-                r.application_fee_cents -
+                (r.application_fee_cents - (r.application_fee_returned_cents ?? 0)) -
                 (r.stripe_processing_fee_cents ?? 0) -
                 (r.refunded_amount_cents ?? 0)
               : r.transfer_amount_cents,
@@ -2104,9 +2104,11 @@ export default function AnalyticsPage({
             <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.vellonFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
               figures.vellonFee != null
                 ? `$${figures.vellonFee.toFixed(2)}${
-                    ride.platform_fee_percent_at_completion != null
-                      ? ` (${ride.platform_fee_percent_at_completion}%)`
-                      : ""
+                    figures.feeReturned
+                      ? ` (${esc(t("rideDetail.vellonFeeReturned"))})`
+                      : ride.platform_fee_percent_at_completion != null
+                        ? ` (${ride.platform_fee_percent_at_completion}%)`
+                        : ""
                   }`
                 : "—"
             }</td></tr>${
@@ -5372,9 +5374,11 @@ export default function AnalyticsPage({
                         t("rideDetail.vellonFee"),
                         settlementFigures(rideDetail.ride).vellonFee != null
                           ? `$${settlementFigures(rideDetail.ride).vellonFee!.toFixed(2)}${
-                              rideDetail.ride.platform_fee_percent_at_completion != null
-                                ? ` (${rideDetail.ride.platform_fee_percent_at_completion}%)`
-                                : ""
+                              settlementFigures(rideDetail.ride).feeReturned
+                                ? ` (${t("rideDetail.vellonFeeReturned")})`
+                                : rideDetail.ride.platform_fee_percent_at_completion != null
+                                  ? ` (${rideDetail.ride.platform_fee_percent_at_completion}%)`
+                                  : ""
                             }`
                           : "—",
                       ],

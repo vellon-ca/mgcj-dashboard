@@ -829,6 +829,7 @@
     "immediate": "Immediate",
     "netSettled": "Net settled",
     "vellonFeeTax": "Tax on Vellon fee",
+    "vellonFeeReturned": "returned to you",
     "passenger": "Passenger",
     "payment": "Payment",
     "pending": "Pending",

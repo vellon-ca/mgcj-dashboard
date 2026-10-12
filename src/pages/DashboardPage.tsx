@@ -6971,9 +6971,11 @@ export default function DashboardPage({
                             t("rideDetail.vellonFee"),
                             settlementFigures(rideDetail).vellonFee != null
                               ? `$${settlementFigures(rideDetail).vellonFee!.toFixed(2)}${
-                                  rideDetail.platform_fee_percent_at_completion != null
-                                    ? ` (${rideDetail.platform_fee_percent_at_completion}%)`
-                                    : ""
+                                  settlementFigures(rideDetail).feeReturned
+                                    ? ` (${t("rideDetail.vellonFeeReturned")})`
+                                    : rideDetail.platform_fee_percent_at_completion != null
+                                      ? ` (${rideDetail.platform_fee_percent_at_completion}%)`
+                                      : ""
                                 }`
                               : "—",
                           ],

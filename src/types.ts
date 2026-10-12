@@ -93,6 +93,9 @@ export interface Ride {
   application_fee_cents: number | null;
   // GST/HST on Vellon's fee, inside application_fee_cents. Null = untaxed.
   application_fee_tax_cents: number | null;
+  // Vellon's fee handed back to the company (vellon-ops); null = not returned.
+  application_fee_returned_cents: number | null;
+  application_fee_tax_returned_cents: number | null;
   stripe_processing_fee_cents: number | null;
   refund_note: string | null;
   // Synced from Stripe (stripe-webhook / capture-payment); never written here.
