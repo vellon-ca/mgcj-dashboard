@@ -33,6 +33,8 @@ import {
   rideStatusLabel as sharedRideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
+import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import RefundRideModal from "../components/RefundRideModal";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
@@ -1963,6 +1965,9 @@ export default function DashboardPage({
   const dropoffAutocompleteRef = useRef<any>(null);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+  // The ride an admin is refunding (company-refund). Its own state, so the
+  // refund modal sits over the ride detail and survives it re-syncing.
+  const [refundTarget, setRefundTarget] = useState<Ride | null>(null);
   // Hoisted out of the detail-row map so the row label and the warning test
   // cannot disagree — see the comment at the comparison site.
   const settlementLabel = t("rideDetail.settlement");
@@ -4980,7 +4985,7 @@ export default function DashboardPage({
             className="db-overlay"
             style={{ display: showAnalytics ? "flex" : "none" }}
           >
-            <AnalyticsPage companyName={companyName} companyId={profile.company_id!} dispatcherId={profile.id} />
+            <AnalyticsPage companyName={companyName} companyId={profile.company_id!} dispatcherId={profile.id} isAdmin={isAdmin} />
           </div>
           <div
             className="db-overlay"
@@ -6517,6 +6522,19 @@ export default function DashboardPage({
         </div>
       )}
 
+      {refundTarget && (
+        <RefundRideModal
+          ride={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onDone={(message) => {
+            // The ride row updates itself over Realtime (the function and the
+            // Stripe webhook both write it), so there is nothing to refetch.
+            setRefundTarget(null);
+            alert(message);
+          }}
+        />
+      )}
+
       {rideDetail && (editingRide || !LIVE_STATUSES.has(rideDetail.status)) && (
         <div
           className="db-modal-overlay"
@@ -6947,38 +6965,41 @@ export default function DashboardPage({
                         ? t("rideDetail.cash")
                         : t("rideDetail.card"),
                     ],
-                    ...(rideDetail.payment_method === "card" && rideDetail.settlement_route
+                    ...(rideDetail.payment_method === "card" && settlementRouteOf(rideDetail)
                       ? ([
                           [
                             t("rideDetail.vellonFee"),
-                            rideDetail.fare_final != null &&
-                            rideDetail.platform_fee_percent_at_completion != null
-                              ? `$${(
-                                  rideDetail.fare_final *
-                                  (rideDetail.platform_fee_percent_at_completion / 100)
-                                ).toFixed(2)} (${rideDetail.platform_fee_percent_at_completion}%)`
+                            settlementFigures(rideDetail).vellonFee != null
+                              ? `$${settlementFigures(rideDetail).vellonFee!.toFixed(2)}${
+                                  settlementFigures(rideDetail).feeReturned
+                                    ? ` (${t("rideDetail.vellonFeeReturned")})`
+                                    : rideDetail.platform_fee_percent_at_completion != null
+                                      ? ` (${rideDetail.platform_fee_percent_at_completion}%)`
+                                      : ""
+                                }`
                               : "—",
                           ],
+                          ...(settlementFigures(rideDetail).feeTax > 0
+                            ? ([
+                                [
+                                  t("rideDetail.vellonFeeTax"),
+                                  `$${settlementFigures(rideDetail).feeTax.toFixed(2)}`,
+                                ],
+                              ] as [string, string][])
+                            : []),
                           [
                             t("rideDetail.cardFee"),
-                            rideDetail.stripe_fee != null
-                              ? `$${rideDetail.stripe_fee.toFixed(2)}`
+                            settlementFigures(rideDetail).cardFee != null
+                              ? `$${settlementFigures(rideDetail).cardFee!.toFixed(2)}`
                               : t("rideDetail.pending"),
                           ],
                           [
                             t("rideDetail.netSettled"),
-                            rideDetail.fare_final != null &&
-                            rideDetail.platform_fee_percent_at_completion != null &&
-                            rideDetail.stripe_fee != null
-                              ? `$${(
-                                  rideDetail.fare_final -
-                                  rideDetail.fare_final *
-                                    (rideDetail.platform_fee_percent_at_completion / 100) -
-                                  rideDetail.stripe_fee
-                                ).toFixed(2)}`
+                            settlementFigures(rideDetail).net != null
+                              ? `$${settlementFigures(rideDetail).net!.toFixed(2)}`
                               : "—",
                           ],
-                          [settlementLabel, settlementRouteLabel(rideDetail.settlement_route)],
+                          [settlementLabel, settlementRouteLabel(settlementRouteOf(rideDetail))],
                           ...(rideDetail.refunded_amount_cents &&
                           rideDetail.refunded_amount_cents > 0
                             ? ([
@@ -7071,6 +7092,17 @@ export default function DashboardPage({
                   >
                     {t("common.close")}
                   </button>
+                  {/* Admins only, and only a fare charged on the company's own
+                      Stripe account. The server checks all of it again. */}
+                  {isAdmin && canOfferRefund(rideDetail) && (
+                    <button
+                      className="db-modal-cancel-btn"
+                      style={{ flex: 1, color: "#F87171" }}
+                      onClick={() => setRefundTarget(rideDetail)}
+                    >
+                      {t("refund.button")}
+                    </button>
+                  )}
                   {!NON_EDITABLE_STATUSES.has(rideDetail.status) && (
                     <button
                       className="db-modal-submit-btn"

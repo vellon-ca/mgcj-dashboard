@@ -574,6 +574,7 @@
     "rideFlagResolved": "Resolved ride flag",
     "rideNotesAdded": "Added ride notes",
     "rideReassigned": "Reassigned ride",
+    "rideRefunded": "Refunded a card fare",
     "rideRouteModified": "Changed route",
     "rideScheduledModified": "Edited ride",
     "settingsContactUpdated": "Updated contact details",
@@ -688,10 +689,47 @@
     "total": "Total",
     "totalFare": "Total fare"
   },
+  "refund": {
+    "amount": "Amount (up to {{max}})",
+    "button": "Refund",
+    "chooseReason": "Choose a reason…",
+    "confirm": "Refund {{amount}}",
+    "done": "Refunded {{amount}} to the passenger's card.",
+    "donePending": "Refund of {{amount}} started. Stripe will complete it once the funds are available.",
+    "explainer": "The refund comes out of your company's Stripe balance and goes back to the passenger's card. Vellon's fee and Stripe's processing fee on this ride are not returned. If your balance does not cover it, Stripe may collect the difference from your bank account.",
+    "noteOptional": "Note (optional)",
+    "noteRequired": "Note (required)",
+    "reason": "Reason",
+    "title": "Refund fare",
+    "working": "Refunding…"
+  },
+  "refundErr": {
+    "adminOnly": "Only a company admin can refund a fare.",
+    "badAmount": "Enter a refund amount greater than zero.",
+    "badRequest": "Something was missing from the request. Try again.",
+    "disputed": "This charge is disputed. Respond to the dispute in Stripe instead of refunding.",
+    "failed": "The refund could not be completed. Try again.",
+    "notCaptured": "This payment was never captured.",
+    "notCard": "This ride was not paid by card.",
+    "notFound": "Ride not found.",
+    "noteRequired": "Add a note explaining the refund.",
+    "nothingLeft": "This fare is already fully refunded.",
+    "platformCharge": "This fare was charged through Vellon, not your Stripe account. Contact Vellon support to refund it.",
+    "reasonRequired": "Choose a reason for the refund.",
+    "stripeRefused": "Stripe could not complete the refund.",
+    "tooMuch": "That is more than is left to refund on this fare.",
+    "unauthorized": "Your session has expired. Sign in again.",
+    "unreadable": "Could not read this payment at Stripe. Try again."
+  },
   "refundReason": {
     "driverFault": "driver/company at fault",
     "goodwill": "goodwill — Vellon absorbed",
-    "platformMistake": "platform mistake — Vellon absorbed"
+    "goodwillCompany": "goodwill",
+    "other": "other",
+    "overcharged": "overcharged",
+    "platformMistake": "platform mistake — Vellon absorbed",
+    "rideNotTaken": "ride didn't happen",
+    "serviceIssue": "service problem"
   },
   "reportReason": {
     "cashRequest": "Asked for cash to bypass the app",
@@ -790,6 +828,8 @@
     "feePending": "Pending",
     "immediate": "Immediate",
     "netSettled": "Net settled",
+    "vellonFeeTax": "Tax on Vellon fee",
+    "vellonFeeReturned": "returned to you",
     "passenger": "Passenger",
     "payment": "Payment",
     "pending": "Pending",
@@ -874,6 +914,35 @@
     "baseFare": "Base fare",
     "baseFareHint": "Flat fee at the start of every ride",
     "carNumbersNext": "Car numbers · next:",
+    "card": {
+      "subtitle": "Card fares are paid straight into your own Stripe account. Fill in Stripe's form once; after that you don't need to open Stripe.",
+      "continue": "Continue setup",
+      "update": "Update details",
+      "opening": "Opening…",
+      "retry": "Try again",
+      "notCreatedTitle": "Not set up yet",
+      "notCreatedBody": "Vellon creates your payments account before you fill anything in. Until then your rides are cash only. Contact support@vellon.ca to get started.",
+      "accountLabel": "Your Stripe account",
+      "cardRow": "Taking card payments",
+      "payoutRow": "Payouts to your bank",
+      "cardHint": {
+        "ok": "Passengers can pay by card.",
+        "wait": "Stripe is reviewing your details.",
+        "todo": "Stripe needs more information before passengers can pay by card."
+      },
+      "payoutHint": {
+        "ok": "Stripe pays your card fares into your bank account.",
+        "wait": "Stripe is reviewing your details.",
+        "todo": "Stripe needs more information before it can pay you."
+      },
+      "status": {
+        "ok": "Active",
+        "wait": "In review",
+        "todo": "Needs information"
+      },
+      "outstanding": "Stripe still needs",
+      "formNote": "The form opens on Stripe and brings you back here when you finish."
+    },
     "companyReports": "Company reports",
     "contactSubtitle": "How passengers and drivers reach <s>you</s> from the apps — not how you reach Vellon, which is under Support",
     "describeProblem": "Describe the problem…",
@@ -925,6 +994,7 @@
     "sections": {
       "contact": "Contact",
       "numbering": "Numbering",
+      "payments": "Card payments",
       "pricing": "Pricing",
       "serviceAreas": "Service Areas",
       "support": "Support",
@@ -1006,6 +1076,7 @@
     "grossSub": "Gross · what passengers were charged",
     "held": "Held",
     "invoicedMonthly": "invoiced monthly",
+    "plusTax": "+ ${{amount}} tax",
     "marking": "Marking…",
     "needsCollection": "needs collection",
     "net": "Net",
@@ -1028,6 +1099,7 @@
     "pendingInvoiceCount_one": "{{count}} pending invoice",
     "pendingInvoiceCount_other": "{{count}} pending invoice",
     "platformFee": "platform fee",
+    "refunded": "Refunded",
     "rideId": "Ride {{id}}",
     "routedToDrivers": "Routed to drivers",
     "routedToYourAccount": "Routed to your account",
@@ -1053,6 +1125,7 @@
   },
   "settlementRoute": {
     "companyTransfer": "Routed to your company account",
+    "direct": "Charged on your own Stripe account",
     "driverTransfer": "Paid directly to the driver",
     "platformInvoiced": "Held by Vellon — pending invoice",
     "refundReversed": "Payout reversed — ride was refunded",
@@ -1065,6 +1138,7 @@
   },
   "settlementShort": {
     "companyTransfer": "Company paid",
+    "direct": "Your Stripe account",
     "driverTransfer": "Driver paid",
     "platformInvoiced": "Held by Vellon",
     "refundReversed": "Reversed (refund)",

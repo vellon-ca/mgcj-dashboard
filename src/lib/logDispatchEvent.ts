@@ -30,6 +30,8 @@ export type DispatchEventType =
   | "announcement.passengers"
   | "escalation.acknowledged"
   | "ride.flag_resolved"
+  // Logged by the company-refund Edge Function, never from this app.
+  | "ride.refunded"
   | "export.csv"
   | "export.pdf"
   | "invoice.printed"

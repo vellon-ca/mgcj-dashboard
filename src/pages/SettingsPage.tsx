@@ -5,6 +5,7 @@ import { useLocale } from "../i18n/LocaleContext";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { invokeFunction } from "../lib/invokeFunction";
+import CardPaymentsSection from "../components/CardPaymentsSection";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import ServiceAreasSection from "../components/ServiceAreasSection";
 
@@ -20,6 +21,7 @@ type Section =
   | "vehicle_classes"
   | "service_areas"
   | "numbering"
+  | "payments"
   | "language"
   | "support"
   | "team";
@@ -115,6 +117,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         { id: "vehicle_classes", label: t("settings.sections.vehicleClasses") },
         { id: "service_areas", label: t("settings.sections.serviceAreas") },
         { id: "numbering", label: t("settings.sections.numbering") },
+        { id: "payments", label: t("settings.sections.payments") },
         { id: "language", label: t("language.title") },
         { id: "team", label: t("settings.sections.team") },
         { id: "support", label: t("settings.sections.support") },
@@ -1155,6 +1158,8 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           {section === "service_areas" && (
             <ServiceAreasSection companyId={companyId} />
           )}
+
+          {section === "payments" && <CardPaymentsSection companyId={companyId} />}
 
           {section === "numbering" && (
             <>
