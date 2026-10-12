@@ -33,7 +33,8 @@ import {
   rideStatusLabel as sharedRideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import RefundRideModal from "../components/RefundRideModal";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
@@ -1964,6 +1965,9 @@ export default function DashboardPage({
   const dropoffAutocompleteRef = useRef<any>(null);
   const [assigningRide, setAssigningRide] = useState<string | null>(null);
   const [rideDetail, setRideDetail] = useState<Ride | null>(null);
+  // The ride an admin is refunding (company-refund). Its own state, so the
+  // refund modal sits over the ride detail and survives it re-syncing.
+  const [refundTarget, setRefundTarget] = useState<Ride | null>(null);
   // Hoisted out of the detail-row map so the row label and the warning test
   // cannot disagree — see the comment at the comparison site.
   const settlementLabel = t("rideDetail.settlement");
@@ -6518,6 +6522,19 @@ export default function DashboardPage({
         </div>
       )}
 
+      {refundTarget && (
+        <RefundRideModal
+          ride={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onDone={(message) => {
+            // The ride row updates itself over Realtime (the function and the
+            // Stripe webhook both write it), so there is nothing to refetch.
+            setRefundTarget(null);
+            alert(message);
+          }}
+        />
+      )}
+
       {rideDetail && (editingRide || !LIVE_STATUSES.has(rideDetail.status)) && (
         <div
           className="db-modal-overlay"
@@ -7065,6 +7082,17 @@ export default function DashboardPage({
                   >
                     {t("common.close")}
                   </button>
+                  {/* Admins only, and only a fare charged on the company's own
+                      Stripe account. The server checks all of it again. */}
+                  {isAdmin && canOfferRefund(rideDetail) && (
+                    <button
+                      className="db-modal-cancel-btn"
+                      style={{ flex: 1, color: "#F87171" }}
+                      onClick={() => setRefundTarget(rideDetail)}
+                    >
+                      {t("refund.button")}
+                    </button>
+                  )}
                   {!NON_EDITABLE_STATUSES.has(rideDetail.status) && (
                     <button
                       className="db-modal-submit-btn"

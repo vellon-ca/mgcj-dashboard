@@ -239,6 +239,7 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
   "settings.contact_updated": "event.settingsContactUpdated",
   "settings.numbering_updated": "event.settingsNumberingUpdated",
   "ride.flag_resolved": "event.rideFlagResolved",
+  "ride.refunded": "event.rideRefunded",
   "settings.vehicle_class_created": "event.settingsVehicleClassCreated",
   "settings.vehicle_class_updated": "event.settingsVehicleClassUpdated",
   "settings.vehicle_class_status_changed": "event.settingsVehicleClassStatusChanged",
@@ -285,6 +286,7 @@ const EVENT_COLORS: Record<string, string> = {
   "settings.contact_updated": "#F59E0B",
   "settings.numbering_updated": "#6B7280",
   "ride.flag_resolved": "#1D9E75",
+  "ride.refunded": "#E24B4A",
   "settings.vehicle_class_created": "#1D9E75",
   "settings.vehicle_class_updated": "#60A5FA",
   "settings.vehicle_class_status_changed": "#6B7280",
@@ -326,6 +328,14 @@ function formatEventDetails(type: string, details: any): string {
       return `${details.from_driver_name ?? "?"} → ${details.to_driver_name ?? "?"}`;
     case "ride.fare_changed":
       return `$${Number(details.original_fare ?? 0).toFixed(2)} → $${Number(details.new_fare ?? 0).toFixed(2)}`;
+    case "ride.refunded":
+      return [
+        `$${(Number(details.amount_cents ?? 0) / 100).toFixed(2)}`,
+        details.reason ? refundReasonLabel(details.reason) : null,
+        details.note,
+      ]
+        .filter(Boolean)
+        .join(" · ");
     case "ride.scheduled_modified":
       return [
         details.pickup_address && details.dropoff_address
@@ -875,6 +885,8 @@ export default function AnalyticsPage({
     vellon_fee: number;
     stripe_fee: number;
     net_total: number;
+    // Refunded by the company out of its own Stripe balance (direct charges).
+    refunded: number;
   } | null>(null);
   const [feeBreakdownLoading, setFeeBreakdownLoading] = useState(true);
   // Donut hover for the fee-composition chart: "net" | "vellon" | "stripe".
@@ -1486,6 +1498,7 @@ export default function AnalyticsPage({
           vellon_fee: Number(row?.vellon_fee ?? 0),
           stripe_fee: Number(row?.stripe_fee ?? 0),
           net_total: Number(row?.net_total ?? 0),
+          refunded: Number(row?.refunded ?? 0),
         });
       }
     } finally {
@@ -1557,7 +1570,7 @@ export default function AnalyticsPage({
 
       const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, stripe_processing_fee_cents")
+        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, stripe_processing_fee_cents, refunded_amount_cents")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .eq("status", "completed")
@@ -1588,7 +1601,8 @@ export default function AnalyticsPage({
             isDirectCharge(r) && r.fare_final != null
               ? Math.round(r.fare_final * 100) -
                 r.application_fee_cents -
-                (r.stripe_processing_fee_cents ?? 0)
+                (r.stripe_processing_fee_cents ?? 0) -
+                (r.refunded_amount_cents ?? 0)
               : r.transfer_amount_cents,
           driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
           // Mirror the RPC -- it buckets a null route as 'direct' or
@@ -1794,6 +1808,7 @@ export default function AnalyticsPage({
           { key: "net", name: "Net to you", color: "#4a9eff", amt: feeBreakdown.net_total },
           { key: "vellon", name: "Vellon fee", color: "#E8500A", amt: feeBreakdown.vellon_fee },
           { key: "stripe", name: "Stripe fee", color: "#8B93A7", amt: feeBreakdown.stripe_fee },
+          { key: "refunded", name: i18next.t("settle.refunded"), color: "#E24B4A", amt: feeBreakdown.refunded },
         ]
       : [];
     let acc = 0;
@@ -5470,6 +5485,7 @@ export default function AnalyticsPage({
                       <option value="ride.scheduled_modified">{eventLabel("ride.scheduled_modified")}</option>
                       <option value="ride.route_modified">{eventLabel("ride.route_modified")}</option>
                       <option value="ride.flag_resolved">{eventLabel("ride.flag_resolved")}</option>
+                      <option value="ride.refunded">{eventLabel("ride.refunded")}</option>
                     </optgroup>
                     <optgroup label={t("nav.drivers")}>
                       <option value="driver.suspended">{eventLabel("driver.suspended")}</option>

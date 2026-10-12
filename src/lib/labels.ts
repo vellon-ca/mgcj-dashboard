@@ -76,7 +76,24 @@ export const REFUND_REASON_KEYS: Record<string, string> = {
   driver_fault: "refundReason.driverFault",
   platform_mistake: "refundReason.platformMistake",
   goodwill: "refundReason.goodwill",
+  // Company-issued refunds on a direct charge (company-refund Edge Function).
+  overcharged: "refundReason.overcharged",
+  service_issue: "refundReason.serviceIssue",
+  ride_not_taken: "refundReason.rideNotTaken",
+  goodwill_company: "refundReason.goodwillCompany",
+  other: "refundReason.other",
 };
+
+/** The reasons an admin can pick. Same list, same order, as
+ *  mgcj-app/supabase/functions/_shared/directRefund.ts — the server refuses
+ *  anything else. */
+export const COMPANY_REFUND_REASONS = [
+  "overcharged",
+  "service_issue",
+  "ride_not_taken",
+  "goodwill_company",
+  "other",
+] as const;
 
 /** Passenger-filed driver reports (`driver_reports.reason`). */
 export const REPORT_REASON_KEYS: Record<string, string> = {

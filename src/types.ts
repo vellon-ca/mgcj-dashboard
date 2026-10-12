@@ -92,6 +92,10 @@ export interface Ride {
   stripe_charge_account_id: string | null;
   application_fee_cents: number | null;
   stripe_processing_fee_cents: number | null;
+  refund_note: string | null;
+  // Synced from Stripe (stripe-webhook / capture-payment); never written here.
+  payment_status: string | null;
+  stripe_dispute_id: string | null;
   settlement_resolved_at: string | null;
   settlement_resolved_by: string | null;
   refunded_amount_cents: number | null;

@@ -22,6 +22,7 @@ export type SettlementFields = {
   stripe_charge_account_id?: string | null;
   application_fee_cents?: number | null;
   stripe_processing_fee_cents?: number | null;
+  refunded_amount_cents?: number | null;
 };
 
 export const isDirectCharge = (r: SettlementFields): boolean =>
@@ -47,9 +48,24 @@ export function settlementFigures(r: SettlementFields): {
       ? r.stripe_processing_fee_cents / 100
       : null
     : r.stripe_fee;
+  // A refund on a direct charge comes out of the company's own balance, so it
+  // comes off the net. (On a platform charge it moves through the transfer
+  // clawback, shown on its own row.) Stripe does not return its cost.
+  const refunded = isDirectCharge(r) ? (r.refunded_amount_cents ?? 0) / 100 : 0;
   const net =
     r.fare_final != null && vellonFee != null && cardFee != null
-      ? r.fare_final - vellonFee - cardFee
+      ? r.fare_final - vellonFee - cardFee - refunded
       : null;
   return { vellonFee, cardFee, net };
 }
+
+/** Whether the dashboard should offer Refund on this ride. The server decides
+ *  for real, from Stripe; this only hides the button where it cannot work. */
+export const canOfferRefund = (
+  r: SettlementFields & { payment_method: string; payment_status: string | null; stripe_dispute_id?: string | null },
+): boolean =>
+  r.payment_method === "card" &&
+  isDirectCharge(r) &&
+  r.payment_status === "succeeded" &&
+  !r.stripe_dispute_id &&
+  Math.round((r.fare_final ?? 0) * 100) - (r.refunded_amount_cents ?? 0) > 0;
