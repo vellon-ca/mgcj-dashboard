@@ -1,16 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/stripe-connect-return",
-      "destination": "vellondispatch://stripe-connect-return",
-      "permanent": false
-    },
-    {
-      "source": "/stripe-connect-return/cjstaxi",
-      "destination": "cjstaxi://stripe-connect-return",
-      "permanent": false
-    }
-  ],
   "rewrites": [
     {
       "source": "/((?!_vercel/).*)",

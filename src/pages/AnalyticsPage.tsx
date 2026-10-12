@@ -643,20 +643,6 @@ const SETTLEMENT_DIRECTION: Record<string, "collect" | "payout"> = {
   retransfer_failed: "payout",
 };
 
-// Groupings for the period rollup tiles. Note these are gross fares by route
-// over the selected period, INCLUDING rides already marked resolved -- the
-// rollup answers "where did the card money go", not "what's outstanding".
-// Anything outstanding comes from the all-time needsAttention list instead.
-// 'direct' is never stored: the RPCs derive it for a ride charged on the
-// company's own Stripe account (see lib/rideSettlement.ts).
-const ROLLUP_SETTLED_ROUTES = ["driver_transfer", "company_transfer", "direct"];
-const ROLLUP_PROBLEM_ROUTES = [
-  "transfer_failed",
-  "transfer_reversed",
-  "reversal_failed",
-  "retransfer_failed",
-];
-
 // ── PDF / CSV helpers ─────────────────────────────────────────────────
 // A function, not a constant: a module-scope template literal is evaluated at
 // import time, which would freeze whatever language the tab booted in. Every
@@ -859,17 +845,10 @@ export default function AnalyticsPage({
     { settlement_route: string; rides_count: number; total_fares: number; net_total: number }[]
   >([]);
   const [settlementRollupLoading, setSettlementRollupLoading] = useState(true);
-  // Net | Gross display lens for the whole rollup (hero, donut, daily chart,
-  // route table). Net default -- what actually reached driver/company accounts
-  // after Vellon + Stripe fees, so the tab never overstates what was paid out.
-  // The RPC returns BOTH totals in one call, so flipping this is pure client-side
-  // (no refetch, no flicker). Gross = what passengers were charged.
-  const [settlementBasis, setSettlementBasis] = useState<"net" | "gross">("net");
-  // The company's payout model. The cash strip below only renders for
-  // 'driver_direct' -- its "drivers keep" net framing is only true when the
-  // driver owns the fare. company_settles cash is a different story (the company
-  // owns the fare revenue) and gets its own framing later. Null until fetched.
-  const [payoutModel, setPayoutModel] = useState<string | null>(null);
+  // The basis the cash lane and the drilldown report in. Net = after Vellon's
+  // fee. There was a Net | Gross toggle while a driver-payout view existed;
+  // the card view now shows gross, fees and net side by side.
+  const [settlementBasis] = useState<"net" | "gross">("net");
   // Cash lane: a single aggregate row (no settlement routes -- cash never touches
   // Stripe, the driver keeps it at the door). Gross = fares collected, net =
   // fares - the Vellon fee that accrues on cash and is billed to the company
@@ -900,8 +879,6 @@ export default function AnalyticsPage({
   const [settlementDaily, setSettlementDaily] = useState<
     { day: string; bucket: string; gross: number; net: number }[]
   >([]);
-  // Donut hover: the route whose slice is emphasised (others dim, center follows).
-  const [settleHotRoute, setSettleHotRoute] = useState<string | null>(null);
   // Chart entrance gate: false renders the donut/bars collapsed, then an effect
   // flips it true one frame later so the CSS transition draws them in. Reset only
   // on a full (non-silent) load — a period change re-draws, but a background
@@ -958,26 +935,6 @@ export default function AnalyticsPage({
     }
   }, [section, period, companyId]);
 
-  // Payout model drives whether the cash strip renders at all. Fetched once per
-  // company, independent of the section/period churn above.
-  useEffect(() => {
-    if (!companyId) return;
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from("companies")
-        .select("payout_model")
-        .eq("id", companyId)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error) console.error("[payout_model]", error.message);
-      else setPayoutModel(data?.payout_model ?? null);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId]);
-
   useEffect(() => {
     if (section === "settlements") fetchNeedsAttention();
   }, [section, companyId]);
@@ -989,7 +946,6 @@ export default function AnalyticsPage({
   useEffect(() => {
     if (section !== "settlements") {
       setSettleChartsReady(false);
-      setSettleHotRoute(null);
       return;
     }
     // Stay collapsed while data loads. Without this, the rAF below fires behind
@@ -1684,30 +1640,6 @@ export default function AnalyticsPage({
     [settlementBasis],
   );
 
-  const settlementTotals = useMemo(() => {
-    const sumOf = (routes: string[]) =>
-      settlementRollup
-        .filter((r) => routes.includes(r.settlement_route))
-        .reduce((a, r) => a + settlementAmt(r), 0);
-    const countOf = (routes: string[]) =>
-      settlementRollup
-        .filter((r) => routes.includes(r.settlement_route))
-        .reduce((a, r) => a + r.rides_count, 0);
-
-    const grand = settlementRollup.reduce((a, r) => a + settlementAmt(r), 0);
-    const rides = settlementRollup.reduce((a, r) => a + r.rides_count, 0);
-    return {
-      grand,
-      rides,
-      settled: sumOf(ROLLUP_SETTLED_ROUTES),
-      settledRides: countOf(ROLLUP_SETTLED_ROUTES),
-      held: sumOf(["platform_invoiced"]),
-      heldRides: countOf(["platform_invoiced"]),
-      problem: sumOf(ROLLUP_PROBLEM_ROUTES),
-      problemRides: countOf(ROLLUP_PROBLEM_ROUTES),
-    };
-  }, [settlementRollup, settlementAmt]);
-
   // Rollup sorted biggest-bucket-first (in the active basis) so the composition
   // donut and the table below it read in the same order.
   const settlementRollupSorted = useMemo(
@@ -1715,29 +1647,14 @@ export default function AnalyticsPage({
     [settlementRollup, settlementAmt],
   );
 
-  // Payout-model-driven framing for the settlement hero + cash strip. The
-  // underlying numbers are identical across models -- only the words and the
-  // lead accent change. driver_direct: money/fares belong to the DRIVER (green);
-  // company_settles: money/fares belong to the COMPANY's own account (blue).
-  // payoutModel is null until fetched; treat unknown as driver_direct framing
-  // (the card rollup renders before the fetch resolves, so this is just the
-  // brief-flash default, not a real classification).
-  const isCompanySettles = payoutModel === "company_settles";
-  const leadAccent = isCompanySettles
-    ? { main: "#4a9eff", bright: "#6cb2ff", cls: " paid-company" }
-    : { main: "#1D9E75", bright: "#2fce9a", cls: "" };
-  const leadPaidLabel = isCompanySettles
-    ? settlementBasis === "net" ? t("settle.paidToYourAccount") : t("settle.routedToYourAccount")
-    : settlementBasis === "net" ? t("settle.paidToDrivers") : t("settle.routedToDrivers");
-  const leadPaidSub = isCompanySettles ? t("settle.toYourStripe") : t("settle.toDriversCompany");
-  // Cash strip labels (the driver-owns vs company-owns distinction).
-  const cashLeadNetLabel = isCompanySettles ? t("settle.yourCashNet") : t("settle.driversKeep");
-  const cashLeadGrossLabel = isCompanySettles ? t("settle.cashCollectedByDrivers") : t("settle.cashFaresCollected");
-  const cashGrossShort = isCompanySettles ? t("settle.cashCollected") : t("settle.cashFares");
-  const cashGrossTail = isCompanySettles ? t("settle.collectedByDrivers") : t("settle.collectedAtDoor");
-  const cashScopeNote = isCompanySettles
-    ? t("settle.cashScopeCompany")
-    : t("settle.cashScopeDriver");
+  // The company is the merchant on every card fare and owns the cash fares too,
+  // so the settlement hero and cash strip are framed as the company's money.
+  const leadAccent = { main: "#4a9eff", bright: "#6cb2ff", cls: " paid-company" };
+  const cashLeadNetLabel = t("settle.yourCashNet");
+  const cashLeadGrossLabel = t("settle.cashCollectedByDrivers");
+  const cashGrossShort = t("settle.cashCollected");
+  const cashGrossTail = t("settle.collectedByDrivers");
+  const cashScopeNote = t("settle.cashScopeCompany");
 
   // Flow chart series: paid-to-drivers vs held, in the active basis. The RPC
   // returns sparse per-(day, bucket) rows; we pivot to a dense, ordered series.
@@ -1775,32 +1692,6 @@ export default function AnalyticsPage({
     const maxNet = buckets.reduce((m, b) => Math.max(m, b.paid), 0);
     return { buckets, max, niceMax: niceCeil(max), niceMaxNet: niceCeil(maxNet) };
   }, [settlementDaily, settlementBasis, period]);
-
-  // Donut composition: each route's slice of the period total, in the active
-  // basis, biggest first. Precomputed stroke geometry (a shared circumference,
-  // per-segment arc length + offset) keeps the SVG in the JSX declarative.
-  const settlementDonut = useMemo(() => {
-    const C = 2 * Math.PI * 46;
-    const grand = settlementTotals.grand || 1;
-    let acc = 0;
-    const segs = settlementRollupSorted
-      .filter((r) => settlementAmt(r) > 0)
-      .map((r) => {
-        const amt = settlementAmt(r);
-        const len = (amt / grand) * C;
-        const seg = {
-          route: r.settlement_route,
-          color: settlementColor(r.settlement_route),
-          amt,
-          pct: (amt / grand) * 100,
-          len,
-          offset: -acc,
-        };
-        acc += len;
-        return seg;
-      });
-    return { C, segs, top: segs[0] ?? null };
-  }, [settlementRollupSorted, settlementTotals.grand, settlementAmt]);
 
   // Fee-composition donut for the company_settles view: each dollar of gross
   // fares split into Net to you / Vellon fee / Stripe fee. Slices sum to gross by
@@ -3945,27 +3836,9 @@ export default function AnalyticsPage({
               {/* ═══ 1. Period rollup — hero + charts (leads the tab) ═══ */}
               <div className="an-section-header">
                 <div className="an-section-title">
-                  {isCompanySettles ? t("settle.cardSettlementTitle") : t("settle.whereCardWent")}
+                  {t("settle.cardSettlementTitle")}
                 </div>
                 <div className="an-controls">
-                  {/* Net | Gross display lens. Net (default) = what actually
-                      reached accounts after fees; gross = what passengers paid.
-                      Both come from one RPC call, so this is instant. Hidden for
-                      company_settles — its fee view shows the full gross→net
-                      decomposition at once, so a basis toggle is meaningless. */}
-                  {!isCompanySettles && (
-                    <div className="an-period-btns" title={t("settle.basisHelp")}>
-                      {(["net", "gross"] as const).map((b) => (
-                        <button
-                          key={b}
-                          className={`an-period-btn${settlementBasis === b ? " active" : ""}`}
-                          onClick={() => setSettlementBasis(b)}
-                        >
-                          {b === "net" ? t("settle.net") : t("settle.gross")}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                   <div className="an-period-btns">
                     {(["today", "week", "month", "year"] as const).map((p) => (
                       <button
@@ -3980,14 +3853,10 @@ export default function AnalyticsPage({
                 </div>
               </div>
               <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
-                {isCompanySettles
-                  ? t("settle.cardSettledSub")
-                  : settlementBasis === "net"
-                    ? t("settle.netSub")
-                    : t("settle.grossSub")}
+                {t("settle.cardSettledSub")}
               </div>
 
-              {isCompanySettles ? (
+              {(
                 /* ── company_settles: fee-breakdown view ── */
                 feeBreakdownLoading ? (
                   <div className="an-loading">{t("common.loading")}</div>
@@ -4168,354 +4037,6 @@ export default function AnalyticsPage({
                     </div>
                   </>
                 )
-              ) : settlementRollupLoading ? (
-                <div className="an-loading">{t("common.loading")}</div>
-              ) : settlementRollup.length === 0 ? (
-                <div className="an-no-data">{t("settle.noCompletedCard")}</div>
-              ) : (
-                <>
-                  {/* Hero tiles — all one basis, so nothing needs reconciling. */}
-                  <div className="an-set-hero">
-                    <div className={`an-hero-card lead${leadAccent.cls}`}>
-                      <div className="an-hero-label">
-                        <span className="an-dot" style={{ background: leadAccent.main }} />
-                        {leadPaidLabel}
-                      </div>
-                      <div className="an-hero-value">${settlementTotals.settled.toFixed(2)}</div>
-                      <div className="an-hero-sub">
-                        {t("analytics.ridesCount", { count: settlementTotals.settledRides })}
-                        {settlementTotals.settledRides === 1 ? "" : "s"} · {leadPaidSub}
-                      </div>
-                      {settlementDailyChart.buckets.length > 1 &&
-                        (() => {
-                          const pts = settlementDailyChart.buckets.map((b) => b.paid);
-                          const mx = Math.max(1, ...pts);
-                          const W = 260, H = 40, PAD = 4;
-                          const step = W / (pts.length - 1);
-                          const xy = pts.map(
-                            (v, i) => [i * step, H - PAD - (v / mx) * (H - PAD * 2)] as const,
-                          );
-                          const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-                          const area = `${line} L${W},${H} L0,${H} Z`;
-                          const [ex, ey] = xy[xy.length - 1];
-                          return (
-                            <div style={{ marginTop: 12 }}>
-                              <svg width="100%" height="40" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                                <defs>
-                                  <linearGradient id="an-spark-grad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0" stopColor={leadAccent.main} stopOpacity="0.42" />
-                                    <stop offset="1" stopColor={leadAccent.main} stopOpacity="0" />
-                                  </linearGradient>
-                                </defs>
-                                <path d={area} fill="url(#an-spark-grad)" opacity={settleChartsReady ? 1 : 0} style={{ transition: "opacity 0.5s ease" }} />
-                                <path
-                                  d={line}
-                                  fill="none"
-                                  stroke={leadAccent.main}
-                                  strokeWidth="2"
-                                  strokeLinejoin="round"
-                                  strokeLinecap="round"
-                                  vectorEffect="non-scaling-stroke"
-                                  pathLength={100}
-                                  strokeDasharray={100}
-                                  strokeDashoffset={settleChartsReady ? 0 : 100}
-                                  style={{ transition: "stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)" }}
-                                />
-                                <circle className="an-spark-dot" cx={ex} cy={ey} r="3" fill={leadAccent.bright} opacity={settleChartsReady ? 1 : 0} />
-                              </svg>
-                            </div>
-                          );
-                        })()}
-                    </div>
-
-                    <div className="an-hero-card">
-                      <div className="an-hero-label">
-                        {settlementBasis === "net" ? t("settle.netTotal") : t("settle.cardFares")}
-                      </div>
-                      <div className="an-hero-value">${settlementTotals.grand.toFixed(2)}</div>
-                      <div className="an-hero-sub">
-                        {t("analytics.ridesCount", { count: settlementTotals.rides })}{" "}
-                        {periodPhrase}
-                      </div>
-                    </div>
-
-                    <div className="an-hero-card">
-                      <div className="an-hero-label">{t("settlementShort.platformInvoiced")}</div>
-                      <div
-                        className="an-hero-value"
-                        style={{ color: settlementTotals.held > 0 ? "#F59E0B" : "#F1F5F9" }}
-                      >
-                        ${settlementTotals.held.toFixed(2)}
-                      </div>
-                      <div className="an-hero-sub">
-                        {t("settle.pendingInvoiceCount", { count: settlementTotals.heldRides })}
-                      </div>
-                    </div>
-
-                    <div className="an-hero-card">
-                      <div className="an-hero-label">{t("settle.failedOrReversed")}</div>
-                      <div
-                        className="an-hero-value"
-                        style={{ color: settlementTotals.problem > 0 ? "#E24B4A" : "#F1F5F9" }}
-                      >
-                        ${settlementTotals.problem.toFixed(2)}
-                      </div>
-                      <div className="an-hero-sub">
-                        {t("analytics.ridesCount", { count: settlementTotals.problemRides })} {t("settle.thisPeriod")}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Two-up: donut composition + daily settlement flow */}
-                  <div className="an-two-up">
-                    <div className="an-chart-card">
-                      <div className="an-chart-title">{t("settle.compositionByRoute")}</div>
-                      {(() => {
-                        // Center follows the hovered slice, else the biggest.
-                        const center = settleHotRoute
-                          ? settlementDonut.segs.find((s) => s.route === settleHotRoute)
-                          : settlementDonut.top;
-                        return (
-                          <div className="an-donut-wrap">
-                            <svg width="118" height="118" viewBox="0 0 118 118" style={{ flex: "none" }}>
-                              <g transform="rotate(-90 59 59)">
-                                <circle cx="59" cy="59" r="46" fill="none" stroke="#243244" strokeWidth="15" />
-                                {settlementDonut.segs.map((s) => {
-                                  const hot = settleHotRoute === s.route;
-                                  const dimmed = settleHotRoute != null && !hot;
-                                  return (
-                                    <circle
-                                      key={s.route}
-                                      className="an-donut-seg"
-                                      cx="59"
-                                      cy="59"
-                                      r="46"
-                                      fill="none"
-                                      stroke={s.color}
-                                      strokeWidth={hot ? 18 : 15}
-                                      strokeDasharray={
-                                        settleChartsReady
-                                          ? `${s.len.toFixed(2)} ${settlementDonut.C.toFixed(2)}`
-                                          : `0 ${settlementDonut.C.toFixed(2)}`
-                                      }
-                                      strokeDashoffset={s.offset.toFixed(2)}
-                                      opacity={dimmed ? 0.28 : 1}
-                                      onMouseEnter={() => setSettleHotRoute(s.route)}
-                                      onMouseLeave={() => setSettleHotRoute(null)}
-                                    />
-                                  );
-                                })}
-                              </g>
-                              {center && (
-                                <>
-                                  <text x="59" y="55" textAnchor="middle" fill={settleHotRoute ? center.color : "#F1F5F9"} fontSize="19" fontWeight="700">
-                                    {center.pct.toFixed(1)}%
-                                  </text>
-                                  <text x="59" y="71" textAnchor="middle" fill="#6B7280" fontSize="9.5" style={{ letterSpacing: "0.04em" }}>
-                                    {settlementShort(center.route).toUpperCase()}
-                                  </text>
-                                </>
-                              )}
-                            </svg>
-                            <div className="an-donut-legend">
-                              {settlementDonut.segs.map((s) => (
-                                <div
-                                  className={`an-leg${settleHotRoute === s.route ? " hot" : ""}`}
-                                  key={s.route}
-                                  onMouseEnter={() => setSettleHotRoute(s.route)}
-                                  onMouseLeave={() => setSettleHotRoute(null)}
-                                >
-                                  <span className="an-dot" style={{ background: s.color }} />
-                                  <span className="an-leg-name">
-                                    {settlementShort(s.route)}
-                                  </span>
-                                  <span className="an-leg-amt">${s.amt.toFixed(2)}</span>
-                                  <span className="an-leg-pct">{s.pct.toFixed(1)}%</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    <div className="an-chart-card">
-                      <div className="an-chart-title">{t("settle.dailyFlow")}</div>
-                      {settlementDailyChart.buckets.length === 0 ? (
-                        <div className="an-no-data" style={{ padding: "40px 0" }}>
-                          {t("settle.noSettledToChart")}
-                        </div>
-                      ) : (
-                        (() => {
-                          const plotH = 146; // 168px plot − 22px label strip
-                          const nm = settlementDailyChart.niceMax;
-                          const n = settlementDailyChart.buckets.length;
-                          const labelEvery = Math.ceil(n / 12);
-                          return (
-                            <>
-                              <div className="an-bars-plot">
-                                {[0, 0.5, 1].flatMap((f) => {
-                                  const top = (1 - f) * plotH;
-                                  return [
-                                    <div
-                                      key={`g${f}`}
-                                      className={`an-grid-line${f === 0 ? " base" : ""}`}
-                                      style={{ top }}
-                                    />,
-                                    <div key={`y${f}`} className="an-ylab" style={{ top }}>
-                                      ${(nm * f).toFixed(0)}
-                                    </div>,
-                                  ];
-                                })}
-                                <div className="an-bars-row">
-                                  {settlementDailyChart.buckets.map((b, i) => {
-                                    const paidH = (b.paid / nm) * plotH;
-                                    const heldH = (b.held / nm) * plotH;
-                                    return (
-                                      <div className="an-bar-col" key={b.key}>
-                                        <div className="an-bar-stack">
-                                          <div
-                                            className="an-bar-seg an-bar-held"
-                                            style={{ height: settleChartsReady && b.held > 0 ? heldH : 0 }}
-                                          />
-                                          <div
-                                            className="an-bar-seg an-bar-paid"
-                                            style={{ height: settleChartsReady ? paidH : 0 }}
-                                          />
-                                        </div>
-                                        {i % labelEvery === 0 && (
-                                          <div className="an-bar-lab">{b.label}</div>
-                                        )}
-                                        <div
-                                          className="an-bar-tip"
-                                          style={{ bottom: paidH + heldH + 8 }}
-                                        >
-                                          <div className="an-tip-day">{b.label}</div>
-                                          <div className="an-tip-row">
-                                            <span className="k">
-                                              <span className="an-dot" style={{ background: "#1D9E75" }} />
-                                              {t("settle.paid")}
-                                            </span>
-                                            <span className="v">${b.paid.toFixed(2)}</span>
-                                          </div>
-                                          <div className="an-tip-row">
-                                            <span className="k">
-                                              <span className="an-dot" style={{ background: "#F59E0B" }} />
-                                              {t("settle.held")}
-                                            </span>
-                                            <span className="v">${b.held.toFixed(2)}</span>
-                                          </div>
-                                          <div className="an-tip-row tot">
-                                            <span className="k">{t("reports.total")}</span>
-                                            <span className="v">${(b.paid + b.held).toFixed(2)}</span>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="an-trend-legend">
-                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#1D9E75" }} /> {t("settle.paidToDrivers")}</span>
-                                <span className="an-tl"><span className="an-tl-swatch" style={{ background: "#F59E0B" }} /> {t("settlementShort.platformInvoiced")}</span>
-                              </div>
-                            </>
-                          );
-                        })()
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Route detail table — same basis as everything above. */}
-                  <div className="an-chart-card">
-                    <table className="an-table">
-                      <thead>
-                        <tr>
-                          {([
-                            "route",
-                            "rides",
-                            settlementBasis === "net" ? "net" : "fares",
-                            "share",
-                          ] as const).map((h, i) => (
-                            <th key={h} className="an-th" style={{ textAlign: i === 0 ? "left" : "right" }}>
-                              {t(`analytics.col.${h}`)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {settlementRollupSorted.map((row) => {
-                          const isProblem = (
-                            SETTLEMENT_ACTIONABLE_ROUTES as readonly string[]
-                          ).includes(row.settlement_route);
-                          const color = settlementColor(row.settlement_route);
-                          const amt = settlementAmt(row);
-                          const pct =
-                            settlementTotals.grand > 0
-                              ? (amt / settlementTotals.grand) * 100
-                              : 0;
-                          const active = settlementRouteFilter === row.settlement_route;
-                          return (
-                            <tr
-                              key={row.settlement_route}
-                              className="an-settle-row"
-                              onClick={() =>
-                                setSettlementRouteFilter(active ? "all" : row.settlement_route)
-                              }
-                              style={{
-                                background: active ? "rgba(255,255,255,0.05)" : "transparent",
-                              }}
-                              title={
-                                active
-                                  ? t("settle.clickToClear")
-                                  : t("settle.clickToFilter")
-                              }
-                            >
-                              <td className="an-td primary">
-                                <span style={{ display: "flex", alignItems: "center" }}>
-                                  <span className="an-dot" style={{ background: color }} />
-                                  <span style={isProblem ? { color } : {}}>
-                                    {settlementShort(row.settlement_route)}
-                                  </span>
-                                </span>
-                              </td>
-                              <td className="an-td" style={{ textAlign: "right" }}>
-                                {row.rides_count}
-                              </td>
-                              <td
-                                className="an-td"
-                                style={{ textAlign: "right", color: "#E2E8F0", fontWeight: 600 }}
-                              >
-                                ${amt.toFixed(2)}
-                              </td>
-                              <td className="an-td" style={{ textAlign: "right" }}>
-                                {pct.toFixed(0)}%
-                                <div className="an-share-track" style={{ marginLeft: "auto" }}>
-                                  <div className="an-share-fill" style={{ width: `${pct}%`, background: color }} />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        <tr>
-                          <td className="an-td primary" style={{ fontWeight: 700, borderBottom: "none" }}>
-                            {t("reports.total")}
-                          </td>
-                          <td className="an-td" style={{ textAlign: "right", fontWeight: 700, borderBottom: "none" }}>
-                            {settlementTotals.rides}
-                          </td>
-                          <td
-                            className="an-td"
-                            style={{ textAlign: "right", fontWeight: 700, color: "#F1F5F9", borderBottom: "none" }}
-                          >
-                            ${settlementTotals.grand.toFixed(2)}
-                          </td>
-                          <td className="an-td" style={{ borderBottom: "none" }} />
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </>
               )}
 
               {/* ═══ 1b. Cash lane ═══
@@ -4525,7 +4046,7 @@ export default function AnalyticsPage({
                   the company monthly (same rate as card). Honors the Net | Gross
                   toggle. Renders for both payout models; the driver-owns vs
                   company-owns framing (labels + lead accent) is set above. */}
-              {(payoutModel === "driver_direct" || isCompanySettles) && (
+              {(
                 <>
                   <div className="an-section-header" style={{ marginTop: 32 }}>
                     <div className="an-section-title">{t("settle.cashFares")}</div>
