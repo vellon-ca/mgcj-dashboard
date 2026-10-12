@@ -61,6 +61,7 @@ export const CANCEL_REASON_KEYS: Record<string, string> = {
 export const SETTLEMENT_ROUTE_KEYS: Record<string, string> = {
   driver_transfer: "settlementRoute.driverTransfer",
   company_transfer: "settlementRoute.companyTransfer",
+  direct: "settlementRoute.direct",
   platform_invoiced: "settlementRoute.platformInvoiced",
   transfer_failed: "settlementRoute.transferFailed",
   transfer_reversed: "settlementRoute.transferReversed",

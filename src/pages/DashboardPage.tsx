@@ -33,6 +33,7 @@ import {
   rideStatusLabel as sharedRideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
+import { settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
@@ -6947,38 +6948,31 @@ export default function DashboardPage({
                         ? t("rideDetail.cash")
                         : t("rideDetail.card"),
                     ],
-                    ...(rideDetail.payment_method === "card" && rideDetail.settlement_route
+                    ...(rideDetail.payment_method === "card" && settlementRouteOf(rideDetail)
                       ? ([
                           [
                             t("rideDetail.vellonFee"),
-                            rideDetail.fare_final != null &&
-                            rideDetail.platform_fee_percent_at_completion != null
-                              ? `$${(
-                                  rideDetail.fare_final *
-                                  (rideDetail.platform_fee_percent_at_completion / 100)
-                                ).toFixed(2)} (${rideDetail.platform_fee_percent_at_completion}%)`
+                            settlementFigures(rideDetail).vellonFee != null
+                              ? `$${settlementFigures(rideDetail).vellonFee!.toFixed(2)}${
+                                  rideDetail.platform_fee_percent_at_completion != null
+                                    ? ` (${rideDetail.platform_fee_percent_at_completion}%)`
+                                    : ""
+                                }`
                               : "—",
                           ],
                           [
                             t("rideDetail.cardFee"),
-                            rideDetail.stripe_fee != null
-                              ? `$${rideDetail.stripe_fee.toFixed(2)}`
+                            settlementFigures(rideDetail).cardFee != null
+                              ? `$${settlementFigures(rideDetail).cardFee!.toFixed(2)}`
                               : t("rideDetail.pending"),
                           ],
                           [
                             t("rideDetail.netSettled"),
-                            rideDetail.fare_final != null &&
-                            rideDetail.platform_fee_percent_at_completion != null &&
-                            rideDetail.stripe_fee != null
-                              ? `$${(
-                                  rideDetail.fare_final -
-                                  rideDetail.fare_final *
-                                    (rideDetail.platform_fee_percent_at_completion / 100) -
-                                  rideDetail.stripe_fee
-                                ).toFixed(2)}`
+                            settlementFigures(rideDetail).net != null
+                              ? `$${settlementFigures(rideDetail).net!.toFixed(2)}`
                               : "—",
                           ],
-                          [settlementLabel, settlementRouteLabel(rideDetail.settlement_route)],
+                          [settlementLabel, settlementRouteLabel(settlementRouteOf(rideDetail))],
                           ...(rideDetail.refunded_amount_cents &&
                           rideDetail.refunded_amount_cents > 0
                             ? ([

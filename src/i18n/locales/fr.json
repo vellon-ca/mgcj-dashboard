@@ -1083,6 +1083,7 @@
   },
   "settlementRoute": {
     "companyTransfer": "Versé au compte de votre entreprise",
+    "direct": "Prélevé sur votre propre compte Stripe",
     "driverTransfer": "Versé directement au chauffeur",
     "platformInvoiced": "Retenu par Vellon — facturation à venir",
     "refundReversed": "Versement annulé — la course a été remboursée",
@@ -1095,6 +1096,7 @@
   },
   "settlementShort": {
     "companyTransfer": "Entreprise payée",
+    "direct": "Votre compte Stripe",
     "driverTransfer": "Chauffeur payé",
     "platformInvoiced": "Retenu par Vellon",
     "refundReversed": "Annulé (remboursement)",

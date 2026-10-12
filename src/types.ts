@@ -88,6 +88,10 @@ export interface Ride {
   stripe_transfer_id: string | null;
   stripe_fee: number | null;
   platform_fee_percent_at_completion: number | null;
+  // Direct charges (the company's own Stripe account); all null on a platform charge.
+  stripe_charge_account_id: string | null;
+  application_fee_cents: number | null;
+  stripe_processing_fee_cents: number | null;
   settlement_resolved_at: string | null;
   settlement_resolved_by: string | null;
   refunded_amount_cents: number | null;

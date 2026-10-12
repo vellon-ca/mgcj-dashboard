@@ -1083,6 +1083,7 @@
   },
   "settlementRoute": {
     "companyTransfer": "Routed to your company account",
+    "direct": "Charged on your own Stripe account",
     "driverTransfer": "Paid directly to the driver",
     "platformInvoiced": "Held by Vellon — pending invoice",
     "refundReversed": "Payout reversed — ride was refunded",
@@ -1095,6 +1096,7 @@
   },
   "settlementShort": {
     "companyTransfer": "Company paid",
+    "direct": "Your Stripe account",
     "driverTransfer": "Driver paid",
     "platformInvoiced": "Held by Vellon",
     "refundReversed": "Reversed (refund)",

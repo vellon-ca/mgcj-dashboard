@@ -19,6 +19,7 @@ import {
   rideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
+import { isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 
 // Module-scope wrappers, because half this file's label lookups live in
 // non-component helpers (the CSV builders, the print-HTML builders, the
@@ -558,6 +559,7 @@ const STATUS_COLORS: Record<string, string> = {
 const SETTLEMENT_ROUTE_SHORT_KEYS: Record<string, string> = {
   driver_transfer: "settlementShort.driverTransfer",
   company_transfer: "settlementShort.companyTransfer",
+  direct: "settlementShort.direct",
   platform_invoiced: "settlementShort.platformInvoiced",
   transfer_failed: "settlementShort.transferFailed",
   transfer_reversed: "settlementShort.transferReversed",
@@ -575,6 +577,7 @@ const settlementShort = (route: string | null | undefined) =>
 const SETTLEMENT_ROUTE_COLORS: Record<string, string> = {
   driver_transfer: "#1D9E75",
   company_transfer: "#4a9eff",
+  direct: "#4a9eff",
   platform_invoiced: "#F59E0B",
   transfer_reversed: "#A855F7",
   refund_reversed: "#A855F7",
@@ -633,7 +636,9 @@ const SETTLEMENT_DIRECTION: Record<string, "collect" | "payout"> = {
 // over the selected period, INCLUDING rides already marked resolved -- the
 // rollup answers "where did the card money go", not "what's outstanding".
 // Anything outstanding comes from the all-time needsAttention list instead.
-const ROLLUP_SETTLED_ROUTES = ["driver_transfer", "company_transfer"];
+// 'direct' is never stored: the RPCs derive it for a ride charged on the
+// company's own Stripe account (see lib/rideSettlement.ts).
+const ROLLUP_SETTLED_ROUTES = ["driver_transfer", "company_transfer", "direct"];
 const ROLLUP_PROBLEM_ROUTES = [
   "transfer_failed",
   "transfer_reversed",
@@ -1552,7 +1557,7 @@ export default function AnalyticsPage({
 
       const { data: rides, error } = await supabase
         .from("rides")
-        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id")
+        .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, stripe_processing_fee_cents")
         .eq("company_id", companyId)
         .eq("payment_method", "card")
         .eq("status", "completed")
@@ -1577,12 +1582,19 @@ export default function AnalyticsPage({
           completed_at: r.completed_at,
           created_at: r.created_at,
           fare_final: r.fare_final,
-          transfer_amount_cents: r.transfer_amount_cents,
+          // A direct charge has no transfer; its net is what the company kept
+          // on its own account -- the same sum the RPC's net_total uses.
+          transfer_amount_cents:
+            isDirectCharge(r) && r.fare_final != null
+              ? Math.round(r.fare_final * 100) -
+                r.application_fee_cents -
+                (r.stripe_processing_fee_cents ?? 0)
+              : r.transfer_amount_cents,
           driver_name: r.driver_id ? (profileMap.get(r.driver_id) ?? "—") : "—",
-          // Mirror the RPC's coalesce -- it buckets a null route as
-          // 'unsettled', so the drilldown has to as well or the "Unsettled"
-          // chip would show a count the ride list can never produce.
-          settlement_route: r.settlement_route ?? "unsettled",
+          // Mirror the RPC -- it buckets a null route as 'direct' or
+          // 'unsettled', so the drilldown has to as well or a chip would show
+          // a count the ride list can never produce.
+          settlement_route: settlementRouteOf(r) ?? "unsettled",
           settlement_resolved_at: r.settlement_resolved_at,
           stripe_dispute_id: r.stripe_dispute_id,
         })),
@@ -2163,34 +2175,32 @@ export default function AnalyticsPage({
       // Settlement breakdown — internal to dispatch, not part of the
       // passenger-facing receipt document (same printReceipt() is used by
       // the Receipts tab for the customer copy, which never passes this).
+      const settledRoute = settlementRouteOf(ride);
+      const figures = settlementFigures(ride);
       const settlementHtml =
-        ride.payment_method === "card" && ride.settlement_route
+        ride.payment_method === "card" && settledRoute
           ? `
         <div style="margin-bottom: 16px; background: #FFF7ED; border: 1px dashed #FDBA74; border-radius: 10px; padding: 14px;">
           <p style="font-size: 11px; font-weight: 600; color: #9A3412; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">${esc(t("receipt.internalSettlement"))}</p>
           <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.vellonFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
-              ride.fare_final != null && ride.platform_fee_percent_at_completion != null
-                ? `$${(ride.fare_final * (ride.platform_fee_percent_at_completion / 100)).toFixed(2)} (${ride.platform_fee_percent_at_completion}%)`
+              figures.vellonFee != null
+                ? `$${figures.vellonFee.toFixed(2)}${
+                    ride.platform_fee_percent_at_completion != null
+                      ? ` (${ride.platform_fee_percent_at_completion}%)`
+                      : ""
+                  }`
                 : "—"
             }</td></tr>
             <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px;">${esc(t("rideDetail.cardFee"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right;">${
-              ride.stripe_fee != null ? `$${ride.stripe_fee.toFixed(2)}` : esc(t("rideDetail.pending"))
+              figures.cardFee != null ? `$${figures.cardFee.toFixed(2)}` : esc(t("rideDetail.pending"))
             }</td></tr>
             <tr><td style="padding: 3px 0; color: #78350F; font-size: 12px; font-weight: 700;">${esc(t("rideDetail.netSettled"))}</td><td style="padding: 3px 0; font-size: 12px; text-align: right; font-weight: 700;">${
-              ride.fare_final != null &&
-              ride.platform_fee_percent_at_completion != null &&
-              ride.stripe_fee != null
-                ? `$${(
-                    ride.fare_final -
-                    ride.fare_final * (ride.platform_fee_percent_at_completion / 100) -
-                    ride.stripe_fee
-                  ).toFixed(2)}`
-                : "—"
+              figures.net != null ? `$${figures.net.toFixed(2)}` : "—"
             }</td></tr>
           </table>
           <p style="font-size: 11px; color: #9A3412; margin: 8px 0 0;">${esc(
-            settlementRouteLabel(ride.settlement_route),
+            settlementRouteLabel(settledRoute),
           )}</p>
         </div>`
           : "";
@@ -5798,40 +5808,33 @@ export default function AnalyticsPage({
                     : "—",
                 ],
                 [t("analytics.col.payment"), rideDetail.ride.payment_method],
-                ...(rideDetail.ride.payment_method === "card" && rideDetail.ride.settlement_route
+                ...(rideDetail.ride.payment_method === "card" && settlementRouteOf(rideDetail.ride)
                   ? ([
                       [
                         t("rideDetail.vellonFee"),
-                        rideDetail.ride.fare_final != null &&
-                        rideDetail.ride.platform_fee_percent_at_completion != null
-                          ? `$${(
-                              rideDetail.ride.fare_final *
-                              (rideDetail.ride.platform_fee_percent_at_completion / 100)
-                            ).toFixed(2)} (${rideDetail.ride.platform_fee_percent_at_completion}%)`
+                        settlementFigures(rideDetail.ride).vellonFee != null
+                          ? `$${settlementFigures(rideDetail.ride).vellonFee!.toFixed(2)}${
+                              rideDetail.ride.platform_fee_percent_at_completion != null
+                                ? ` (${rideDetail.ride.platform_fee_percent_at_completion}%)`
+                                : ""
+                            }`
                           : "—",
                       ],
                       [
                         t("rideDetail.cardFee"),
-                        rideDetail.ride.stripe_fee != null
-                          ? `$${rideDetail.ride.stripe_fee.toFixed(2)}`
+                        settlementFigures(rideDetail.ride).cardFee != null
+                          ? `$${settlementFigures(rideDetail.ride).cardFee!.toFixed(2)}`
                           : t("rideDetail.feePending"),
                       ],
                       [
                         t("rideDetail.netSettled"),
-                        rideDetail.ride.fare_final != null &&
-                        rideDetail.ride.platform_fee_percent_at_completion != null &&
-                        rideDetail.ride.stripe_fee != null
-                          ? `$${(
-                              rideDetail.ride.fare_final -
-                              rideDetail.ride.fare_final *
-                                (rideDetail.ride.platform_fee_percent_at_completion / 100) -
-                              rideDetail.ride.stripe_fee
-                            ).toFixed(2)}`
+                        settlementFigures(rideDetail.ride).net != null
+                          ? `$${settlementFigures(rideDetail.ride).net!.toFixed(2)}`
                           : "—",
                       ],
                       [
                         settlementLabel,
-                        settlementRouteLabel(rideDetail.ride.settlement_route),
+                        settlementRouteLabel(settlementRouteOf(rideDetail.ride)),
                       ],
                       ...(rideDetail.ride.refunded_amount_cents &&
                       rideDetail.ride.refunded_amount_cents > 0
