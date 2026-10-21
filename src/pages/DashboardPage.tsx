@@ -4398,6 +4398,7 @@ export default function DashboardPage({
         .db-pick-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; text-align: left; }
         .db-pick-row.demoted { background: rgba(107,114,128,0.06); color: #9CA3AF; border-color: rgba(107,114,128,0.22); }
         .db-pick-row.demoted:hover { background: rgba(107,114,128,0.12); }
+        .db-pick-row.current, .db-pick-row.current:hover { cursor: default; background: transparent; }
         .db-pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
         .db-pick-name { display: flex; align-items: center; gap: 6px; font-weight: 600; }
         .db-pick-meta { font-size: 10.5px; color: #6B7280; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

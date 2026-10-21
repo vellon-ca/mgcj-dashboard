@@ -36,10 +36,14 @@ export default function DriverPicker({
           <div key={r.driver.id}>
             {idx === firstDemoted && <div className="db-pick-divider">{t("picker.lessSuitable")}</div>}
             <button
-              className={`db-assign-driver-btn db-pick-row${r.demoted ? " demoted" : ""}`}
+              className={`db-assign-driver-btn db-pick-row${r.demoted ? " demoted" : ""}${r.current ? " current" : ""}`}
+              // Re-assigning the same driver would reset their acceptance
+              // (dispatch-assign-ride writes confirmed_by_driver = false), which
+              // turns "straight to assigned at release" back into an offer.
+              disabled={r.current}
               onClick={(e) => {
                 e.stopPropagation();
-                onPick(r);
+                if (!r.current) onPick(r);
               }}
             >
               <span className="db-pick-main">

@@ -31,6 +31,7 @@ export function issueText(i: Issue, r: RankedDriver, t: TFunction): string {
     case "away":     return t("dispatch.awaySuffix");
     case "offShift": return t("picker.offShift");
     case "onRide":   return t("picker.onRide");
+    case "unreachable": return t("picker.unreachable");
   }
 }
 

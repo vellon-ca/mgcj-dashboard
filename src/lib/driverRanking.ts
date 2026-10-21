@@ -18,6 +18,7 @@ import type { Driver } from "../types";
 export type RosterDriver = Driver & {
   last_seen_at?: string | null;
   car_number?: string | null;
+  push_token?: string | null;
   profile?: Driver["profile"] & {
     is_active?: boolean | null;
     deleted_at?: string | null;
@@ -58,7 +59,7 @@ export function driverFitsClass(
   return true;
 }
 
-export type Issue = "clash" | "declined" | "vehicle" | "away" | "offShift" | "onRide";
+export type Issue = "clash" | "declined" | "vehicle" | "away" | "offShift" | "onRide" | "unreachable";
 
 export type Distance =
   | { kind: "drive"; mins: number; km: number } // Distance Matrix, from check-ride-conflicts
@@ -164,10 +165,14 @@ export function rankDrivers(input: RankInput): { soon: boolean; ranked: RankedDr
     if (soon && presence === "away") issues.push("away");
     if (scheduled && presence === "offline") issues.push("offShift");
     if (scheduled && soon && busyDriverIds.has(d.id)) issues.push("onRide");
+    // No push token: an offer IS a push, so the app cannot be told about this
+    // ride (mgcj-app presence.ts isDriverDispatchable). Includes the seeded
+    // demo drivers, which presence reads as online because last_seen_at is NULL.
+    if (!d.push_token) issues.push("unreachable");
 
-    // Off shift is a real problem only when the pickup is close; for a ride
-    // tomorrow it is just the normal state of most of the roster.
-    const demoted = issues.some((i) => i !== "offShift" || soon);
+    // Off shift and no token are real problems only when the pickup is close:
+    // for a ride tomorrow the driver can come on shift or re-enable alerts.
+    const demoted = issues.some((i) => (i !== "offShift" && i !== "unreachable") || soon);
 
     let distance: Distance | null = null;
     const hasPos = hasPickup && d.current_lat != null && d.current_lng != null && presence !== "offline";

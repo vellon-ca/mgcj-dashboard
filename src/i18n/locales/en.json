@@ -424,6 +424,7 @@
     "declined": "declined this ride",
     "vehicle": "vehicle doesn't fit",
     "offShift": "off shift",
+    "unreachable": "app can't receive offers",
     "onRide": "on a ride now",
     "lateFromEarlier_one": "{{count}}m late after their {{when}} ride",
     "lateFromEarlier_other": "{{count}}m late after their {{when}} ride",

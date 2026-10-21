@@ -424,6 +424,7 @@
     "declined": "a refusé cette course",
     "vehicle": "véhicule inadapté",
     "offShift": "hors service",
+    "unreachable": "l'appli ne peut pas recevoir d'offres",
     "onRide": "en course",
     "lateFromEarlier_one": "{{count}} min de retard après sa course de {{when}}",
     "lateFromEarlier_other": "{{count}} min de retard après sa course de {{when}}",
