@@ -82,7 +82,6 @@ export interface Ride {
   driver_id: string | null;
   vehicle_class_id: string | null;
   preferred_driver_id: string | null;
-  preferred_driver_exclusive: boolean;
   declined_by: string[] | null;
   settlement_route: string | null;
   stripe_transfer_id: string | null;

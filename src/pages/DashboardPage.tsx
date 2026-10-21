@@ -530,39 +530,6 @@ interface VehicleClassOption {
   restricted: boolean | null;
 }
 
-// The dashboard's copy of the capability predicate. The authority is
-// supabase/functions/_shared/vehicleMatch.ts — change one, change both.
-//
-// This replaces `!bookVehicleClassId || !d.vehicle_class_id || d.vehicle_class_id === bookVehicleClassId`,
-// which was one of four disagreeing answers to the same question and would now
-// be badly wrong: after 20261005010000 `vehicle_class_id` holds restricted-tier
-// membership and is NULL for nearly every driver, so the `!d.vehicle_class_id`
-// arm would wave every driver through for every class regardless of size.
-//
-// EXACT SIZE unless the ride carries scheduled-release's substitution
-// permission. A seven-seat van is not offered as a candidate for a four-seat
-// booking, because it is the only vehicle that can serve a seven-seat booking
-// and the fare is frozen to the class actually booked — so sending it on a
-// cheaper job both strands the next large party and quietly forfeits the
-// surcharge. Dispatch can still override: this filters the dropdown, and
-// dispatch-assign-ride turns a mismatch into a confirmable warning rather than
-// a refusal.
-function driverFitsClass(
-  d: { seats: number | null; wheelchair_accessible: boolean | null; vehicle_class_id: string | null },
-  cls: VehicleClassOption | undefined,
-  needsWheelchair: boolean,
-  allowLarger = false,
-): boolean {
-  if (cls) {
-    const seats = d.seats ?? 0;
-    const need = cls.capacity ?? 0;
-    if (allowLarger ? seats < need : seats !== need) return false;
-    if (cls.restricted && d.vehicle_class_id !== cls.id) return false;
-  }
-  if (needsWheelchair && !d.wheelchair_accessible) return false;
-  return true;
-}
-
 interface Stats {
   activeRides: number;
   driversOnline: number;
@@ -1954,8 +1921,6 @@ export default function DashboardPage({
   }
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
-  const [bookPreferredDriver, setBookPreferredDriver] = useState("");
-  const [bookPreferredExclusive, setBookPreferredExclusive] = useState(false);
   const [bookLoading, setBookLoading] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
   const activeRideIdsRef = useRef<string[]>([]);
@@ -2007,8 +1972,6 @@ export default function DashboardPage({
   const [editDistanceMetres, setEditDistanceMetres] = useState<number | null>(null);
   const [editPayment, setEditPayment] = useState("");
   const [editScheduled, setEditScheduled] = useState("");
-  const [editPreferredDriver, setEditPreferredDriver] = useState("");
-  const [editPreferredExclusive, setEditPreferredExclusive] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const editPickupInputRef = useRef<HTMLInputElement>(null);
@@ -3614,12 +3577,6 @@ export default function DashboardPage({
       if (bookDriver) {
         rideData.driver_id = bookDriver;
         rideData.status = bookScheduled ? "scheduled" : "offered";
-      } else if (bookScheduled && bookPreferredDriver) {
-        // No immediate driver assignment — just bias the automatic release
-        // pipeline toward this driver. Ride stays 'scheduled', untouched,
-        // until scheduled-release picks it up on its own.
-        rideData.preferred_driver_id = bookPreferredDriver;
-        rideData.preferred_driver_exclusive = bookPreferredExclusive;
       }
       const { error } = await supabase.from("rides").insert(rideData);
       if (error) {
@@ -3656,8 +3613,6 @@ export default function DashboardPage({
       setBookBaseFare(null);
       setBookDriver("");
       setBookScheduled("");
-      setBookPreferredDriver("");
-      setBookPreferredExclusive(false);
       fetchRides();
     } catch (e: any) {
       setBookError(e.message);
@@ -3822,8 +3777,6 @@ export default function DashboardPage({
     );
     setEditAddressChanged(false);
     setEditFareTouched(false);
-    setEditPreferredDriver(ride.preferred_driver_id ?? "");
-    setEditPreferredExclusive(ride.preferred_driver_exclusive ?? false);
     setEditWheelchair(ride.requires_wheelchair ?? false);
     setEditError(null);
     setEditingRide(true);
@@ -3839,9 +3792,6 @@ export default function DashboardPage({
   // agreed with each other and disagreed with the ride. It also skipped the
   // soft-claim release, the notified_*/leave_by resets on a time change, and
   // the commitment guard.
-  //
-  // Only the preferred-driver fields still go direct: they aren't frozen, they
-  // don't move money, and edit-ride has no opinion about them.
   async function saveRideEdits(rideId: string, confirmConflict = false) {
     const ride = rideDetail;
     if (!ride) return;
@@ -3888,13 +3838,6 @@ export default function DashboardPage({
 
     const classMoved = (editVehicleClassId || null) !== (ride.vehicle_class_id ?? null);
 
-    const preferredEditable = ride.status === "scheduled" && !ride.driver_id;
-    const preferredMoved =
-      preferredEditable &&
-      ((editPreferredDriver || null) !== (ride.preferred_driver_id ?? null) ||
-        (editPreferredDriver ? editPreferredExclusive : false) !==
-          (ride.preferred_driver_exclusive ?? false));
-
     // Only send a typed fare. An untouched box holds the client-side preview,
     // and forwarding that as an override would defeat the server pricing —
     // mid-ride especially, where the preview is a naive pickup -> dropoff
@@ -3904,7 +3847,7 @@ export default function DashboardPage({
 
     if (
       !pickupMoved && !dropoffMoved && !scheduledMoved &&
-      !classMoved && !accessMoved && !preferredMoved && fareOverride == null
+      !classMoved && !accessMoved && fareOverride == null
     ) {
       setEditingRide(false);
       return;
@@ -3970,36 +3913,6 @@ export default function DashboardPage({
             to: Number(serverFare).toFixed(2),
           }),
         );
-      }
-    }
-
-    if (preferredMoved) {
-      // Not frozen and not money — a plain write is right here.
-      const { error: prefError } = await supabase
-        .from("rides")
-        .update({
-          preferred_driver_id: editPreferredDriver || null,
-          preferred_driver_exclusive: editPreferredDriver ? editPreferredExclusive : false,
-        })
-        .eq("id", rideId);
-      if (prefError) {
-        setEditSaving(false);
-        setEditError(prefError.message);
-        return;
-      }
-      // edit-ride writes its own dispatch_events row for everything it handles,
-      // so this is logged here only when the preference was the change.
-      if (!pickupMoved && !dropoffMoved && !scheduledMoved && !classMoved && fareOverride == null) {
-        logDispatchEvent({
-          companyId: profile.company_id!,
-          dispatcherId: profile.id,
-          eventType: "ride.scheduled_modified",
-          rideId,
-          details: {
-            preferred_driver_id: editPreferredDriver || null,
-            preferred_driver_exclusive: editPreferredDriver ? editPreferredExclusive : false,
-          },
-        });
       }
     }
 
@@ -6398,13 +6311,7 @@ export default function DashboardPage({
                 <select
                   className="db-modal-select"
                   value={bookDriver}
-                  onChange={(e) => {
-                    setBookDriver(e.target.value);
-                    if (e.target.value) {
-                      setBookPreferredDriver("");
-                      setBookPreferredExclusive(false);
-                    }
-                  }}
+                  onChange={(e) => setBookDriver(e.target.value)}
                 >
                   <option value="">{t("booking.noDriverYet")}</option>
                   {onlineDrivers.map((d) => (
@@ -6425,68 +6332,6 @@ export default function DashboardPage({
                   onChange={(e) => setBookScheduled(e.target.value)}
                 />
               </div>
-              {bookScheduled && !bookDriver && (
-                <div>
-                  <label className="db-modal-label">
-                    {t("booking.preferredDriver")}{" "}
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "#6B7280",
-                        fontWeight: 400,
-                        marginLeft: 6,
-                        textTransform: "none",
-                        letterSpacing: 0,
-                      }}
-                    >
-                      {t("booking.preferredDriverHint")}
-                    </span>
-                  </label>
-                  <select
-                    className="db-modal-select"
-                    value={bookPreferredDriver}
-                    onChange={(e) => setBookPreferredDriver(e.target.value)}
-                  >
-                    <option value="">{t("booking.noPreference")}</option>
-                    {drivers
-                      .filter(
-                        (d) =>
-                          d.is_active &&
-                          driverFitsClass(
-                            d,
-                            vehicleClasses.find((c) => c.id === bookVehicleClassId),
-                            bookWheelchair,
-                          ),
-                      )
-                      .map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
-                          {d.vehicle_model}
-                        </option>
-                      ))}
-                  </select>
-                  {bookPreferredDriver && (
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        marginTop: 8,
-                        fontSize: 12,
-                        color: "#9CA3AF",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={bookPreferredExclusive}
-                        onChange={(e) => setBookPreferredExclusive(e.target.checked)}
-                      />
-                      {t("booking.exclusive")}
-                    </label>
-                  )}
-                </div>
-              )}
               {bookError && (
                 <div
                   style={{
@@ -6802,71 +6647,6 @@ export default function DashboardPage({
                       value={editScheduled}
                       onChange={(e) => setEditScheduled(e.target.value)}
                     />
-                  </div>
-                )}
-                {rideDetail.status === "scheduled" && !rideDetail.driver_id && (
-                  <div>
-                    <label className="db-modal-label">
-                      {t("booking.preferredDriver")}{" "}
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "#6B7280",
-                          fontWeight: 400,
-                          marginLeft: 6,
-                          textTransform: "none",
-                          letterSpacing: 0,
-                        }}
-                      >
-                        {t("booking.preferredDriverHint")}
-                      </span>
-                    </label>
-                    <select
-                      className="db-modal-select"
-                      value={editPreferredDriver}
-                      onChange={(e) => setEditPreferredDriver(e.target.value)}
-                    >
-                      <option value="">{t("booking.noPreference")}</option>
-                      {drivers
-                        .filter(
-                          (d) =>
-                            d.is_active &&
-                            driverFitsClass(
-                              d,
-                              vehicleClasses.find((c) => c.id === editVehicleClassId),
-                              editWheelchair,
-                              // A ride scheduled-release already widened keeps
-                              // showing the larger vehicles it was widened to.
-                              rideDetail.allow_larger_vehicle === true,
-                            ),
-                        )
-                        .map((d) => (
-                          <option key={d.id} value={d.id}>
-                            {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
-                            {d.vehicle_model}
-                          </option>
-                        ))}
-                    </select>
-                    {editPreferredDriver && (
-                      <label
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginTop: 8,
-                          fontSize: 12,
-                          color: "#9CA3AF",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={editPreferredExclusive}
-                          onChange={(e) => setEditPreferredExclusive(e.target.checked)}
-                        />
-                        {t("booking.exclusive")}
-                      </label>
-                    )}
                   </div>
                 )}
                 {editError && (
