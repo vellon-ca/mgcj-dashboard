@@ -222,6 +222,7 @@
     "title": "Needs attention"
   },
   "booking": {
+    "errDriverUnavailable": "That driver can't take an immediate ride right now — pick another or leave it unassigned.",
     "addressPlaceholder": "Start typing an address…",
     "amountOff": "${{amount}} off",
     "anyVehicle": "— Any vehicle —",
@@ -412,7 +413,28 @@
     "unlimited": "Unlimited",
     "validity": "Validity"
   },
+  "picker": {
+    "bestMatch": "Best match",
+    "lessSuitable": "Less suitable",
+    "closest": "Closest",
+    "current": "Current",
+    "driveTime": "{{mins}} min · {{km}} km",
+    "approxKm": "≈ {{km}} km",
+    "nowKm": "now ≈ {{km}} km",
+    "declined": "declined this ride",
+    "vehicle": "vehicle doesn't fit",
+    "offShift": "off shift",
+    "unreachable": "app can't receive offers",
+    "onRide": "on a ride now",
+    "lateFromEarlier_one": "{{count}}m late after their {{when}} ride",
+    "lateFromEarlier_other": "{{count}}m late after their {{when}} ride",
+    "earlierRide": "ride at {{when}} before this",
+    "none": "No drivers on the roster can be offered this ride."
+  },
   "dispatch": {
+    "assignAnywayEarlier": "{{name}} has a scheduled ride at {{when}} before this one.",
+    "assignAnywayEarlierLate_one": "Finishing it would get them here about {{count}} minute late.",
+    "assignAnywayEarlierLate_other": "Finishing it would get them here about {{count}} minutes late.",
     "activeRides": "Active rides",
     "assignAnyway": "Assign anyway",
     "assignAnywayAdvice": "Assign anyway only if you know something the estimate doesn't.",

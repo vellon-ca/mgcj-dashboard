@@ -222,6 +222,7 @@
     "title": "À traiter"
   },
   "booking": {
+    "errDriverUnavailable": "Ce chauffeur ne peut pas prendre une course immédiate pour le moment — choisissez-en un autre ou laissez-la non assignée.",
     "addressPlaceholder": "Commencez à saisir une adresse…",
     "amountOff": "{{amount}} $ de rabais",
     "anyVehicle": "— Tout véhicule —",
@@ -412,7 +413,28 @@
     "unlimited": "Illimité",
     "validity": "Validité"
   },
+  "picker": {
+    "bestMatch": "Meilleurs choix",
+    "lessSuitable": "Moins adaptés",
+    "closest": "Le plus proche",
+    "current": "Actuel",
+    "driveTime": "{{mins}} min · {{km}} km",
+    "approxKm": "≈ {{km}} km",
+    "nowKm": "actuellement ≈ {{km}} km",
+    "declined": "a refusé cette course",
+    "vehicle": "véhicule inadapté",
+    "offShift": "hors service",
+    "unreachable": "l'appli ne peut pas recevoir d'offres",
+    "onRide": "en course",
+    "lateFromEarlier_one": "{{count}} min de retard après sa course de {{when}}",
+    "lateFromEarlier_other": "{{count}} min de retard après sa course de {{when}}",
+    "earlierRide": "course à {{when}} avant celle-ci",
+    "none": "Aucun chauffeur ne peut recevoir cette course."
+  },
   "dispatch": {
+    "assignAnywayEarlier": "{{name}} a une course planifiée à {{when}} avant celle-ci.",
+    "assignAnywayEarlierLate_one": "En la terminant, il arriverait ici avec environ {{count}} minute de retard.",
+    "assignAnywayEarlierLate_other": "En la terminant, il arriverait ici avec environ {{count}} minutes de retard.",
     "activeRides": "Courses actives",
     "assignAnyway": "Assigner quand même",
     "assignAnywayAdvice": "N'assignez quand même que si vous savez quelque chose que l'estimation ignore.",
