@@ -222,6 +222,7 @@
     "title": "Needs attention"
   },
   "booking": {
+    "errDriverNotNotified": "The ride is booked, but the driver could not be notified. Re-assign it from the ride card so they get the alert.",
     "errDriverUnavailable": "That driver can't take an immediate ride right now — pick another or leave it unassigned.",
     "addressPlaceholder": "Start typing an address…",
     "amountOff": "${{amount}} off",
