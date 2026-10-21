@@ -222,6 +222,7 @@
     "title": "À traiter"
   },
   "booking": {
+    "errDriverNotNotified": "La course est réservée, mais le chauffeur n'a pas pu être averti. Réassignez-la depuis la fiche de la course pour qu'il reçoive l'alerte.",
     "errDriverUnavailable": "Ce chauffeur ne peut pas prendre une course immédiate pour le moment — choisissez-en un autre ou laissez-la non assignée.",
     "addressPlaceholder": "Commencez à saisir une adresse…",
     "amountOff": "{{amount}} $ de rabais",

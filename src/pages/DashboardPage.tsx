@@ -3576,11 +3576,34 @@ export default function DashboardPage({
         rideData.driver_id = bookDriver;
         rideData.status = bookScheduled ? "scheduled" : "offered";
       }
-      const { error } = await supabase.from("rides").insert(rideData);
+      const { data: inserted, error } = await supabase
+        .from("rides")
+        .insert(rideData)
+        .select("id")
+        .single();
       if (error) {
         setBookError(error.message);
         setBookLoading(false);
         return;
+      }
+      // The insert carries driver_id itself (insert-then-assign would leave an
+      // immediate ride 'pending' long enough for auto-dispatch to take it), so
+      // dispatch-assign-ride is called afterwards with the SAME driver. It
+      // rewrites the same values and is the one place that pushes the driver;
+      // for an immediate ride it also stamps offered_at, which the insert never
+      // set, so an ignored offer could not time out. The vehicle mismatch was
+      // already confirmed above. A failure here leaves a booked, assigned ride
+      // whose driver was not told, so it is reported but does not undo the booking.
+      if (bookDriver && inserted) {
+        const { error: notifyError } = await invokeFunction("dispatch-assign-ride", {
+          ride_id: inserted.id,
+          driver_id: bookDriver,
+          confirm_mismatch: true,
+        });
+        if (notifyError) {
+          console.error("[booking] dispatch-assign-ride", notifyError);
+          alert(t("booking.errDriverNotNotified"));
+        }
       }
       logDispatchEvent({
         companyId: profile.company_id!,
