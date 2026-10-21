@@ -35,6 +35,9 @@ import {
 } from "../lib/labels";
 import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
+import DriverPicker from "../components/DriverPicker";
+import { driverOptionLabel } from "../lib/driverPickerText";
+import { rankDrivers, type RankedDriver } from "../lib/driverRanking";
 import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
@@ -1374,22 +1377,17 @@ function coverageDisplay(ride: any): { label: string; color: string; bg: string 
 // Scheduled Ride Card
 function ScheduledRideCard({
   ride,
-  assigningRide,
-  onlineDrivers,
+  picker,
   onCardClick,
   onAssign,
-  onCancelAssign,
-  onAssignDriver,
   onEdit,
   onCancel,
 }: {
   ride: any;
-  assigningRide: string | null;
-  onlineDrivers: any[];
+  /** The ranked driver list while this card is the one being assigned. */
+  picker: React.ReactNode | null;
   onCardClick: () => void;
   onAssign: () => void;
-  onCancelAssign: () => void;
-  onAssignDriver: (driverId: string) => void;
   onEdit: () => void;
   onCancel: () => void;
 }) {
@@ -1461,35 +1459,8 @@ function ScheduledRideCard({
         </div>
       )}
       <div style={{ padding: "8px 12px 10px" }}>
-        {assigningRide === ride.id ? (
-          <>
-            <div className="db-assign-label" style={{ marginTop: 0 }}>
-              {t("dispatch.assignDriverLabel")}
-            </div>
-            {onlineDrivers.map((d) => (
-              <button
-                key={d.id}
-                className="db-assign-driver-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAssignDriver(d.id);
-                }}
-              >
-                {(d as any).profile?.name ?? t("rideDetail.driver")}
-                {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
-                {(ride.declined_by ?? []).includes(d.id) ? ` ${t("dispatch.declinedSuffix")}` : ""}
-              </button>
-            ))}
-            <button
-              className="db-cancel-assign-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancelAssign();
-              }}
-            >
-              {t("common.cancel")}
-            </button>
-          </>
+        {picker ? (
+          picker
         ) : (
           <div style={{ display: "flex", gap: 6 }}>
             <button
@@ -1634,12 +1605,18 @@ export default function DashboardPage({
     Map<string, { misses: boolean; commitment_at: string; minutes_short: number | null; free_at: string | null }>
   >(new Map());
   const [conflictsLoading, setConflictsLoading] = useState(false);
+  // Real drive time + distance to the pickup for the nearest drivers, from the
+  // same check-ride-conflicts call. Empty until it answers, and always empty
+  // for a ride more than SOON_MINS out (position means nothing that far ahead).
+  const [driveTimes, setDriveTimes] = useState<Map<string, { mins: number; km: number }>>(new Map());
   const [confirmHoldAssign, setConfirmHoldAssign] = useState<{
     rideId: string;
     driverId: string;
     name: string;
     scheduledAt: string;
     minutesShort: number | null;
+    /** "before": an EARLIER booking of theirs runs into this ride. */
+    direction: "after" | "before";
   } | null>(null);
   const [pendingInvites, setPendingInvites] = useState<DriverInvite[]>([]);
   const [stats, setStats] = useState<Stats>({
@@ -3407,6 +3384,27 @@ export default function DashboardPage({
       setBookError(t("booking.errDropoffFromList"));
       return;
     }
+    if (bookDriver) {
+      const chosen = bookRanked.find((r) => r.driver.id === bookDriver);
+      // The list is ranked off the form as it stands now, so switching a
+      // scheduled booking to immediate can leave an off-shift driver selected.
+      if (!chosen) {
+        setBookError(t("booking.errDriverUnavailable"));
+        return;
+      }
+      // This insert writes driver_id directly rather than going through
+      // dispatch-assign-ride (an insert-then-assign would sit 'pending' long
+      // enough for auto-dispatch to take an immediate ride), so it raises the
+      // same vehicle-mismatch confirmation that function would.
+      if (chosen.issues.includes("vehicle")) {
+        const cls = vehicleClasses.find((c) => c.id === bookVehicleClassId);
+        const reason =
+          bookWheelchair && !chosen.driver.wheelchair_accessible
+            ? t("dispatch.mismatchWheelchair")
+            : t("dispatch.mismatchSeats", { needs: cls?.capacity ?? "?", has: chosen.driver.seats ?? "?" });
+        if (!confirm(t("dispatch.confirmMismatch", { reason }))) return;
+      }
+    }
     setBookLoading(true);
     setBookError(null);
     try {
@@ -4127,6 +4125,7 @@ export default function DashboardPage({
   useEffect(() => {
     if (!assigningRide) {
       setConflicts(new Map());
+      setDriveTimes(new Map());
       return;
     }
     let cancelled = false;
@@ -4144,6 +4143,9 @@ export default function DashboardPage({
       const m = new Map<string, any>();
       for (const c of data?.conflicts ?? []) m.set(c.driver_id, c);
       setConflicts(m);
+      const dt = new Map<string, { mins: number; km: number }>();
+      for (const d of data?.drive ?? []) dt.set(d.driver_id, { mins: d.mins, km: d.km });
+      setDriveTimes(dt);
     })();
     return () => {
       cancelled = true;
@@ -4166,23 +4168,69 @@ export default function DashboardPage({
   const recentRides = rides
     .filter((r) => ["completed", "cancelled"].includes(r.status))
     .slice(0, 30);
-  const activeRideDriverIds = new Set(
+  // Away drivers stay in the assign lists on purpose, ranked down and labelled
+  // (lib/driverRanking.ts). Dispatch would rather offer a ride to a driver whose
+  // phone has gone quiet than tell a passenger nobody is available — a ride
+  // offer is a push notification, which reaches a locked phone fine.
+  // Drivers on a ride right now (assigned through in progress).
+  const busyDriverIds = new Set(
     rides
       .filter((r) => ["assigned", "driver_arriving", "in_progress"].includes(r.status) && r.driver_id)
-      .map((r) => r.driver_id),
+      .map((r) => r.driver_id as string),
   );
-  // Away drivers stay in this list on purpose. Dispatch would rather offer a
-  // ride to a driver whose phone has gone quiet than tell a passenger nobody is
-  // available — a ride offer is a push notification, which reaches a locked
-  // phone fine. They are ranked last and labelled so the choice is informed,
-  // not hidden. (Sorts downstream of this are stable, so this order survives.)
-  const onlineDrivers = drivers
-    .filter((d) => d.is_active && !activeRideDriverIds.has(d.id))
-    .sort(
-      (a, b) =>
-        Number(driverPresence(a as any) === "away") -
-        Number(driverPresence(b as any) === "away"),
+
+  // Clicking a driver: a clash gets the "assign anyway?" confirmation; anything
+  // else goes straight to dispatch-assign-ride, which raises its own
+  // confirmation for a vehicle mismatch.
+  function pickDriver(rideId: string, r: RankedDriver) {
+    if (r.clash) {
+      setConfirmHoldAssign({
+        rideId,
+        driverId: r.driver.id,
+        name: r.driver.profile?.name ?? t("rideDetail.driver"),
+        scheduledAt: r.clash.commitment_at,
+        minutesShort: r.clash.minutes_short,
+        direction: r.clash.direction === "before" ? "before" : "after",
+      });
+      return;
+    }
+    assignDriver(rideId, r.driver.id);
+  }
+
+  // The booking form ranks off what has been typed so far. No ride exists yet,
+  // so there is nothing to ask check-ride-conflicts: straight-line km only.
+  const bookRanked = rankDrivers({
+    ride: {
+      pickup_lat: bookPickupCoords?.lat ?? null,
+      pickup_lng: bookPickupCoords?.lng ?? null,
+      scheduled_at: bookScheduled ? new Date(bookScheduled).toISOString() : null,
+      vehicle_class_id: bookVehicleClassId || null,
+      requires_wheelchair: bookWheelchair,
+    },
+    drivers,
+    busyDriverIds,
+    vehicleClasses,
+  }).ranked;
+
+  function renderPicker(ride: any) {
+    const { ranked } = rankDrivers({
+      ride,
+      drivers,
+      busyDriverIds,
+      vehicleClasses,
+      conflicts,
+      drive: driveTimes,
+    });
+    return (
+      <DriverPicker
+        ranked={ranked}
+        loading={conflictsLoading}
+        onPick={(r) => pickDriver(ride.id, r)}
+        onCancel={() => setAssigningRide(null)}
+      />
     );
+  }
+
   const availableDiscountCodes = discountCodes.filter((c) => {
     const now = new Date();
     if (c.starts_at && now < new Date(c.starts_at)) return false;
@@ -4347,6 +4395,18 @@ export default function DashboardPage({
         .db-assign-label { font-size: 11px; color: #6B7280; margin: 8px 0 4px; }
         .db-assign-driver-btn { width: 100%; background: rgba(29,158,117,0.07); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s; }
         .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
+        .db-pick-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; text-align: left; }
+        .db-pick-row.demoted { background: rgba(107,114,128,0.06); color: #9CA3AF; border-color: rgba(107,114,128,0.22); }
+        .db-pick-row.demoted:hover { background: rgba(107,114,128,0.12); }
+        .db-pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
+        .db-pick-name { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+        .db-pick-meta { font-size: 10.5px; color: #6B7280; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-pick-issues { font-size: 10.5px; color: #F59E0B; font-weight: 500; }
+        .db-pick-dist { font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .db-pick-tag { font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(148,163,184,0.15); color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.03em; }
+        .db-pick-tag.best { background: rgba(29,158,117,0.18); color: #34D399; }
+        .db-pick-divider { font-size: 10.5px; color: #6B7280; margin: 8px 0 4px; padding-top: 6px; border-top: 1px dashed rgba(107,114,128,0.3); }
+        .db-pick-empty { font-size: 11px; color: #6B7280; margin-bottom: 6px; }
         .db-cancel-assign-btn { background: transparent; color: #6B7280; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
         .db-cancel-assign-btn:hover { color: #9CA3AF; }
         .db-cancel-ride-btn { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
@@ -4991,13 +5051,20 @@ export default function DashboardPage({
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
                 <div className="dd-confirm-title">{t("dispatch.assignAnywayTitle")}</div>
                 <div className="dd-confirm-body">
-                  {t("dispatch.assignAnywayDue", {
-                    name: confirmHoldAssign.name,
-                    when: shortTime(confirmHoldAssign.scheduledAt),
-                  })}{" "}
-                  {confirmHoldAssign.minutesShort != null
-                    ? t("dispatch.assignAnywayLate", { count: confirmHoldAssign.minutesShort })
-                    : t("dispatch.assignAnywayUnknown")}{" "}
+                  {confirmHoldAssign.direction === "before"
+                    ? t("dispatch.assignAnywayEarlier", {
+                        name: confirmHoldAssign.name,
+                        when: shortTime(confirmHoldAssign.scheduledAt),
+                      })
+                    : t("dispatch.assignAnywayDue", {
+                        name: confirmHoldAssign.name,
+                        when: shortTime(confirmHoldAssign.scheduledAt),
+                      })}{" "}
+                  {confirmHoldAssign.minutesShort == null
+                    ? t("dispatch.assignAnywayUnknown")
+                    : confirmHoldAssign.direction === "before"
+                      ? t("dispatch.assignAnywayEarlierLate", { count: confirmHoldAssign.minutesShort })
+                      : t("dispatch.assignAnywayLate", { count: confirmHoldAssign.minutesShort })}{" "}
                   {t("dispatch.assignAnywayAdvice")}
                 </div>
                 <div className="dd-confirm-actions">
@@ -5140,83 +5207,7 @@ export default function DashboardPage({
                           ride.status === "assigned") && (
                           <div style={{ marginTop: 8 }}>
                             {assigningRide === ride.id ? (
-                              <>
-                                <div className="db-assign-label">
-                                  {t("dispatch.assignDriverLabel")}
-                                  {conflictsLoading ? ` ${t("dispatch.checkingConflicts")}` : ""}
-                                </div>
-                                {[...onlineDrivers]
-                                  .sort(
-                                    (a, b) =>
-                                      // Free drivers first, committed ones last.
-                                      // Stable within each group, so the roster
-                                      // order dispatch already knows survives.
-                                      Number(!!conflicts.get(a.id)?.misses) -
-                                      Number(!!conflicts.get(b.id)?.misses),
-                                  )
-                                  .map((d) => {
-                                  const conflict = conflicts.get(d.id);
-                                  const heldFor = conflict?.misses ? conflict : null;
-                                  const dName = (d as any).profile?.name ?? t("rideDetail.driver");
-                                  return (
-                                    <button
-                                      key={d.id}
-                                      className="db-assign-driver-btn"
-                                      style={
-                                        heldFor
-                                          ? {
-                                              background: "rgba(245,158,11,0.07)",
-                                              color: "#F59E0B",
-                                              borderColor: "rgba(245,158,11,0.3)",
-                                            }
-                                          : undefined
-                                      }
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        // Overriding the guard is the one assign
-                                        // that can strand a passenger who booked
-                                        // days ago. It gets a confirmation.
-                                        if (heldFor) {
-                                          setConfirmHoldAssign({
-                                            rideId: ride.id,
-                                            driverId: d.id,
-                                            name: dName,
-                                            scheduledAt: heldFor.commitment_at,
-                                            minutesShort: heldFor.minutes_short,
-                                          });
-                                          return;
-                                        }
-                                        assignDriver(ride.id, d.id);
-                                      }}
-                                    >
-                                      {dName}
-                                      {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
-                                      {((ride as any).declined_by ?? []).includes(d.id) ? ` ${t("dispatch.declinedSuffix")}` : ""}
-                                      {heldFor
-                                        ? ` · ${
-                                            heldFor.minutes_short != null
-                                              ? t("dispatch.lateForBy", {
-                                                  count: heldFor.minutes_short,
-                                                  when: shortTime(heldFor.commitment_at),
-                                                })
-                                              : t("dispatch.dueAt", {
-                                                  when: shortTime(heldFor.commitment_at),
-                                                })
-                                          }`
-                                        : ""}
-                                    </button>
-                                  );
-                                })}
-                                <button
-                                  className="db-cancel-assign-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAssigningRide(null);
-                                  }}
-                                >
-                                  {t("common.cancel")}
-                                </button>
-                              </>
+                              renderPicker(ride)
                             ) : (
                               <div style={{ display: "flex", gap: 6 }}>
                                 <button
@@ -5357,14 +5348,9 @@ export default function DashboardPage({
                           <ScheduledRideCard
                             key={ride.id}
                             ride={ride}
-                            assigningRide={assigningRide}
-                            onlineDrivers={onlineDrivers}
+                            picker={assigningRide === ride.id ? renderPicker(ride) : null}
                             onCardClick={() => setRideDetail(ride)}
                             onAssign={() => setAssigningRide(ride.id)}
-                            onCancelAssign={() => setAssigningRide(null)}
-                            onAssignDriver={(driverId) =>
-                              assignDriver(ride.id, driverId)
-                            }
                             onEdit={() => {
                               setRideDetail(ride);
                               startEditRide(ride);
@@ -6314,13 +6300,24 @@ export default function DashboardPage({
                   onChange={(e) => setBookDriver(e.target.value)}
                 >
                   <option value="">{t("booking.noDriverYet")}</option>
-                  {onlineDrivers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {(d as any).profile?.name ?? t("rideDetail.driver")} · {d.vehicle_make}{" "}
-                      {d.vehicle_model}
-                      {driverPresence(d as any) === "away" ? ` · ${t("dispatch.awaySuffix")}` : ""}
-                    </option>
-                  ))}
+                  {bookRanked.some((r) => !r.demoted) && (
+                    <optgroup label={t("picker.bestMatch")}>
+                      {bookRanked.filter((r) => !r.demoted).map((r) => (
+                        <option key={r.driver.id} value={r.driver.id}>
+                          {r.closest ? `★ ${driverOptionLabel(r, t)}` : driverOptionLabel(r, t)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {bookRanked.some((r) => r.demoted) && (
+                    <optgroup label={t("picker.lessSuitable")}>
+                      {bookRanked.filter((r) => r.demoted).map((r) => (
+                        <option key={r.driver.id} value={r.driver.id}>
+                          {driverOptionLabel(r, t)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div>
