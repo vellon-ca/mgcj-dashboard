@@ -149,12 +149,12 @@ export function rankDrivers(input: RankInput): { soon: boolean; ranked: RankedDr
     // An immediate ride can only go to someone working right now. A scheduled
     // one can go to anyone on the roster: release decides later whether they
     // turned up (mgcj-app scheduled-release, releaseAssignedRide).
-    if (!scheduled) return driverPresence(d, now) !== "offline" && !busyDriverIds.has(d.id);
+    if (!scheduled) return driverPresence(d) !== "offline" && !busyDriverIds.has(d.id);
     return true;
   });
 
   const ranked: RankedDriver[] = pool.map((d) => {
-    const presence = driverPresence(d, now);
+    const presence = driverPresence(d);
     const clash = conflicts?.get(d.id)?.misses ? conflicts.get(d.id)! : null;
     const issues: Issue[] = [];
     if (clash) issues.push("clash");

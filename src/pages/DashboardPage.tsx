@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { segment, navigate, VIEW_PATHS, type View } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
-import { driverPresence, lastSeenLabel } from "../lib/presence";
+import { driverPresence, isRideSilent, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import { formatDriverNumber, formatRideRef } from "../lib/numbering";
@@ -10,6 +10,7 @@ import {
   formatDuration,
   formatKm,
   positionAt,
+  type ShiftSpan,
   type Trail,
   type TrailFix,
 } from "../lib/trail";
@@ -874,9 +875,7 @@ function DriverDetailPanel({
   );
   const isAccountActive: boolean = driver.profile?.is_active ?? true;
   const isDeactivationPending: boolean = driver.profile?.deactivation_pending ?? false;
-  // Derived, not read off is_active — see lib/presence.ts for why the flag
-  // alone was lying. Recomputed on each render, and the page refetches every
-  // 15s, which is finer granularity than a 60s threshold needs.
+  // Online or offline only — see lib/presence.ts for why "away" was dropped.
   const presence = driverPresence(driver);
   const lastSeen = lastSeenLabel(driver.last_seen_at);
   // `activeRide` includes status 'offered', which is a ride the driver has been
@@ -997,7 +996,7 @@ function DriverDetailPanel({
               )}
               <div
                 className="dd-status-dot"
-                style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : presence === "away" ? "#F59E0B" : "#374151", flexShrink: 0 }}
+                style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : "#374151", flexShrink: 0 }}
               />
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
                 <button className="dd-action-edit" onClick={openVehicleEdit}>{t("drivers.editVehicle")}</button>
@@ -1058,22 +1057,14 @@ function DriverDetailPanel({
             <span className="dd-pill dd-pill-amber">◷ {t("drivers.offeredAwaiting")}</span>
           ) : activeRide ? (
             <span className="dd-pill dd-pill-orange">● {t("drivers.onARide")}</span>
-          ) : presence === "away" ? (
-            /* Away = still switched on, but we have not heard from their phone
-               inside the same 60s window dispatch uses, so dispatch is skipping
-               them right now. Shown with the age so a dispatcher can tell a
-               tunnel from a driver who went home. */
-            <span className="dd-pill dd-pill-amber">
-              ◌ {t("drivers.away")}
-              {lastSeen ? ` · ${t("drivers.lastSeen", { when: lastSeen })}` : ""}
-            </span>
           ) : (
             <span className="dd-pill dd-pill-green">● {t("drivers.available")}</span>
           )}
-          {presence === "away" && activeRide && !awaitingReply && (
-            /* On a ride AND out of contact: the passenger's live tracking has
-               stopped updating too. Worth its own pill rather than being hidden
-               behind the ride status. */
+          {isRideSilent(driver) && activeRide && !awaitingReply && (
+            /* On a ride and no position for 2+ minutes. The ride cadence
+               reports every 8s / 25m whatever the app is doing, so this is a
+               real fault (app killed, phone dead, no signal) — and the
+               passenger's live tracking has frozen with it. */
             <span className="dd-pill dd-pill-amber">
               ◌ {t("drivers.outOfContact")}{lastSeen ? ` · ${lastSeen}` : ""}
             </span>
@@ -1349,6 +1340,52 @@ function AssignmentHold({ ride }: { ride: any }) {
 function localDayISO(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+type DriverShift = {
+  started_at: string;
+  started_estimated: boolean;
+  ended_at: string | null;
+  end_reason: string | null;
+};
+
+function shiftSpan(s: DriverShift): ShiftSpan {
+  return {
+    from: new Date(s.started_at).getTime(),
+    to: s.ended_at ? new Date(s.ended_at).getTime() : null,
+  };
+}
+
+/**
+ * The day's shifts in the trail panel: when the driver went online, when and
+ * WHY they went offline (driver_shifts.end_reason). Shown even on a day with no
+ * location history — the log is server-side and works on every app build.
+ */
+function TrailShiftList({ shifts }: { shifts: DriverShift[] }) {
+  const { t } = useTranslation();
+  if (shifts.length === 0) return null;
+  return (
+    <div className="db-trail-shifts">
+      <div className="dd-section-label">{t("trail.shifts")}</div>
+      {shifts.map((sh) => {
+        const span = shiftSpan(sh);
+        const end = span.to ?? Date.now();
+        return (
+          <div key={sh.started_at} className="db-trail-shift">
+            <span className="db-trail-stop-time">
+              {sh.started_estimated ? t("trail.byTime", { time: clockOf(span.from) }) : clockOf(span.from)}
+              {" – "}
+              {span.to == null ? t("trail.onShiftNow") : clockOf(span.to)}
+            </span>
+            <span className="db-trail-stop-dur">{formatDuration(end - span.from)}</span>
+            {sh.end_reason && (
+              <span className="db-trail-shift-reason">{t(`trail.endReason.${sh.end_reason}`)}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function clockOf(ms: number): string {
@@ -1663,6 +1700,9 @@ export default function DashboardPage({
   const [trailDriver, setTrailDriver] = useState<any | null>(null);
   const [trailDate, setTrailDate] = useState<string>(() => localDayISO(new Date()));
   const [trail, setTrail] = useState<Trail | null>(null);
+  // That day's shifts (driver_shifts, mgcj-app 20261023020000): listed in the
+  // panel, and they cap a stop at the end of the shift it fell in.
+  const [trailShifts, setTrailShifts] = useState<DriverShift[]>([]);
   const [trailLoading, setTrailLoading] = useState(false);
   const [trailError, setTrailError] = useState<string | null>(null);
   // Scrubber position, in epoch ms. null = show the whole day, no marker.
@@ -1737,6 +1777,15 @@ export default function DashboardPage({
       const to = new Date(trailDate + "T00:00:00");
       to.setDate(to.getDate() + 1);
 
+      // Shifts that overlap the day, including one still open.
+      const shiftsReq = supabase
+        .from("driver_shifts")
+        .select("started_at, started_estimated, ended_at, end_reason")
+        .eq("driver_id", trailDriver.id)
+        .lt("started_at", to.toISOString())
+        .or(`ended_at.is.null,ended_at.gte.${from.toISOString()}`)
+        .order("started_at", { ascending: true });
+
       const { data, error } = await supabase
         .from("driver_locations")
         .select("recorded_at, lat, lng, ride_id")
@@ -1748,12 +1797,17 @@ export default function DashboardPage({
         // a pathological day into the browser, not an expected limit.
         .limit(20000);
 
+      // A failed shifts read only loses the caps and the list; the trail
+      // itself still draws.
+      const { data: shiftRows } = await shiftsReq;
       if (cancelled) return;
+      const shifts = (shiftRows ?? []) as DriverShift[];
+      setTrailShifts(shifts);
       if (error) {
         setTrailError(error.message);
         setTrail(null);
       } else {
-        setTrail(buildTrail((data ?? []) as TrailFix[]));
+        setTrail(buildTrail((data ?? []) as TrailFix[], shifts.map(shiftSpan)));
       }
       setTrailLoading(false);
     })();
@@ -2667,10 +2721,9 @@ export default function DashboardPage({
     const busy = busyDriverIdsRef.current.has(id);
     const focused = focusedDriverIdRef.current === id;
     const bearing = driverAnimRef.current.get(key)?.bearing ?? null;
-    // Faded rather than removed. The car is at their LAST KNOWN position, which
-    // is still the most useful thing dispatch has about them — "last seen here
-    // 20 minutes ago" beats an empty map. Opacity says the position is old
-    // without inventing a third car colour.
+    // Faded only for a driver ON A RIDE whose position has stopped (see
+    // isRideSilent) — the one case where an old position is a fault. An idle
+    // driver with an old position is parked, and is drawn normally.
     const away = awayDriverIdsRef.current.has(id);
     const sig = `${busy}|${focused}|${away}|${bearing ?? "x"}`;
     if (driverIconSigRef.current.get(key) === sig) return;
@@ -2693,7 +2746,9 @@ export default function DashboardPage({
     if (trailDriverRef.current) return; // a trail owns the map; see hideLiveMarkers
     const focus = focusedDriverIdRef.current;
     awayDriverIdsRef.current = new Set(
-      enriched.filter((d: any) => driverPresence(d) === "away").map((d: any) => d.id),
+      enriched
+        .filter((d: any) => busyDriverIdsRef.current.has(d.id) && isRideSilent(d))
+        .map((d: any) => d.id),
     );
     enriched
       .filter((d: any) => d.is_active && d.current_lat && d.current_lng)
@@ -4699,6 +4754,9 @@ export default function DashboardPage({
         .db-trail-legend i.fare { background: #E8500A; }
         .db-trail-legend i.idle { background: #9CA3AF; }
         .db-trail-stops { display: flex; flex-direction: column; gap: 4px; }
+        .db-trail-shifts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .db-trail-shift { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 9px; border: 1px solid #F3F4F6; border-radius: 8px; background: #fff; }
+        .db-trail-shift-reason { width: 100%; font-size: 11px; color: #6B7280; }
         .db-trail-stop { display: flex; align-items: center; gap: 8px; width: 100%; background: #fff; border: 1px solid #F3F4F6; border-radius: 8px; padding: 7px 9px; cursor: pointer; text-align: left; }
         .db-trail-stop:hover { background: #F9FAFB; border-color: #E5E7EB; }
         .db-trail-stop-n { width: 18px; height: 18px; border-radius: 9px; background: #111827; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -5625,7 +5683,6 @@ export default function DashboardPage({
                       const isAccountActive: boolean = (driver as any).profile?.is_active ?? true;
                       const isDeactivationPending: boolean = (driver as any).profile?.deactivation_pending ?? false;
                       const presence = driverPresence(driver as any);
-                      const lastSeen = lastSeenLabel((driver as any).last_seen_at);
                       // See the detail panel: 'offered' is not yet a commitment.
                       const awaitingReply = driverActiveRide?.status === "offered";
                       return (
@@ -5695,11 +5752,7 @@ export default function DashboardPage({
                               ) : driverActiveRide ? (
                                 <div className="db-driver-status-on-ride">
                                   ● {t("drivers.onARide")}
-                                  {presence === "away" ? ` · ${t("drivers.outOfContactLower")}` : ""}
-                                </div>
-                              ) : presence === "away" ? (
-                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ◌ {t("drivers.away")}{lastSeen ? ` · ${lastSeen}` : ""}
+                                  {isRideSilent(driver as any) ? ` · ${t("drivers.outOfContactLower")}` : ""}
                                 </div>
                               ) : (
                                 <div className="db-driver-status-available">
@@ -5714,8 +5767,6 @@ export default function DashboardPage({
                                   ? "#E24B4A"
                                   : presence === "online"
                                   ? "#1D9E75"
-                                  : presence === "away"
-                                  ? "#F59E0B"
                                   : "#374151",
                               }}
                             />
@@ -5899,10 +5950,13 @@ export default function DashboardPage({
                   ) : trailError ? (
                     <div className="db-trail-empty">{t("trail.loadFailed", { reason: trailError })}</div>
                   ) : !trail || trail.fixCount === 0 ? (
-                    <div className="db-trail-empty">
-                      {t("trail.noneThisDay")}
-                      <div className="db-trail-note">{t("trail.noneNote")}</div>
-                    </div>
+                    <>
+                      <TrailShiftList shifts={trailShifts} />
+                      <div className="db-trail-empty">
+                        {t("trail.noneThisDay")}
+                        <div className="db-trail-note">{t("trail.noneNote")}</div>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <div className="db-trail-stats">
@@ -5954,6 +6008,8 @@ export default function DashboardPage({
                         <span><i className="idle" />{t("trail.betweenFares")}</span>
                       </div>
 
+                      <TrailShiftList shifts={trailShifts} />
+
                       {trail.stops.length > 0 && (
                         <div className="db-trail-stops">
                           {trail.stops.map((stop, i) => (
@@ -5965,9 +6021,11 @@ export default function DashboardPage({
                             >
                               <span className="db-trail-stop-n">{i + 1}</span>
                               <span className="db-trail-stop-time">
-                                {clockOf(stop.from)} – {clockOf(stop.to)}
+                                {stop.ongoing ? t("trail.since", { time: clockOf(stop.from) }) : `${clockOf(stop.from)} – ${clockOf(stop.to)}`}
                               </span>
-                              <span className="db-trail-stop-dur">{stop.minutes}m</span>
+                              <span className="db-trail-stop-dur">
+                                {stop.ongoing ? t("trail.parkedNow", { duration: formatDuration(stop.to - stop.from) }) : formatDuration(stop.to - stop.from)}
+                              </span>
                             </button>
                           ))}
                         </div>

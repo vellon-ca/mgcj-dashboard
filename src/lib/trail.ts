@@ -26,7 +26,12 @@ export type TrailStop = {
   from: number;
   to: number;
   minutes: number;
+  /** Still parked there now (the open shift's last fix). */
+  ongoing: boolean;
 };
+
+/** A shift from driver_shifts, as epoch ms. `to` is null while still online. */
+export type ShiftSpan = { from: number; to: number | null };
 
 export type Trail = {
   segments: TrailSegment[];
@@ -63,6 +68,17 @@ const STOP_RADIUS_M = 60;
 /** …and for how long, before it is worth showing as a stop at all. */
 const STOP_MIN_MS = 5 * 60_000;
 
+/**
+ * A parked driver produces ONE fix: the idle location cadence is distance
+ * triggered (150 m), so nothing more arrives until they drive off, and the
+ * first fix after that is a couple of hundred metres away. The stop therefore
+ * lasts until that next fix — provided it is near. If the next fix is farther
+ * than this, the car moved without reporting (app closed, no signal), so the
+ * gap is unknown, not a stop. Generous on purpose: the OS can deliver the
+ * departure fix late, a few hundred metres down the road.
+ */
+const DEPARTURE_MAX_M = 1000;
+
 export function metresBetween(a: LatLng, b: LatLng): number {
   const R = 6371000;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
@@ -78,7 +94,12 @@ export function metresBetween(a: LatLng, b: LatLng): number {
 /**
  * Build the drawable trail. `fixes` must be ordered by recorded_at ascending.
  */
-export function buildTrail(fixes: TrailFix[]): Trail {
+export function buildTrail(
+  fixes: TrailFix[],
+  /** That day's shifts. A stop never runs past the end of its shift. */
+  shifts: ShiftSpan[] = [],
+  now: number = Date.now(),
+): Trail {
   const empty: Trail = {
     segments: [],
     stops: [],
@@ -124,7 +145,7 @@ export function buildTrail(fixes: TrailFix[]): Trail {
     current!.points.push({ lat: p.lat, lng: p.lng, t: p.t });
   }
 
-  const stops = findStops(points);
+  const stops = findStops(points, shifts, now);
   return {
     segments: segments.filter((s) => s.points.length > 0),
     stops,
@@ -137,14 +158,21 @@ export function buildTrail(fixes: TrailFix[]): Trail {
 }
 
 /**
- * Runs of consecutive fixes that stayed inside STOP_RADIUS_M for at least
- * STOP_MIN_MS. Anchored on the first fix of the run rather than a rolling
- * centroid: a rolling anchor lets a slow crawl through traffic drift across
- * town while every step stays "near" the last one, reporting a two-mile
- * shuffle as one stationary stop.
+ * Runs of consecutive IDLE fixes (not on a fare) that stayed inside
+ * STOP_RADIUS_M, extended to the departure fix (see DEPARTURE_MAX_M) and
+ * capped at the end of the shift they belong to. Anchored on the first fix of
+ * the run rather than a rolling centroid: a rolling anchor lets a slow crawl
+ * through traffic drift across town while every step stays "near" the last
+ * one, reporting a two-mile shuffle as one stationary stop.
+ *
+ * Fares are excluded: the ride cadence reports every 8 s, so a car held in
+ * traffic with a passenger shows as slow movement, and "stopped" during a fare
+ * is not what a dispatcher means by where a driver waited.
  */
 function findStops(
-  points: Array<LatLng & { t: number }>,
+  points: Array<LatLng & { t: number; rideId: string | null }>,
+  shifts: ShiftSpan[],
+  now: number,
 ): TrailStop[] {
   const stops: TrailStop[] = [];
   let anchor = 0;
@@ -152,18 +180,36 @@ function findStops(
   for (let i = 1; i <= points.length; i++) {
     const beyond =
       i === points.length ||
+      points[i].rideId !== points[anchor].rideId ||
       metresBetween(points[anchor], points[i]) > STOP_RADIUS_M;
     if (!beyond) continue;
 
-    const last = i - 1;
-    const duration = points[last].t - points[anchor].t;
-    if (last > anchor && duration >= STOP_MIN_MS) {
-      stops.push({
-        at: { lat: points[anchor].lat, lng: points[anchor].lng },
-        from: points[anchor].t,
-        to: points[last].t,
-        minutes: Math.round(duration / 60_000),
-      });
+    const start = points[anchor];
+    const last = points[i - 1];
+    if (start.rideId == null) {
+      const shift = shifts.find((s) => s.from <= start.t && (s.to == null || s.to >= start.t));
+      const next = i < points.length ? points[i] : null;
+      let to = last.t;
+      let ongoing = false;
+      if (next && metresBetween(last, next) <= DEPARTURE_MAX_M) {
+        to = next.t;
+      } else if (!next && shift) {
+        // Last fix of the day: parked there until the shift ended — or still
+        // there now, if the shift is open.
+        to = shift.to ?? now;
+        ongoing = shift.to == null;
+      }
+      if (shift?.to != null && to > shift.to) to = shift.to;
+      const duration = to - start.t;
+      if (duration >= STOP_MIN_MS) {
+        stops.push({
+          at: { lat: start.lat, lng: start.lng },
+          from: start.t,
+          to,
+          minutes: Math.round(duration / 60_000),
+          ongoing,
+        });
+      }
     }
     anchor = i;
   }
