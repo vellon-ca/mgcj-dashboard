@@ -71,6 +71,11 @@ export interface Ride {
   // which is why the box means the same thing whether or not an address moved.
   pre_discount_fare: number | null;
   payment_method: string;
+  // The card that paid, frozen by capture-payment (20261023010000). NULL for
+  // cash and for rides captured before it.
+  card_brand?: string | null;
+  card_last4?: string | null;
+  card_wallet?: string | null;
   scheduled_at: string | null;
   cancelled_reason: string | null;
   // Trigger-stamped server-side on entry to driver_arriving / on a filed
