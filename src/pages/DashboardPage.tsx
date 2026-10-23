@@ -2584,10 +2584,12 @@ export default function DashboardPage({
     });
     setStats((s) => ({
       ...s,
-      // Counts only drivers dispatch would actually reach right now. It used to
-      // count the raw is_active flag, so a driver who closed the app kept
-      // inflating this number until the reaper caught them 5 minutes later.
-      driversOnline: enriched.filter((d: any) => driverPresence(d) === "online").length,
+      // Every online driver, including "away" (app backgrounded, car parked):
+      // dispatch offers to them like anyone else since 2026-10-23 (mgcj-app
+      // _shared/presence.ts), so leaving them out undercounted a fleet waiting
+      // at its stands. A driver who has really gone is set offline by offer
+      // strikes or shift auto-end, which is what takes them off this number.
+      driversOnline: enriched.filter((d: any) => driverPresence(d) !== "offline").length,
     }));
     setSelectedDriver((prev: any) => {
       if (!prev) return null;
