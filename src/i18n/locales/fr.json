@@ -268,7 +268,8 @@
     "passengerCancelled": "Annulée par le passager",
     "passengerNoShow": "Passager absent — le chauffeur a attendu au point de départ",
     "systemCancelled": "Annulée automatiquement par le système",
-    "timeout": "Aucun chauffeur trouvé à temps"
+    "timeout": "Aucun chauffeur trouvé à temps",
+    "paymentUnresolved": "Paiement non réglé avant l'échéance (carte refusée)"
   },
   "common": {
     "activate": "Activer",
@@ -484,7 +485,9 @@
     "waitingForConfirm": "En attente de la confirmation de {{name}}",
     "mismatchWheelchair": "cette course exige un véhicule accessible en fauteuil roulant et celui-ci n'est pas marqué comme tel",
     "mismatchSeats": "cette course exige {{needs}} places et ce véhicule en a {{has}}",
-    "confirmMismatch": "Attribuer quand même ?\n\nLe véhicule de ce chauffeur ne convient peut-être pas à la course — {{reason}}."
+    "confirmMismatch": "Attribuer quand même ?\n\nLe véhicule de ce chauffeur ne convient peut-être pas à la course — {{reason}}.",
+    "paymentIssue": "Problème de paiement : passager avisé; annulée à {{time}} si non réglé",
+    "paymentIssueNoDeadline": "Problème de paiement : passager avisé"
   },
   "drivers": {
     "activateBody": "{{name}} retrouvera l'accès complet à l'appli et recommencera à recevoir des courses.",

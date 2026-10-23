@@ -56,6 +56,7 @@ export const CANCEL_REASON_KEYS: Record<string, string> = {
   dispatch_cancelled: "cancelReason.dispatchCancelled",
   passenger_no_show: "cancelReason.passengerNoShow",
   system_cancelled: "cancelReason.systemCancelled",
+  payment_unresolved: "cancelReason.paymentUnresolved",
 };
 
 export const SETTLEMENT_ROUTE_KEYS: Record<string, string> = {

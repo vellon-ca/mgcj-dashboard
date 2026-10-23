@@ -268,7 +268,8 @@
     "passengerCancelled": "Cancelled by passenger",
     "passengerNoShow": "Passenger no-show — driver waited at pickup",
     "systemCancelled": "Cancelled automatically by the system",
-    "timeout": "No drivers found in time"
+    "timeout": "No drivers found in time",
+    "paymentUnresolved": "Payment not sorted by the deadline (card failed)"
   },
   "common": {
     "activate": "Activate",
@@ -484,7 +485,9 @@
     "waitingForConfirm": "Waiting for {{name}} to confirm",
     "mismatchWheelchair": "this ride needs a wheelchair-accessible vehicle and this one isn't marked as one",
     "mismatchSeats": "this ride needs {{needs}} seats and this vehicle has {{has}}",
-    "confirmMismatch": "Assign anyway?\n\nThis driver's vehicle may not suit the ride — {{reason}}."
+    "confirmMismatch": "Assign anyway?\n\nThis driver's vehicle may not suit the ride — {{reason}}.",
+    "paymentIssue": "Payment issue: passenger told; cancels at {{time}} unless fixed",
+    "paymentIssueNoDeadline": "Payment issue: passenger told"
   },
   "drivers": {
     "activateBody": "{{name}} will regain full access to the app and start receiving rides again.",

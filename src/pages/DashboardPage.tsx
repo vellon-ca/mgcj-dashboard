@@ -1458,6 +1458,19 @@ function ScheduledRideCard({
           })}
         </div>
       )}
+      {ride.payment_issue_at && (
+        // The passenger's card failed at the T-24h hold and they have been
+        // told; unresolved by the deadline, the ride cancels itself. Dispatch
+        // can phone them, which for many regulars is what fixes it.
+        <div
+          className="db-pending-badge"
+          style={{ margin: "8px 12px 0", color: "#F87171", borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.10)" }}
+        >
+          {ride.payment_deadline_at
+            ? t("dispatch.paymentIssue", { time: shortTime(ride.payment_deadline_at) })
+            : t("dispatch.paymentIssueNoDeadline")}
+        </div>
+      )}
       <div style={{ padding: "8px 12px 10px" }}>
         {picker ? (
           picker
