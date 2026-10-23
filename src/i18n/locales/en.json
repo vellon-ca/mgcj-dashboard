@@ -1180,13 +1180,14 @@
     "byTime": "by {{time}}",
     "driven": "driven",
     "endReason": {
-      "driver": "Went offline",
+      "account_removed": "Account removed",
       "auto_end": "Ended automatically · no reply to “Still on shift?”",
+      "deactivated": "Set offline · account deactivated",
+      "dispatch": "Set offline by dispatch",
+      "driver": "Went offline",
+      "inactive": "Set offline · app not heard from for 4 hours",
       "missed_offers": "Set offline · missed 3 ride offers in a row",
       "push_disabled": "Set offline · notifications turned off",
-      "inactive": "Set offline · app not heard from for 4 hours",
-      "account_removed": "Account removed",
-      "dispatch": "Set offline by dispatch",
       "system": "Set offline"
     },
     "loadFailed": "Couldn't load: {{reason}}",

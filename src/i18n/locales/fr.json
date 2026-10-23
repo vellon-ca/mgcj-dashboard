@@ -1180,13 +1180,14 @@
     "byTime": "vers {{time}}",
     "driven": "parcourus",
     "endReason": {
-      "driver": "Hors ligne",
+      "account_removed": "Compte supprimé",
       "auto_end": "Terminé automatiquement · pas de réponse à « Toujours en service ? »",
+      "deactivated": "Mis hors ligne · compte désactivé",
+      "dispatch": "Mis hors ligne par la répartition",
+      "driver": "Hors ligne",
+      "inactive": "Mis hors ligne · application silencieuse depuis 4 heures",
       "missed_offers": "Mis hors ligne · 3 offres de course manquées d'affilée",
       "push_disabled": "Mis hors ligne · notifications désactivées",
-      "inactive": "Mis hors ligne · application silencieuse depuis 4 heures",
-      "account_removed": "Compte supprimé",
-      "dispatch": "Mis hors ligne par la répartition",
       "system": "Mis hors ligne"
     },
     "loadFailed": "Chargement impossible : {{reason}}",
