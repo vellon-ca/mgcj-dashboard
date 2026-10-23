@@ -338,6 +338,7 @@
     "rating": "Rating",
     "ratingsCount": "Ratings count",
     "receiptNo": "Receipt #",
+    "paidWith": "Paid with",
     "resolvedAt": "Resolved at",
     "reviewed": "Reviewed",
     "reviewedByDispatch": "Reviewed by dispatch",

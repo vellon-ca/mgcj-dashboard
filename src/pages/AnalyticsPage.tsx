@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSubView } from "../lib/viewPath";
+import { paymentLabel } from "../lib/cardLabel";
 import { formatRideRef } from "../lib/numbering";
 import {
   AreaChart, Area, BarChart, Bar, Cell,
@@ -147,6 +148,11 @@ interface ReceiptRow {
   discount_amount: number | null;
   discount_label: string | null;
   payment_method: string | null;
+  // The card that paid, copied from the ride at send time (20261023010000).
+  // NULL on a cash receipt and on any receipt sent before that migration.
+  card_brand: string | null;
+  card_last4: string | null;
+  card_wallet: string | null;
   sent_at: string;
   // What was PRINTED on this receipt, snapshotted at send time
   // (20260930000000 + 20261001020000). NULL tax_rate_percent/tax_amount means
@@ -1944,6 +1950,10 @@ export default function AnalyticsPage({
     }
   }
 
+  // One name for a payment on every receipt surface: "Visa ••4242", "Cash".
+  const payLabel = (row: Parameters<typeof paymentLabel>[0]) =>
+    paymentLabel(row, { card: t("rideDetail.card"), cash: t("rideDetail.cash") });
+
   function printReceipt(
     inv: ReceiptRow,
     opts?: { extraHtml?: string; footerHtml?: string },
@@ -1984,9 +1994,7 @@ export default function AnalyticsPage({
           <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${inv.fare.toFixed(2)}</p>
           <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280;">${esc(
             t("receipt.paidBy", {
-              method: inv.payment_method
-                ? t(inv.payment_method === "cash" ? "rideDetail.cash" : "rideDetail.card")
-                : "—",
+              method: payLabel(inv),
             }),
           )}</p>
         </div>
@@ -2633,7 +2641,7 @@ export default function AnalyticsPage({
         <td>${inv.driver_name ?? "—"}</td>
         <td style="font-size:11px">${inv.pickup_address && inv.dropoff_address ? `${inv.pickup_address} → ${inv.dropoff_address}` : inv.pickup_address ?? "—"}</td>
         <td style="color:#15803d;font-weight:600">$${inv.fare.toFixed(2)}</td>
-        <td>${inv.payment_method ? esc(t(inv.payment_method === "cash" ? "rideDetail.cash" : "rideDetail.card")) : "—"}</td>
+        <td>${esc(payLabel(inv))}</td>
       </tr>`).join("");
     printReport(t("analytics.receiptsReportTitle", { company: label }), `
       <h1>${esc(t("analytics.receiptsReportHeading", { company: label }))}</h1>
@@ -2656,7 +2664,7 @@ export default function AnalyticsPage({
     downloadCSV(
       "receipts.csv",
       [t("csv.receiptNo"), t("csv.date"), t("rideDetail.passenger"), t("csv.driver"),
-       t("reports.pickup"), t("reports.dropoff"), t("csv.amount"), t("rideDetail.payment")],
+       t("reports.pickup"), t("reports.dropoff"), t("csv.amount"), t("rideDetail.payment"), t("csv.paidWith")],
       filteredReceipts.map((inv) => [
         inv.receipt_number,
         fmtDate(inv.sent_at),
@@ -2666,6 +2674,7 @@ export default function AnalyticsPage({
         inv.dropoff_address ?? "",
         `$${inv.fare.toFixed(2)}`,
         inv.payment_method ?? "",
+        inv.payment_method ? payLabel(inv) : "",
       ]),
     );
   }
@@ -5226,7 +5235,7 @@ export default function AnalyticsPage({
                               : inv.pickup_address ?? "—"}
                           </td>
                           <td className="an-td green">${inv.fare.toFixed(2)}</td>
-                          <td className="an-td" style={{ textTransform: "capitalize" }}>{inv.payment_method ?? "—"}</td>
+                          <td className="an-td">{payLabel(inv)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -5259,7 +5268,7 @@ export default function AnalyticsPage({
                         [t("analytics.col.driver"), selectedReceipt.driver_name ?? "—"],
                         [t("analytics.col.pickup"), selectedReceipt.pickup_address ?? "—"],
                         [t("analytics.col.dropoff"), selectedReceipt.dropoff_address ?? "—"],
-                        [t("analytics.col.payment"), selectedReceipt.payment_method ?? "—"],
+                        [t("analytics.col.payment"), payLabel(selectedReceipt)],
                         ...(selectedReceipt.discount_amount && selectedReceipt.pre_discount_fare != null
                           ? ([
                               [t("receipt.originalFare"), `$${selectedReceipt.pre_discount_fare.toFixed(2)}`],
@@ -5367,7 +5376,7 @@ export default function AnalyticsPage({
                     ? `$${rideDetail.ride.fare_final.toFixed(2)}`
                     : "—",
                 ],
-                [t("analytics.col.payment"), rideDetail.ride.payment_method],
+                [t("analytics.col.payment"), payLabel(rideDetail.ride)],
                 ...(rideDetail.ride.payment_method === "card" && settlementRouteOf(rideDetail.ride)
                   ? ([
                       [
