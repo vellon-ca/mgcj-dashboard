@@ -449,7 +449,6 @@
     "assignDriver": "Assign driver",
     "assignDriverLabel": "Assign driver:",
     "awaitingConfirmation": "Awaiting driver confirmation",
-    "awaySuffix": "away",
     "cancelMidRideWarning": "This ride is under way. Any card hold is released and the driver is not paid for the distance already driven. Their screen will end the trip.",
     "cancelRide": "Cancel ride",
     "cancelRideTitle": "Cancel this ride?",

@@ -28,15 +28,17 @@ const drivers = [mk('far', 9), mk('near', 1), mk('awayNear', 0.5, { last_seen_at
   mk('gone', 0.1, { profile: { name: 'gone', deleted_at: '2026-01-01' } })]
 const busy = new Set(['busy'])
 let r = rankDrivers({ ride: { ...P.lat && { pickup_lat: P.lat, pickup_lng: P.lng } }, drivers, busyDriverIds: busy, vehicleClasses: [], now })
-ok('immediate: near, far, then away demoted; busy/off/deleted excluded', JSON.stringify(ids(r)) === JSON.stringify(['near', 'far', 'awayNear*']), ids(r))
-ok('immediate: closest flagged on near', r.ranked[0].closest && !r.ranked[1].closest)
-ok('immediate: approx distance', r.ranked[0].distance.kind === 'approx' && Math.abs(r.ranked[0].distance.km - 1) < 0.1, r.ranked[0].distance)
+// A quiet heartbeat (backgrounded + parked, e.g. at a stand) is ranked by
+// distance like anyone else — it must beat a live driver further away.
+ok('immediate: parked-quiet driver ranked by distance, not demoted; busy/off/deleted excluded', JSON.stringify(ids(r)) === JSON.stringify(['awayNear', 'near', 'far']), ids(r))
+ok('immediate: closest flagged on the parked-quiet driver', r.ranked[0].closest && !r.ranked[1].closest)
+ok('immediate: approx distance', r.ranked[0].distance.kind === 'approx' && Math.abs(r.ranked[0].distance.km - 0.5) < 0.1, r.ranked[0].distance)
 
 r = rankDrivers({ ride: { pickup_lat: P.lat, pickup_lng: P.lng }, drivers, busyDriverIds: busy, vehicleClasses: [], now,
-  drive: new Map([['far', { mins: 4, km: 9.5 }], ['near', { mins: 7, km: 1.4 }]]) })
-ok('drive times override straight line', ids(r)[0] === 'far' && r.ranked[0].distance.kind === 'drive', ids(r))
+  drive: new Map([['far', { mins: 4, km: 9.5 }], ['near', { mins: 7, km: 1.4 }], ['awayNear', { mins: 6, km: 0.9 }]]) })
+ok('drive times override straight line', JSON.stringify(ids(r)) === JSON.stringify(['far', 'awayNear', 'near']) && r.ranked[0].distance.kind === 'drive', ids(r))
 
-r = rankDrivers({ ride: { pickup_lat: P.lat, pickup_lng: P.lng, declined_by: ['near'] }, drivers, busyDriverIds: busy, vehicleClasses: [], now,
+r = rankDrivers({ ride: { pickup_lat: P.lat, pickup_lng: P.lng, declined_by: ['near', 'awayNear'] }, drivers, busyDriverIds: busy, vehicleClasses: [], now,
   conflicts: new Map([['far', { misses: true, commitment_at: new Date(now + 3600e3).toISOString(), minutes_short: 6 }]]) })
 ok('declined + clash demoted, nobody closest', r.ranked.every(x => x.demoted) && !r.ranked.some(x => x.closest), ids(r))
 

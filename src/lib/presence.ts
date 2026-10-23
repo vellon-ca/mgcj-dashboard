@@ -29,13 +29,14 @@ import i18next from "i18next";
  * that file's threshold changes, change this one. (Separate repos; there is no
  * shared module to import.)
  *
- * What "away" MEANS changed with mgcj-app migration 20260766. It used to be
- * "dispatch is skipping them right now", because the 60s window was a hard
- * filter on the driver pool. It is now "dispatch will use them only if nobody
- * fresher is free": liveness ranks rather than excludes, since a ride offer is
- * a push notification and push reaches a pocketed phone perfectly well. So an
- * away driver is still reachable, still assignable by hand, and may still be
- * auto-assigned — they are just last in line.
+ * What "away" MEANS has changed twice. Until mgcj-app 20260766 it was
+ * "dispatch is skipping them"; then "dispatch uses them only if nobody fresher
+ * is free". Since 2026-10-23 dispatch ignores it entirely
+ * (mgcj-app _shared/presence.ts): the heartbeat goes quiet when the app is in
+ * the background AND the car is parked, which is a driver waiting at a stand.
+ * So "away" is now purely informational — app not on screen, not moving — and
+ * must never demote or exclude a driver anywhere on this dashboard either
+ * (lib/driverRanking.ts no longer does).
  */
 
 /** 6 missed 10s heartbeats. Matches the dispatch filter exactly. */
@@ -69,7 +70,7 @@ export function driverPresence(
     : "away";
 }
 
-/** Convenience for the common "is dispatch currently skipping them" question. */
+/** "App in the background and not moving." Informational only — see header. */
 export function isDriverAway(d: PresenceInput, now: number = Date.now()) {
   return driverPresence(d, now) === "away";
 }

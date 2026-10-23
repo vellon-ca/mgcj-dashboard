@@ -449,7 +449,6 @@
     "assignDriver": "Assigner un chauffeur",
     "assignDriverLabel": "Assigner un chauffeur :",
     "awaitingConfirmation": "En attente de la confirmation du chauffeur",
-    "awaySuffix": "absent",
     "cancelMidRideWarning": "Cette course est en cours. Toute autorisation de carte est libérée et le chauffeur n'est pas payé pour la distance déjà parcourue. Son écran mettra fin au trajet.",
     "cancelRide": "Annuler la course",
     "cancelRideTitle": "Annuler cette course ?",
