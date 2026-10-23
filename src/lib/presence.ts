@@ -15,10 +15,15 @@ import i18next from "i18next";
  * who have really gone are taken offline server-side (offer strikes, shift
  * auto-end, push-token retirement), which is what turns this to "offline".
  *
- * The one place staleness still MEANS something is a driver on a ride: the
- * ride cadence reports every 8s / 25m whatever the app is doing, so silence
- * there is a real fault (app killed, phone dead, no signal) and the
- * passenger's tracking has frozen with it. See isRideSilent.
+ * The one place staleness still MEANS something is a driver with a passenger
+ * aboard (in_progress): they are moving almost all the time, so a position
+ * that stops for minutes is usually a fault (app killed, phone dead, no
+ * signal) and the passenger's tracking has frozen with it. NOT before pickup:
+ * the ride cadence is distance-gated on both platforms (25 m), so a driver
+ * waiting outside with the app backgrounded legitimately sends nothing. Even
+ * in_progress, a car stuck in a standstill for 2+ minutes with the app in the
+ * background can trip it — rare here, and the wording only claims the
+ * location is not updating. See isRideSilent.
  */
 
 export type DriverPresence = "online" | "offline";
@@ -33,15 +38,16 @@ export function driverPresence(d: PresenceInput): DriverPresence {
 }
 
 /**
- * How long a driver ON A RIDE may go without a position before we say so.
- * Two minutes, not one: iOS reports by distance, so a car held at a long red
- * light or in a queue legitimately sends nothing for a while.
+ * How long a driver with a passenger aboard may go without a position before
+ * we say so. Two minutes, not one: reporting is by distance, so a car held at
+ * a long red light legitimately sends nothing for a while.
  */
 export const RIDE_SILENT_MS = 2 * 60_000;
 
 /**
- * "Location not updating" — only meaningful when the caller knows the driver
- * is on a ride; never use it for an idle driver (silence there is parking).
+ * "Location not updating" — only meaningful when the caller knows the ride is
+ * in_progress; never use it for an idle driver (silence there is parking) or
+ * one heading to / waiting at a pickup.
  * NULL last_seen_at is not silent: demo drivers and pre-heartbeat builds.
  */
 export function isRideSilent(d: PresenceInput, now: number = Date.now()): boolean {

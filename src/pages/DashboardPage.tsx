@@ -1060,11 +1060,11 @@ function DriverDetailPanel({
           ) : (
             <span className="dd-pill dd-pill-green">● {t("drivers.available")}</span>
           )}
-          {isRideSilent(driver) && activeRide && !awaitingReply && (
-            /* On a ride and no position for 2+ minutes. The ride cadence
-               reports every 8s / 25m whatever the app is doing, so this is a
-               real fault (app killed, phone dead, no signal) — and the
-               passenger's live tracking has frozen with it. */
+          {activeRide?.status === "in_progress" && isRideSilent(driver) && (
+            /* Passenger aboard and no position for 2+ minutes: usually a
+               fault (app killed, phone dead, no signal), and the passenger's
+               live tracking has frozen with it. Not shown before pickup — see
+               lib/presence.ts isRideSilent. */
             <span className="dd-pill dd-pill-amber">
               ◌ {t("drivers.outOfContact")}{lastSeen ? ` · ${lastSeen}` : ""}
             </span>
@@ -1638,6 +1638,9 @@ export default function DashboardPage({
   const focusedDriverIdRef = useRef<string | null>(null);
   // Driver ids currently on a live ride — drives the busy (amber) car colour.
   const busyDriverIdsRef = useRef<Set<string>>(new Set());
+  // Drivers with a passenger aboard: the only ones for whom a silent position
+  // means a fault (see lib/presence.ts isRideSilent).
+  const inProgressDriverIdsRef = useRef<Set<string>>(new Set());
   // Ids whose last heartbeat is older than the dispatch window; see
   // applyDriverIcon for why they are faded rather than dropped.
   const awayDriverIdsRef = useRef<Set<string>>(new Set());
@@ -2747,7 +2750,7 @@ export default function DashboardPage({
     const focus = focusedDriverIdRef.current;
     awayDriverIdsRef.current = new Set(
       enriched
-        .filter((d: any) => busyDriverIdsRef.current.has(d.id) && isRideSilent(d))
+        .filter((d: any) => inProgressDriverIdsRef.current.has(d.id) && isRideSilent(d))
         .map((d: any) => d.id),
     );
     enriched
@@ -2934,6 +2937,11 @@ export default function DashboardPage({
     // Computed above the map guard: rides commonly load before the map does,
     // and the map-init flush of renderDriverMarkers needs this to already be
     // right or every car paints green until the next rides tick.
+    inProgressDriverIdsRef.current = new Set(
+      rideData
+        .filter((r) => r.driver_id && r.status === "in_progress")
+        .map((r) => r.driver_id as string),
+    );
     busyDriverIdsRef.current = new Set(
       rideData
         .filter(
@@ -5752,7 +5760,7 @@ export default function DashboardPage({
                               ) : driverActiveRide ? (
                                 <div className="db-driver-status-on-ride">
                                   ● {t("drivers.onARide")}
-                                  {isRideSilent(driver as any) ? ` · ${t("drivers.outOfContactLower")}` : ""}
+                                  {driverActiveRide.status === "in_progress" && isRideSilent(driver as any) ? ` · ${t("drivers.outOfContactLower")}` : ""}
                                 </div>
                               ) : (
                                 <div className="db-driver-status-available">
