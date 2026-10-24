@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import { useTranslation } from "react-i18next";
 import { fmtDate, fmtDateTime, fmtTime } from "../i18n/format";
+import { fromDateTimeLocal } from "../lib/companyZone";
 
 interface MessageRow {
   id: string;
@@ -130,7 +131,8 @@ export default function AnnouncementsPage({ companyId, adminId }: Props) {
         title: form.title.trim(),
         body: form.body.trim(),
         image_url: imageUrl,
-        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+        // The input has no zone; read it on the company's clock, not the browser's.
+        expires_at: form.expires_at ? fromDateTimeLocal(form.expires_at).toISOString() : null,
       });
       if (insertError) throw insertError;
 

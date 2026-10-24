@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 import { fmtDate, fmtTime } from "../i18n/format";
+import { dayStart, zonedDayISO, zonedParts } from "../lib/companyZone";
 
 interface DriverRow {
   id: string;
@@ -38,15 +39,16 @@ function dayKey(iso: string) {
   // locale would make the day separators regroup on a language change for no
   // reason. The scanner cannot tell a key from a label, and it is right to
   // ask: every OTHER hardcoded tag in this repo was a real bug.
-  // i18n-ok
-  return new Date(iso).toLocaleDateString("en-CA");
+  // On the company's clock, like every other date on the dashboard.
+  return zonedDayISO(iso);
 }
 
 function formatDateLabel(iso: string) {
   const d = new Date(iso);
   const now = new Date();
+  // Calendar days on the company's clock: "Today" turns over at its midnight.
   const diffDays = Math.round(
-    (new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) /
+    (dayStart(zonedDayISO(now)).getTime() - dayStart(zonedDayISO(d)).getTime()) /
       (1000 * 60 * 60 * 24)
   );
   if (diffDays === 0) return i18next.t("messages.today");
@@ -55,7 +57,7 @@ function formatDateLabel(iso: string) {
     weekday: "long",
     month: "long",
     day: "numeric",
-    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+    year: zonedParts(d).year === zonedParts(now).year ? undefined : "numeric",
   });
 }
 

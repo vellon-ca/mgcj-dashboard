@@ -30,6 +30,7 @@
 
 import i18next from "i18next";
 import { DEFAULT_LOCALE, metaFor } from "./locales";
+import { companyTimeZone } from "../lib/companyZone";
 
 /** The region-qualified tag to hand Intl — see `intlTag` in locales.ts. */
 export function intlLocale(): string {
@@ -42,16 +43,27 @@ function toDate(v: DateInput): Date {
   return v instanceof Date ? v : new Date(v);
 }
 
+// ── TIME ZONE ──
+//
+// Every date and time is shown on the COMPANY's clock (lib/companyZone.ts),
+// never the browser's: one clock per company, matching the apps and the SMS.
+// An explicit `timeZone` in `opts` still wins (the chart-axis helpers below
+// format fixed reference dates in UTC on purpose).
+
+function zoned(opts?: Intl.DateTimeFormatOptions): Intl.DateTimeFormatOptions {
+  return { timeZone: companyTimeZone(), ...opts };
+}
+
 export function fmtDate(v: DateInput, opts?: Intl.DateTimeFormatOptions): string {
-  return toDate(v).toLocaleDateString(intlLocale(), opts);
+  return toDate(v).toLocaleDateString(intlLocale(), zoned(opts));
 }
 
 export function fmtTime(v: DateInput, opts?: Intl.DateTimeFormatOptions): string {
-  return toDate(v).toLocaleTimeString(intlLocale(), opts);
+  return toDate(v).toLocaleTimeString(intlLocale(), zoned(opts));
 }
 
 export function fmtDateTime(v: DateInput, opts?: Intl.DateTimeFormatOptions): string {
-  return toDate(v).toLocaleString(intlLocale(), opts);
+  return toDate(v).toLocaleString(intlLocale(), zoned(opts));
 }
 
 /** Plain integers and counts — thousands separators follow the locale
@@ -64,9 +76,12 @@ export function fmtNumber(n: number, opts?: Intl.NumberFormatOptions): string {
  *  grouping builds these from a derived `YYYY-MM` key, so no string scanner
  *  can see them as copy — they are the formatting half of the same hazard. */
 export function fmtMonthYear(year: number, month1to12: number): string {
-  return new Date(year, month1to12 - 1, 1).toLocaleDateString(intlLocale(), {
+  // A label for a month that is already decided, so formatted in UTC from a
+  // mid-month reference: no zone can roll it into the neighbouring month.
+  return new Date(Date.UTC(year, month1to12 - 1, 15)).toLocaleDateString(intlLocale(), {
     month: "long",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 
