@@ -59,7 +59,7 @@ export function driverFitsClass(
   return true;
 }
 
-export type Issue = "clash" | "declined" | "vehicle" | "away" | "offShift" | "onRide" | "unreachable";
+export type Issue = "clash" | "declined" | "vehicle" | "offShift" | "onRide" | "unreachable";
 
 export type Distance =
   | { kind: "drive"; mins: number; km: number } // Distance Matrix, from check-ride-conflicts
@@ -149,12 +149,12 @@ export function rankDrivers(input: RankInput): { soon: boolean; ranked: RankedDr
     // An immediate ride can only go to someone working right now. A scheduled
     // one can go to anyone on the roster: release decides later whether they
     // turned up (mgcj-app scheduled-release, releaseAssignedRide).
-    if (!scheduled) return driverPresence(d, now) !== "offline" && !busyDriverIds.has(d.id);
+    if (!scheduled) return driverPresence(d) !== "offline" && !busyDriverIds.has(d.id);
     return true;
   });
 
   const ranked: RankedDriver[] = pool.map((d) => {
-    const presence = driverPresence(d, now);
+    const presence = driverPresence(d);
     const clash = conflicts?.get(d.id)?.misses ? conflicts.get(d.id)! : null;
     const issues: Issue[] = [];
     if (clash) issues.push("clash");
@@ -162,7 +162,11 @@ export function rankDrivers(input: RankInput): { soon: boolean; ranked: RankedDr
     if (!driverFitsClass(d, cls, !!ride.requires_wheelchair, ride.allow_larger_vehicle === true)) {
       issues.push("vehicle");
     }
-    if (soon && presence === "away") issues.push("away");
+    // A quiet heartbeat is NOT an issue (2026-10-23): it means the app is in
+    // the background and the car is parked — a driver waiting at a stand —
+    // and assign-ride offers to them like anyone else (mgcj-app
+    // _shared/presence.ts). Demoting them here would make the picker a third
+    // ordering that disagrees with auto-dispatch.
     if (scheduled && presence === "offline") issues.push("offShift");
     if (scheduled && soon && busyDriverIds.has(d.id)) issues.push("onRide");
     // No push token: an offer IS a push, so the app cannot be told about this
