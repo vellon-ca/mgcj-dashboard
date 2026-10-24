@@ -1588,8 +1588,8 @@ export default function DashboardPage({
   // not from render.
   const selectedRideIdRef = useRef<string | null>(null);
   // Per-driver-marker glide state: interpolates old→new position over the
-  // measured update interval (Realtime on `drivers` fires per location write,
-  // ~5s active / ~10s idle) so dots slide instead of teleporting.
+  // measured update interval (a `position` broadcast on the fleet topic per
+  // location write, ~5s active / ~10s idle) so dots slide instead of teleporting.
   const driverAnimRef = useRef<
     Map<
       string,
@@ -2400,6 +2400,14 @@ export default function DashboardPage({
             : d;
         setDrivers((prev: any[]) => prev.map(patch));
         setSelectedDriver((prev: any) => (prev ? patch(prev) : prev));
+        // The map is drawn from this ref, not from `drivers` state — without
+        // the redraw a dot would sit still until the next 15s fetchAll.
+        // null until the first fetchDrivers; nothing is drawn yet then.
+        if (latestDriversForMapRef.current) {
+          const next = latestDriversForMapRef.current.map(patch);
+          latestDriversForMapRef.current = next;
+          renderDriverMarkers(next);
+        }
       })
       .on("broadcast", { event: "roster" }, () => {
         if (rosterTimer) clearTimeout(rosterTimer);
