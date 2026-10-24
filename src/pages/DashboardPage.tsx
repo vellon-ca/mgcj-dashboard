@@ -2277,11 +2277,17 @@ export default function DashboardPage({
   }, []);
 
   useEffect(() => {
+    if (!profile?.company_id) return;
+    // rides UPDATE / INSERT are filtered to this company, so Realtime does not
+    // check every other tenant's ride writes against this tab. DELETE is left
+    // unfiltered: with the DEFAULT replica identity a deleted row carries only
+    // its id, so a filtered subscription would never receive one.
+    const rideFilter = `company_id=eq.${profile.company_id}`;
     const ch = supabase
       .channel("dashboard-rt")
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "rides" },
+        { event: "UPDATE", schema: "public", table: "rides", filter: rideFilter },
         (payload) => {
           if (payload.new) {
             setRides((prev) => {
@@ -2332,18 +2338,13 @@ export default function DashboardPage({
       )
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "rides" },
+        { event: "INSERT", schema: "public", table: "rides", filter: rideFilter },
         () => fetchRides(),
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "rides" },
         () => fetchRides(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "drivers" },
-        fetchDrivers,
       )
       .on(
         "postgres_changes",
@@ -2359,7 +2360,68 @@ export default function DashboardPage({
     return () => {
       supabase.removeChannel(ch);
     };
-  }, []);
+  }, [profile?.company_id]);
+
+  // Driver changes arrive on the company's private Broadcast topic, sent by
+  // the database (mgcj-app trigger drivers_realtime_fanout; design in
+  // mgcj-app/.claude/notes/realtime-fanout-design.md). This replaced a
+  // postgres_changes watch on every drivers write that answered each GPS fix
+  // and heartbeat with fetchDrivers() — four queries, every profile and phone.
+  //   position: patch that driver in place, no fetch.
+  //   roster:   online/offline, vehicle, numbers, a driver added or removed —
+  //             refetch, debounced. Rare.
+  // Heartbeats send nothing; the 15s fetchAll keeps last_seen_at fresh.
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    const topic = `fleet:${profile.company_id}`;
+    let rosterTimer: ReturnType<typeof setTimeout> | null = null;
+    const ch = supabase
+      .channel(topic, { config: { private: true } })
+      .on("broadcast", { event: "position" }, ({ payload }) => {
+        const p = payload as {
+          driver_id: string;
+          lat: number | null;
+          lng: number | null;
+          heading: number | null;
+          eta_s: number | null;
+        };
+        // Every position write stamps last_seen_at server-side too.
+        const seen = new Date().toISOString();
+        const patch = (d: any) =>
+          d.id === p.driver_id
+            ? {
+                ...d,
+                current_lat: p.lat,
+                current_lng: p.lng,
+                heading: p.heading,
+                active_ride_eta_seconds: p.eta_s,
+                last_seen_at: seen,
+              }
+            : d;
+        setDrivers((prev: any[]) => prev.map(patch));
+        setSelectedDriver((prev: any) => (prev ? patch(prev) : prev));
+      })
+      .on("broadcast", { event: "roster" }, () => {
+        if (rosterTimer) clearTimeout(rosterTimer);
+        rosterTimer = setTimeout(fetchDrivers, 400);
+      })
+      .subscribe((status) => {
+        // Broadcast has no replay: refetch on every (re)connect.
+        if (status === "SUBSCRIBED") fetchDrivers();
+        // An unauthorized private channel fails LOUDLY here and silently
+        // everywhere else.
+        if (status === "CHANNEL_ERROR") {
+          console.warn(
+            `[DashboardPage] private channel rejected for ${topic} — ` +
+              `check the fleet_broadcast_read policy on realtime.messages`,
+          );
+        }
+      });
+    return () => {
+      if (rosterTimer) clearTimeout(rosterTimer);
+      supabase.removeChannel(ch);
+    };
+  }, [profile?.company_id]);
 
   // Keep ref in sync so the polling interval always sees current active ride IDs
   // without needing to be in the dependency array (avoids restarting the interval).
