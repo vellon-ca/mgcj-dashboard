@@ -26,6 +26,14 @@ import i18next from "i18next";
 import { Trans, useTranslation } from "react-i18next";
 import { fmtDateTime, fmtTime } from "../i18n/format";
 import {
+  dayStart,
+  fromDateTimeLocal,
+  startOfMonth,
+  startOfToday,
+  toDateTimeLocal,
+  zonedDayISO,
+} from "../lib/companyZone";
+import {
   CANCEL_REASON_KEYS,
   FLAG_REASON_KEYS,
   FLAG_REASON_ORDER,
@@ -1335,11 +1343,10 @@ function AssignmentHold({ ride }: { ride: any }) {
   );
 }
 
-/** yyyy-mm-dd in the viewer's own timezone. Date.toISOString() would use UTC,
- *  which files a Halifax evening under the following day. */
+/** yyyy-mm-dd on the COMPANY's clock (lib/companyZone.ts). Date.toISOString()
+ *  would use UTC, which files an Atlantic evening under the following day. */
 function localDayISO(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return zonedDayISO(d);
 }
 
 type DriverShift = {
@@ -1760,9 +1767,9 @@ export default function DashboardPage({
   }
 
   function shiftTrailDate(days: number) {
-    const d = new Date(trailDate + "T12:00:00");
-    d.setDate(d.getDate() + days);
-    setTrailDate(localDayISO(d));
+    // Calendar arithmetic on the date string itself, zone-free.
+    const [y, m, d] = trailDate.split("-").map(Number);
+    setTrailDate(new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10));
     setScrubT(null);
   }
 
@@ -1773,12 +1780,11 @@ export default function DashboardPage({
     (async () => {
       setTrailLoading(true);
       setTrailError(null);
-      // Day boundaries in the dispatcher's own timezone, which is the one they
-      // mean when they say "Tuesday" — the column is timestamptz, so this
+      // Day boundaries on the company's clock, which is the one everyone
+      // means when they say "Tuesday" — the column is timestamptz, so this
       // compares correctly whatever the driver's device clock was set to.
-      const from = new Date(trailDate + "T00:00:00");
-      const to = new Date(trailDate + "T00:00:00");
-      to.setDate(to.getDate() + 1);
+      const from = dayStart(trailDate);
+      const to = dayStart(trailDate, 1);
 
       // Shifts that overlap the day, including one still open.
       const shiftsReq = supabase
@@ -2311,12 +2317,12 @@ export default function DashboardPage({
               const schedAt    = (payload.new as any).scheduled_at;
               const minsUntil  = schedAt ? (new Date(schedAt).getTime() - Date.now()) / 60_000 : Infinity;
               if (newCov && minsUntil < 24 * 60 && COV_SEV[newCov] > (COV_SEV[prevCov] ?? 0)) {
-                // timeZone stays pinned to America/Halifax: the whole
-                // scheduled pipeline is, so a toast in the viewer's zone would
-                // name a different clock time than the ride card beside it.
+                // The company's clock, like the ride card beside it (fmtTime
+                // defaults to it). Was pinned to Halifax, an hour off for an
+                // Ontario company.
                 const when = (payload.new as any).scheduled_at
                   ? fmtTime((payload.new as any).scheduled_at, {
-                      hour: "numeric", minute: "2-digit", timeZone: "America/Halifax",
+                      hour: "numeric", minute: "2-digit",
                     })
                   : null;
                 const msg = newCov === "uncovered"
@@ -2559,7 +2565,7 @@ export default function DashboardPage({
   }
 
   async function fetchStats() {
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const monthStart = startOfMonth().toISOString();
     const { data } = await supabase
       .from("rides")
       .select("status, fare_final, fare_estimate, created_at")
@@ -2567,9 +2573,8 @@ export default function DashboardPage({
       .gte("created_at", monthStart);
     if (!data) return;
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - 7);
+    const todayStart = startOfToday(now);
+    const weekStart = new Date(now.getTime() - 7 * 86_400_000);
     const fare = (r: any) => r.fare_final ?? r.fare_estimate ?? 0;
     const sum = (arr: any[]) => arr.reduce((s, r) => s + fare(r), 0);
     const completedToday = data.filter((r) => r.status === "completed" && new Date(r.created_at) >= todayStart);
@@ -3718,7 +3723,7 @@ export default function DashboardPage({
       };
       if (bookScheduled) {
         rideData.status = "scheduled";
-        rideData.scheduled_at = new Date(bookScheduled).toISOString();
+        rideData.scheduled_at = fromDateTimeLocal(bookScheduled).toISOString();
       }
       if (bookDriver) {
         rideData.driver_id = bookDriver;
@@ -3935,14 +3940,8 @@ export default function DashboardPage({
     setEditVehicleClassTouched(false);
     setEditDistanceMetres(null);
     setEditScheduled(
-      ride.scheduled_at
-        ? new Date(
-            new Date(ride.scheduled_at).getTime() -
-              new Date(ride.scheduled_at).getTimezoneOffset() * 60000,
-          )
-            .toISOString()
-            .slice(0, 16)
-        : "",
+      // The input has no zone; it is filled and read on the company's clock.
+      ride.scheduled_at ? toDateTimeLocal(ride.scheduled_at) : "",
     );
     setEditAddressChanged(false);
     setEditFareTouched(false);
@@ -3998,7 +3997,7 @@ export default function DashboardPage({
     const accessMoved = editWheelchair !== !!ride.requires_wheelchair;
 
     const newScheduledISO = editScheduled
-      ? new Date(editScheduled).toISOString()
+      ? fromDateTimeLocal(editScheduled).toISOString()
       : null;
     const scheduledMoved =
       !!newScheduledISO &&
@@ -4374,7 +4373,7 @@ export default function DashboardPage({
     ride: {
       pickup_lat: bookPickupCoords?.lat ?? null,
       pickup_lng: bookPickupCoords?.lng ?? null,
-      scheduled_at: bookScheduled ? new Date(bookScheduled).toISOString() : null,
+      scheduled_at: bookScheduled ? fromDateTimeLocal(bookScheduled).toISOString() : null,
       vehicle_class_id: bookVehicleClassId || null,
       requires_wheelchair: bookWheelchair,
     },

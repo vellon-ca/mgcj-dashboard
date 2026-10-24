@@ -13,6 +13,16 @@ import i18next from "i18next";
 import { useTranslation } from "react-i18next";
 import { fmtDate, fmtDateTime, fmtMonthYear, fmtTime, monthShort, weekdayShort } from "../i18n/format";
 import {
+  companyTimeZone,
+  dayStart,
+  startOfMonth,
+  startOfToday,
+  startOfYear,
+  zonedDayISO,
+  zonedMonthKey,
+  zonedParts,
+} from "../lib/companyZone";
+import {
   CANCEL_REASON_KEYS,
   noShowEvidence,
   REFUND_REASON_KEYS,
@@ -733,9 +743,10 @@ function downloadCSV(filename: string, headers: string[], rows: string[][]) {
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────
+// Months and days on the COMPANY's clock (lib/companyZone.ts), never the
+// browser's: a ride at 11 pm on the 31st belongs to the month it happened in.
 function getMonthKey(dateStr: string) {
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return zonedMonthKey(dateStr);
 }
 function getMonthLabel(key: string) {
   const [year, month] = key.split("-");
@@ -745,8 +756,7 @@ function getMonthLabel(key: string) {
   return fmtMonthYear(Number(year), Number(month));
 }
 function getCurrentMonthKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return zonedMonthKey(new Date());
 }
 
 // ── Main component ────────────────────────────────────────────────────
@@ -805,7 +815,7 @@ export default function AnalyticsPage({
     new Set([getCurrentMonthKey()]),
   );
   const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear(),
+    () => zonedParts(new Date()).year,
   );
   const [rideDetail, setRideDetail] = useState<RideDetailModal | null>(null);
   const [driverDetail, setDriverDetail] = useState<DriverStat | null>(null);
@@ -821,13 +831,14 @@ export default function AnalyticsPage({
   // Activity log
   const [activityEvents, setActivityEvents] = useState<EventRow[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
-  const [activityDateFrom, setActivityDateFrom] = useState<string>(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  });
-  const [activityDateTo, setActivityDateTo] = useState<string>(() => {
-    return new Date().toISOString().slice(0, 10);
-  });
+  const [activityDateFrom, setActivityDateFrom] = useState<string>(
+    () => `${zonedMonthKey(new Date())}-01`,
+  );
+  // Today on the company's clock. Was toISOString() — UTC — which read as
+  // tomorrow every Atlantic evening after 8 pm.
+  const [activityDateTo, setActivityDateTo] = useState<string>(() =>
+    zonedDayISO(new Date()),
+  );
   const [activityTypeFilter, setActivityTypeFilter] = useState<string>("all");
   const [activityError, setActivityError] = useState<string | null>(null);
   const activityFetchId = useRef(0);
@@ -1083,22 +1094,16 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
-      const todayStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      );
+      const todayStart = startOfToday(now);
       const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const yearStart = new Date(now.getFullYear(), 0, 1);
+      const monthStart = startOfMonth(now);
+      const yearStart = startOfYear(now);
 
       const [
         { data: allRidesData },
@@ -1191,14 +1196,14 @@ export default function AnalyticsPage({
       if (period === "today") {
         const hourMap = new Map<number, { revenue: number; rides: number }>();
         completedPeriod.forEach((r: any) => {
-          const h = new Date(r.created_at).getHours();
+          const h = zonedParts(r.created_at).hour;
           const ex = hourMap.get(h) ?? { revenue: 0, rides: 0 };
           hourMap.set(h, {
             revenue: ex.revenue + (r.fare_final ?? r.fare_estimate ?? 0),
             rides: ex.rides + 1,
           });
         });
-        const currentHour = new Date().getHours();
+        const currentHour = zonedParts(new Date()).hour;
         if (fetchId === revenueFetchId.current)
           setHourlyData(
             Array.from({ length: currentHour + 1 }, (_, h) => ({
@@ -1341,13 +1346,11 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
       const { data, error } = await supabase.rpc("company_settlement_rollup", {
         p_from: startDate.toISOString(),
@@ -1374,13 +1377,11 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
       const { data, error } = await supabase.rpc("company_settlement_daily", {
         p_from: startDate.toISOString(),
@@ -1408,13 +1409,11 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
       const { data, error } = await supabase.rpc("company_cash_settlement", {
         p_from: startDate.toISOString(),
@@ -1446,13 +1445,11 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
       const { data, error } = await supabase.rpc("company_settlement_fee_breakdown", {
         p_from: startDate.toISOString(),
@@ -1533,13 +1530,11 @@ export default function AnalyticsPage({
     try {
       const now = new Date();
       let startDate: Date;
-      if (period === "today")
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (period === "today") startDate = startOfToday(now);
       else if (period === "week")
         startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      else if (period === "month")
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-      else startDate = new Date(now.getFullYear(), 0, 1);
+      else if (period === "month") startDate = startOfMonth(now);
+      else startDate = startOfYear(now);
 
       const { data: rides, error } = await supabase
         .from("rides")
@@ -1861,7 +1856,7 @@ export default function AnalyticsPage({
         .select("created_at")
         .gte(
           "created_at",
-          new Date(new Date().getFullYear(), 0, 1).toISOString(),
+          startOfYear().toISOString(),
         );
       if (fetchId !== peakFetchId.current || !rides) return;
       const hourMap = new Map<number, number>();
@@ -1869,10 +1864,11 @@ export default function AnalyticsPage({
       // the Map key and the rendered axis label, so localising it would have
       // re-keyed the buckets as a side effect.
       const dayMap = new Map<number, number>();
+      // Hour and weekday on the company's clock, not the browser's.
       rides.forEach((r: any) => {
-        const d = new Date(r.created_at);
-        hourMap.set(d.getHours(), (hourMap.get(d.getHours()) ?? 0) + 1);
-        dayMap.set(d.getDay(), (dayMap.get(d.getDay()) ?? 0) + 1);
+        const { hour, weekday } = zonedParts(r.created_at);
+        hourMap.set(hour, (hourMap.get(hour) ?? 0) + 1);
+        dayMap.set(weekday, (dayMap.get(weekday) ?? 0) + 1);
       });
       if (fetchId === peakFetchId.current) {
         setHourStats(
@@ -1903,8 +1899,10 @@ export default function AnalyticsPage({
       const { data, error } = await supabase
         .from("dispatch_events")
         .select("id, created_at, event_type, ride_id, details, dispatcher_id")
-        .gte("created_at", activityDateFrom + "T00:00:00")
-        .lte("created_at", activityDateTo + "T23:59:59")
+        // Whole company-clock days. A bare "T00:00:00" string went to
+        // PostgREST with no offset, i.e. UTC midnight, not the company's.
+        .gte("created_at", dayStart(activityDateFrom).toISOString())
+        .lt("created_at", dayStart(activityDateTo, 1).toISOString())
         .order("created_at", { ascending: false })
         .limit(500);
       if (fetchId !== activityFetchId.current) return;
@@ -2681,7 +2679,7 @@ export default function AnalyticsPage({
 
   // ── Derived ───────────────────────────────────────────────────────
   const availableYears = Array.from(
-    new Set(allRides.map((r) => new Date(r.created_at).getFullYear())),
+    new Set(allRides.map((r) => zonedParts(r.created_at).year)),
   ).sort((a, b) => b - a);
 
   const filteredReceipts = receiptSearch.trim()
@@ -2709,7 +2707,7 @@ export default function AnalyticsPage({
   const monthGroups: MonthGroup[] = (() => {
     const map = new Map<string, RideRow[]>();
     filteredRides
-      .filter((r) => new Date(r.created_at).getFullYear() === selectedYear)
+      .filter((r) => zonedParts(r.created_at).year === selectedYear)
       .forEach((r) => {
         const key = getMonthKey(r.created_at);
         if (!map.has(key)) map.set(key, []);
@@ -3616,7 +3614,7 @@ export default function AnalyticsPage({
                       exportRidesCSV(
                         filteredRides.filter(
                           (r) =>
-                            new Date(r.created_at).getFullYear() ===
+                            zonedParts(r.created_at).year ===
                             selectedYear,
                         ),
                         // i18n-ok — a filename.
@@ -4832,6 +4830,7 @@ export default function AnalyticsPage({
                           month: "short",
                           day: "numeric",
                           year: "numeric",
+                          timeZone: companyTimeZone(),
                         });
                       return (
                         <div

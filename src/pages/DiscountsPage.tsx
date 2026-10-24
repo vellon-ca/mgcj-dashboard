@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import { useTranslation } from "react-i18next";
 import { fmtDate } from "../i18n/format";
+import { dayStart, zonedDayISO } from "../lib/companyZone";
 
 interface Institution {
   id: string;
@@ -219,8 +220,10 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
       label: c.label ?? "",
       amount_type: c.amount_type,
       amount: String(c.amount),
-      starts_at: c.starts_at ? c.starts_at.slice(0, 10) : "",
-      ends_at: c.ends_at ? c.ends_at.slice(0, 10) : "",
+      // Stored as instants; shown as the company-clock days they bound. ends_at
+      // is the START of the day after the last valid one (see save below).
+      starts_at: c.starts_at ? zonedDayISO(c.starts_at) : "",
+      ends_at: c.ends_at ? zonedDayISO(new Date(c.ends_at).getTime() - 1) : "",
       max_redemptions: c.max_redemptions != null ? String(c.max_redemptions) : "",
       one_per_passenger: c.one_per_passenger,
       active: c.active,
@@ -254,8 +257,12 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
         label: form.label.trim() || null,
         amount_type: form.amount_type,
         amount: amountNum,
-        starts_at: form.starts_at ? new Date(form.starts_at).toISOString() : null,
-        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : null,
+        // Whole days on the company's clock: from its midnight on the first
+        // day to its midnight after the last. `new Date("YYYY-MM-DD")` is UTC
+        // midnight, which ended an Atlantic code at 8-9 pm the evening BEFORE
+        // its end date.
+        starts_at: form.starts_at ? dayStart(form.starts_at).toISOString() : null,
+        ends_at: form.ends_at ? dayStart(form.ends_at, 1).toISOString() : null,
         max_redemptions: form.max_redemptions ? Number(form.max_redemptions) : null,
         one_per_passenger: form.one_per_passenger,
         active: form.active,
@@ -360,7 +367,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
     if (!c.active) return { label: t("common.inactive"), color: "#6B7280" };
     if (c.starts_at && now < new Date(c.starts_at))
       return { label: t("discounts.statusScheduled"), color: "#F59E0B" };
-    if (c.ends_at && now > new Date(c.ends_at))
+    if (c.ends_at && now >= new Date(c.ends_at))
       return { label: t("discounts.statusExpired"), color: "#E24B4A" };
     return { label: t("common.active"), color: "#1D9E75" };
   }

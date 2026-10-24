@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
+import { setCompanyTimeZone } from "../lib/companyZone";
 import type { Profile } from "../types";
 import type { Session } from "@supabase/supabase-js";
 
@@ -140,16 +141,20 @@ export function useAuth() {
         if (attempt < retries) await new Promise((r) => setTimeout(r, 500));
       }
 
-      setProfile(data ?? null);
-
+      // The company row BEFORE the profile is published: every page renders
+      // behind the profile, and formats in the company's time zone, so the
+      // zone must be set first (lib/companyZone.ts).
       if (data?.company_id) {
         const { data: company } = await supabase
           .from("companies")
-          .select("name")
+          .select("name, timezone")
           .eq("id", data.company_id)
           .maybeSingle();
+        setCompanyTimeZone(company?.timezone ?? null);
         setCompanyName(company?.name ?? null);
       }
+
+      setProfile(data ?? null);
     } finally {
       fetchingForRef.current = null;
       setLoading(false);
@@ -171,6 +176,7 @@ export function useAuth() {
     await supabase.auth.signOut({ scope: 'local' });
     setProfile(null);
     setCompanyName(null);
+    setCompanyTimeZone(null);
   }
 
   return { session, profile, companyName, loading, signOut };
