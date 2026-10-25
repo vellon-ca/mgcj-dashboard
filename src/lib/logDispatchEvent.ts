@@ -28,6 +28,9 @@ export type DispatchEventType =
   | "report.printed"
   | "announcement.drivers"
   | "announcement.passengers"
+  | "announcement.edited"
+  | "announcement.ended"
+  | "announcement.deleted"
   | "escalation.acknowledged"
   | "ride.flag_resolved"
   // Logged by the company-refund Edge Function, never from this app.

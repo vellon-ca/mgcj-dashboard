@@ -1943,6 +1943,9 @@ export default function DashboardPage({
   const bookField = usePhoneField();
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
+  // The looked-up passenger, so the fare preview can ask the server about
+  // THEIR discounts (student, a saved offer) and not just the picked code.
+  const [bookPassengerId, setBookPassengerId] = useState<string | null>(null);
   const [bookPickup, setBookPickup] = useState("");
   const [bookPickupCoords, setBookPickupCoords] = useState<{
     lat: number;
@@ -1964,6 +1967,13 @@ export default function DashboardPage({
   const [bookWheelchair, setBookWheelchair] = useState(false);
   const [bookDistanceMetres, setBookDistanceMetres] = useState<number | null>(null);
   const [bookBaseFare, setBookBaseFare] = useState<number | null>(null);
+  // The fare box shows what the passenger PAYS. bookFareAutoRef is the value
+  // this form last put there; if the box still holds it, submit prices from
+  // bookBaseFare (pre-discount). Until 2026-10-24 submit discounted whatever
+  // was in the box — which already had the discount in it, so a code was
+  // applied twice ($20, 10% off: shown $18, saved $17).
+  const bookFareAutoRef = useRef<string | null>(null);
+  const [bookDiscountNote, setBookDiscountNote] = useState<string | null>(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
   const [companyBaseFare, setCompanyBaseFare] = useState<number | null>(null);
   const [companyRatePerKm, setCompanyRatePerKm] = useState<number | null>(null);
@@ -3420,14 +3430,48 @@ export default function DashboardPage({
   }, [bookDistanceMetres, bookVehicleClassId, companyBaseFare, companyRatePerKm]);
 
   useEffect(() => {
-    // Layers the selected discount code on top of the base fare so picking
-    // one from the dropdown updates the estimate immediately, without
-    // waiting for compute_discount_for_booking (still the source of truth
-    // — re-validated, including student discount, at submit time).
+    // Two steps. At once: the picked code's maths (applyDiscountPreview), so
+    // the box reacts to the dropdown. Then: compute_discount_for_booking for
+    // this passenger, the same call submit makes — which also knows about a
+    // student discount and an offer the passenger saved in the app. A box the
+    // dispatcher has typed into is never overwritten.
     if (bookBaseFare == null) return;
     const code = discountCodes.find((c) => c.code === bookDiscountCode);
-    setBookFare(applyDiscountPreview(bookBaseFare, code).toFixed(2));
-  }, [bookBaseFare, bookDiscountCode, discountCodes]);
+    const quick = applyDiscountPreview(bookBaseFare, code).toFixed(2);
+    const putAuto = (v: string) => {
+      setBookFare((prev) => (bookFareAutoRef.current == null || prev === bookFareAutoRef.current ? v : prev));
+      bookFareAutoRef.current = v;
+    };
+    putAuto(quick);
+    setBookDiscountNote(null);
+    if (!profile.company_id) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .rpc("compute_discount_for_booking", {
+          // No profile yet (a new number): nobody to have a student discount
+          // or a saved offer, so the all-zero id prices the code alone.
+          p_user_id: bookPassengerId ?? "00000000-0000-0000-0000-000000000000",
+          p_company_id: profile.company_id,
+          p_fare: bookBaseFare,
+          p_code: bookDiscountCode.trim() || null,
+        })
+        .maybeSingle();
+      if (cancelled || error || !data) return;
+      const d = data as { discounted_fare: number; discount_amount: number; discount_type: string | null; code_status: string };
+      // A refused code is reported at submit, with its reason; keep the quick
+      // figure until then.
+      if (bookDiscountCode.trim() && d.code_status !== "ok") return;
+      putAuto(Math.ceil(d.discounted_fare).toFixed(2));
+      if (d.discount_type === "student") setBookDiscountNote(t("booking.studentApplied"));
+      else if (d.discount_type === "code" && !bookDiscountCode.trim())
+        setBookDiscountNote(t("booking.savedOfferApplied", { amount: Number(d.discount_amount).toFixed(2) }));
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [bookBaseFare, bookDiscountCode, discountCodes, bookPassengerId, profile.company_id, t]);
 
   useEffect(() => {
     // Fetches the distance for the current pickup/dropoff unconditionally
@@ -3645,14 +3689,22 @@ export default function DashboardPage({
         }
         passengerProfile = { id: guestResult.id, name: guestResult.name };
       }
-      const baseFare = parseFloat(bookFare) || null;
+      // Still the form's own figure -> price from the pre-discount base and let
+      // the server apply the discount. Typed over -> the dispatcher's number IS
+      // the fare, and no discount is applied on top of it. No auto figure ever
+      // (distance lookup failed) -> the typed number is the base, as before.
+      const fareOverridden = bookFareAutoRef.current != null && bookFare !== bookFareAutoRef.current;
+      const baseFare =
+        bookFareAutoRef.current != null && !fareOverridden
+          ? bookBaseFare
+          : parseFloat(bookFare) || null;
       let finalFare = baseFare;
       let preDiscountFare: number | null = null;
       let discountAmount: number | null = null;
       let discountType: string | null = null;
       let discountCodeId: string | null = null;
 
-      if (baseFare != null && baseFare > 0) {
+      if (baseFare != null && baseFare > 0 && !fareOverridden) {
         const { data: discountRaw, error: discountError } = await supabase
           .rpc("compute_discount_for_booking", {
             p_user_id: passengerProfile.id,
@@ -3785,6 +3837,9 @@ export default function DashboardPage({
       setBookVehicleClassId("");
       setBookDistanceMetres(null);
       setBookBaseFare(null);
+      bookFareAutoRef.current = null;
+      setBookDiscountNote(null);
+      setBookPassengerId(null);
       setBookDriver("");
       setBookScheduled("");
       fetchRides();
@@ -5164,7 +5219,7 @@ export default function DashboardPage({
             style={{ display: showAnnouncements ? "flex" : "none" }}
           >
             {profile.company_id && (
-              <AnnouncementsPage companyId={profile.company_id} adminId={profile.id} />
+              <AnnouncementsPage companyId={profile.company_id} adminId={profile.id} isAdmin={isAdmin} />
             )}
           </div>
 
@@ -6241,8 +6296,9 @@ export default function DashboardPage({
                     const { data } = (await supabase
                       .rpc("find_passenger_by_phone", { p_phone: phone })
                       .maybeSingle()) as {
-                      data: { name: string | null } | null;
+                      data: { id: string; name: string | null } | null;
                     };
+                    setBookPassengerId(data?.id ?? null);
                     if (data?.name) {
                       setBookPassengerName(data.name);
                       setBookPassengerRegistered(true);
@@ -6253,7 +6309,10 @@ export default function DashboardPage({
                   // Editing the number invalidates the lookup it came from —
                   // otherwise the green "registered" badge and the prefilled
                   // name stay on screen for a DIFFERENT passenger's number.
-                  onEdit={() => setBookPassengerRegistered(false)}
+                  onEdit={() => {
+                    setBookPassengerRegistered(false);
+                    setBookPassengerId(null);
+                  }}
                 />
                 <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
               </div>
@@ -6401,6 +6460,13 @@ export default function DashboardPage({
                     {t("booking.autoCalcFailed")}
                   </div>
                 )}
+                {bookFareAutoRef.current != null && bookFare !== bookFareAutoRef.current ? (
+                  <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>
+                    {t("booking.manualFareNoDiscount")}
+                  </div>
+                ) : bookDiscountNote ? (
+                  <div style={{ fontSize: 11, color: "#1D9E75", marginTop: 4 }}>{bookDiscountNote}</div>
+                ) : null}
               </div>
               {vehicleClasses.length > 1 && (
                 <div>
