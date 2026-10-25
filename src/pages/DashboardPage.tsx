@@ -1559,7 +1559,7 @@ export default function DashboardPage({
   companyName: string | null;
   onSignOut: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isAdmin = profile.role === "admin";
 
   // Each falls back to the raw column value, as the maps they replaced did: an
@@ -4475,8 +4475,7 @@ export default function DashboardPage({
   const filteredDrivers = (() => {
     const q = driverSearch.trim().toLowerCase();
     const base = drivers.filter(d => !(d as any).profile?.deleted_at);
-    if (!q) return base;
-    return base.filter(d => {
+    const matches = !q ? base : base.filter(d => {
       const name = ((d as any).profile?.name ?? "").toLowerCase();
       const phone = ((d as any).profile?.phone ?? "").replace(/\D/g, "");
       const make = (d.vehicle_make ?? "").toLowerCase();
@@ -4498,6 +4497,27 @@ export default function DashboardPage({
               (driverNum != null && String(driverNum) === String(Number(qDigits)))
               || (!!carDigits && carDigits === qDigits)
             ));
+    });
+    // Online first, then A-Z by name, with a fixed tie-break. The order has to
+    // be decided here: `drivers` arrives ordered by is_active alone, and within
+    // that Postgres returns heap order, which reshuffles every time a driver
+    // row is updated (location writes every 10s), so names jumped around on
+    // every refetch. Collator: case- and accent-insensitive in the dashboard's
+    // language, and "Driver 2" before "Driver 10". No name yet sorts last.
+    const collator = new Intl.Collator(i18n.language, { sensitivity: "base", numeric: true });
+    return [...matches].sort((a, b) => {
+      const onA = driverPresence(a) === "online" ? 0 : 1;
+      const onB = driverPresence(b) === "online" ? 0 : 1;
+      if (onA !== onB) return onA - onB;
+      const nameA = ((a as any).profile?.name ?? "").trim();
+      const nameB = ((b as any).profile?.name ?? "").trim();
+      if (!nameA !== !nameB) return nameA ? -1 : 1;
+      const byName = collator.compare(nameA, nameB);
+      if (byName !== 0) return byName;
+      const numA = (a as any).driver_number ?? Infinity;
+      const numB = (b as any).driver_number ?? Infinity;
+      if (numA !== numB) return numA < numB ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
   })();
 
