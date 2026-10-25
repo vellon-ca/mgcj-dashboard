@@ -101,6 +101,10 @@ async function shrinkImage(file: File): Promise<{ blob: Blob; width: number; hei
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas");
+    // JPEG has no transparency: without a fill, a transparent PNG flyer
+    // comes out black.
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(img, 0, 0, width, height);
     const blob = await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode"))), "image/jpeg", 0.85),
@@ -425,7 +429,10 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin }: Props
       ? { ok: true as const, cta_label: null, cta_kind: null, cta_target: null }
       : ctaFields(editForm.ctaMode, editForm.ctaLabel, editForm.ctaUrl, editForm.ctaTarget, m.target_type);
     if (!cta.ok) return setError(t(cta.err));
-    const expires = editForm.expiresAt ? fromDateTimeLocal(editForm.expiresAt) : null;
+    let expires = editForm.expiresAt ? fromDateTimeLocal(editForm.expiresAt) : null;
+    // As at send: an offer ends no later than its code.
+    const code = m.discount_code_id ? codes.find((c) => c.id === m.discount_code_id) : null;
+    if (code?.ends_at && (!expires || expires > new Date(code.ends_at))) expires = new Date(code.ends_at);
     if (expires && m.starts_at && new Date(m.starts_at) >= expires) return setError(t("announcements.errWindow"));
     setRowBusy(m.id);
     try {

@@ -579,6 +579,13 @@ function fareForDistance(
 // still resolved for real at submit time). Mirrors the same order of
 // operations as createManualBooking: discount off the displayed base fare,
 // then ceil again since manual bookings are always cash.
+// "18" typed over "18.00" is the same fare, not a manual override.
+function sameFare(a: string, b: string): boolean {
+  const x = parseFloat(a);
+  const y = parseFloat(b);
+  return Number.isFinite(x) && Number.isFinite(y) ? Math.abs(x - y) < 0.005 : a === b;
+}
+
 function applyDiscountPreview(baseFare: number, code: DiscountCodeOption | undefined): number {
   // Manual bookings are always cash; round up to the nearest dollar so the
   // preview matches what will actually be charged (see submit-time Math.ceil).
@@ -3439,7 +3446,11 @@ export default function DashboardPage({
     const code = discountCodes.find((c) => c.code === bookDiscountCode);
     const quick = applyDiscountPreview(bookBaseFare, code).toFixed(2);
     const putAuto = (v: string) => {
-      setBookFare((prev) => (bookFareAutoRef.current == null || prev === bookFareAutoRef.current ? v : prev));
+      // Read the ref BEFORE queueing the update: React may run the updater
+      // later, after the ref already holds `v`, and the box would then look
+      // typed-over and be charged as such.
+      const prevAuto = bookFareAutoRef.current;
+      setBookFare((prev) => (prevAuto == null || sameFare(prev, prevAuto) ? v : prev));
       bookFareAutoRef.current = v;
     };
     putAuto(quick);
@@ -3693,7 +3704,7 @@ export default function DashboardPage({
       // the server apply the discount. Typed over -> the dispatcher's number IS
       // the fare, and no discount is applied on top of it. No auto figure ever
       // (distance lookup failed) -> the typed number is the base, as before.
-      const fareOverridden = bookFareAutoRef.current != null && bookFare !== bookFareAutoRef.current;
+      const fareOverridden = bookFareAutoRef.current != null && !sameFare(bookFare, bookFareAutoRef.current);
       const baseFare =
         bookFareAutoRef.current != null && !fareOverridden
           ? bookBaseFare
@@ -6460,7 +6471,7 @@ export default function DashboardPage({
                     {t("booking.autoCalcFailed")}
                   </div>
                 )}
-                {bookFareAutoRef.current != null && bookFare !== bookFareAutoRef.current ? (
+                {bookFareAutoRef.current != null && !sameFare(bookFare, bookFareAutoRef.current) ? (
                   <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>
                     {t("booking.manualFareNoDiscount")}
                   </div>
