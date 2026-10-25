@@ -170,6 +170,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   const [stats, setStats] = useState<Record<string, Stats>>({});
   const [codes, setCodes] = useState<CodeRow[]>([]);
   const [audienceFilter, setAudienceFilter] = useState<"all" | Audience>("all");
+  const [categoryFilter, setCategoryFilter] = useState<"all" | Category>("all");
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(EMPTY_FORM);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -303,6 +304,12 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
     if (isOfferWithCode && selectedCode?.ends_at) {
       const codeEnd = new Date(selectedCode.ends_at);
       if (!expiresAt || expiresAt > codeEnd) expiresAt = codeEnd;
+    }
+    // An open-ended offer can cost the company without limit; the database
+    // refuses one too (guard_message_write, 20261025040000).
+    if (form.category === "offer" && !expiresAt) {
+      setError(t("announcements.errOfferEnd"));
+      return;
     }
     if (startsAt && expiresAt && startsAt >= expiresAt) {
       setError(t("announcements.errWindow"));
@@ -460,6 +467,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
     // As at send: an offer ends no later than its code.
     const code = m.discount_code_id ? codes.find((c) => c.id === m.discount_code_id) : null;
     if (code?.ends_at && (!expires || expires > new Date(code.ends_at))) expires = new Date(code.ends_at);
+    if (m.category === "offer" && !expires) return setError(t("announcements.errOfferEnd"));
     if (expires && m.starts_at && new Date(m.starts_at) >= expires) return setError(t("announcements.errWindow"));
     setRowBusy(m.id);
     try {
@@ -489,7 +497,13 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   }
 
   async function endOrDelete(m: MessageRow, action: "end" | "delete") {
-    if (!window.confirm(t(action === "end" ? "announcements.confirmEnd" : "announcements.confirmDelete"))) return;
+    const confirmKey =
+      action === "delete"
+        ? "announcements.confirmDelete"
+        : m.category === "offer"
+          ? "announcements.confirmEndOffer"
+          : "announcements.confirmEnd";
+    if (!window.confirm(t(confirmKey))) return;
     setRowBusy(m.id);
     setError(null);
     try {
@@ -521,7 +535,9 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   }
 
   const filteredMessages = messages.filter(
-    (m) => audienceFilter === "all" || m.target_type === audienceFilter,
+    (m) =>
+      (audienceFilter === "all" || m.target_type === audienceFilter) &&
+      (categoryFilter === "all" || m.category === categoryFilter),
   );
   const groupedByDate = useMemo(() => {
     const groups: { date: string; items: MessageRow[] }[] = [];
@@ -652,7 +668,8 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
         .mp-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
         .mp-subtitle-text { font-size: 12px; color: #6B7280; }
 
-        .mp-filter-row { display: flex; gap: 6px; margin-bottom: 20px; }
+        .mp-filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 20px; }
+        .mp-filter-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 6px; }
         .mp-filter-btn { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); color: #9CA3AF; }
         .mp-filter-btn.active { border-color: #E8500A; color: #F1F5F9; }
 
@@ -876,7 +893,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
                   onChange={(e) => setForm((f) => ({ ...f, startsAt: e.target.value }))} />
               </div>
               <div>
-                <label className="mp-label">{t("announcements.expiresOptional")}</label>
+                <label className="mp-label">{t(isOffer ? "announcements.expiresRequired" : "announcements.expiresOptional")}</label>
                 <input className="mp-input" type="datetime-local" value={form.expiresAt}
                   onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))} />
               </div>
@@ -962,6 +979,12 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
                 {t(k === "all" ? "announcements.filterAll" : k === "all_passengers" ? "announcements.audiencePassengers" : "announcements.audienceDrivers")}
               </button>
             ))}
+            <span className="mp-filter-sep" aria-hidden="true" />
+            {(["all", "announcement", "offer"] as const).map((k) => (
+              <button key={k} className={`mp-filter-btn${categoryFilter === k ? " active" : ""}`} onClick={() => setCategoryFilter(k)}>
+                {t(k === "all" ? "announcements.filterAllKinds" : k === "offer" ? "announcements.filterOffers" : "announcements.filterAnnouncements")}
+              </button>
+            ))}
           </div>
 
           {loading ? (
@@ -1009,7 +1032,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
                             renderCtaFields(editForm.ctaMode, editForm.ctaLabel, editForm.ctaUrl, editForm.ctaTarget, m.target_type, (p) =>
                               setEditForm((f) => ({ ...f, ...p })),
                             )}
-                          <label className="mp-label">{t("announcements.expiresOptional")}</label>
+                          <label className="mp-label">{t(m.category === "offer" ? "announcements.expiresRequired" : "announcements.expiresOptional")}</label>
                           <input className="mp-input" type="datetime-local" value={editForm.expiresAt}
                             onChange={(e) => setEditForm((f) => ({ ...f, expiresAt: e.target.value }))} />
                           <div className="mp-hint">{t("announcements.editHint")}</div>

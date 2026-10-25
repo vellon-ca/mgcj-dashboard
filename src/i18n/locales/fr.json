@@ -284,8 +284,14 @@
     "cancelScheduled": "Annuler",
     "delete": "Supprimer",
     "editHint": "Le texte, le bouton et la date de fin peuvent changer. Pour changer les destinataires, la photo ou le rabais, terminez-la et envoyez-en une nouvelle.",
-    "confirmEnd": "Terminer maintenant? Elle disparaît des téléphones. Les passagers qui ont déjà enregistré l'offre gardent le rabais jusqu'à la fin du code.",
-    "confirmDelete": "Supprimer? Elle disparaît des téléphones et de cette liste."
+    "confirmEnd": "Terminer maintenant? Elle disparaît des téléphones.",
+    "confirmDelete": "Supprimer? Elle disparaît des téléphones et de cette liste.",
+    "expiresRequired": "Fin",
+    "errOfferEnd": "Une offre doit avoir une date de fin.",
+    "confirmEndOffer": "Terminer cette offre maintenant? Elle disparaît des téléphones, et les passagers qui l'ont enregistrée ne peuvent plus l'utiliser. Les courses déjà réservées gardent leur rabais.",
+    "filterAllKinds": "Tous les types",
+    "filterAnnouncements": "Annonces",
+    "filterOffers": "Offres"
   },
   "app": {
     "accessDenied": "Accès refusé. Personnel autorisé seulement.",
