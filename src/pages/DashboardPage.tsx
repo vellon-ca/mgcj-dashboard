@@ -2559,6 +2559,13 @@ export default function DashboardPage({
     });
   }
 
+  // The booking form's dropdown is reloaded each time the form opens: loaded
+  // once at sign-in, a code made since on the Discounts page was missing from
+  // it until the page was refreshed.
+  useEffect(() => {
+    if (bookingOpen) fetchDiscountCodes();
+  }, [bookingOpen]);
+
   async function fetchDiscountCodes() {
     if (!profile?.company_id) return;
     const { data } = await supabase
@@ -5230,7 +5237,12 @@ export default function DashboardPage({
             style={{ display: showAnnouncements ? "flex" : "none" }}
           >
             {profile.company_id && (
-              <AnnouncementsPage companyId={profile.company_id} adminId={profile.id} isAdmin={isAdmin} />
+              <AnnouncementsPage
+                companyId={profile.company_id}
+                adminId={profile.id}
+                isAdmin={isAdmin}
+                visible={showAnnouncements}
+              />
             )}
           </div>
 

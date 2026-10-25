@@ -152,9 +152,19 @@ interface Props {
   companyId: string;
   adminId: string;
   isAdmin: boolean;
+  // The page stays mounted behind display:none (DashboardPage's overlays), so
+  // it is told when it is on screen and only refreshes then.
+  visible: boolean;
 }
 
-export default function AnnouncementsPage({ companyId, adminId, isAdmin }: Props) {
+// How often the sent list's counts refresh while the page is on screen.
+// Polled, not Realtime: the counts come from message_reads / offer_claims /
+// rides, none of which should join the publication (Realtime was 64% of DB
+// time in the 2026-10-23 audit), and dispatch reading them a few seconds late
+// costs nothing.
+const REFRESH_MS = 15_000;
+
+export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible }: Props) {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [stats, setStats] = useState<Record<string, Stats>>({});
@@ -178,8 +188,25 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin }: Props
     fetchAll();
   }, [companyId]);
 
-  async function fetchAll() {
-    setLoading(true);
+  // Fresh numbers whenever the page comes into view, then every REFRESH_MS
+  // while it stays in view and the browser tab is visible.
+  useEffect(() => {
+    if (!visible) return;
+    fetchAll(true);
+    const tick = () => {
+      if (document.visibilityState === "visible") fetchAll(true);
+    };
+    const id = setInterval(tick, REFRESH_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [visible, companyId]);
+
+  // `quiet`: a background refresh, no spinner (the list must not flash).
+  async function fetchAll(quiet = false) {
+    if (!quiet) setLoading(true);
     try {
       const [msgRes, statRes, codeRes] = await Promise.all([
         supabase
