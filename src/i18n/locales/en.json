@@ -233,7 +233,6 @@
     "repeatHint_until_tapped": "Shown again on later visits until they open it or tap its button, up to the limit.",
     "repeatHint_must_acknowledge": "Can't be dismissed: drivers must tap “I understand”. You'll see who has.",
     "startsOptional": "Starts (optional)",
-    "expiresOptional": "Ends (optional)",
     "endsWithCode": "Ends no later than the discount code does.",
     "sendPush": "Send a push notification",
     "pushOptOutHint": "Passengers who turned off offers and promotions won't get the push; it is still in their inbox.",
@@ -241,7 +240,6 @@
     "schedule": "Schedule",
     "sendToPassengers": "Send to all passengers",
     "sendToDrivers": "Send to all drivers",
-    "errRequired": "Title and message are required.",
     "errSendFailed": "Failed to send message.",
     "errWindow": "The end has to be after the start.",
     "previewPopup": "Popup preview",
@@ -287,11 +285,13 @@
     "confirmEnd": "End this now? It disappears from phones.",
     "confirmDelete": "Delete this? It disappears from phones and from this list.",
     "expiresRequired": "Ends",
-    "errOfferEnd": "An offer needs an end date.",
     "confirmEndOffer": "End this offer now? It disappears from phones, and passengers who saved it can no longer use it. Rides already booked keep their discount.",
     "filterAllKinds": "All kinds",
     "filterAnnouncements": "Announcements",
-    "filterOffers": "Offers"
+    "filterOffers": "Offers",
+    "errTitle": "Give it a title.",
+    "errBody": "Write a message.",
+    "errEnd": "Pick when it ends."
   },
   "app": {
     "accessDenied": "Access denied. Staff only.",

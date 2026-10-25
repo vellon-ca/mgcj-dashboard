@@ -233,7 +233,6 @@
     "repeatHint_until_tapped": "Affiché de nouveau aux visites suivantes jusqu'à ce qu'on l'ouvre ou touche son bouton, dans la limite fixée.",
     "repeatHint_must_acknowledge": "Impossible à fermer : les chauffeurs doivent toucher « J'ai compris ». Vous verrez qui l'a fait.",
     "startsOptional": "Début (facultatif)",
-    "expiresOptional": "Fin (facultatif)",
     "endsWithCode": "Prend fin au plus tard en même temps que le code de rabais.",
     "sendPush": "Envoyer une notification",
     "pushOptOutHint": "Les passagers qui ont désactivé les offres et promotions ne recevront pas la notification; l'offre reste dans leur boîte de réception.",
@@ -241,7 +240,6 @@
     "schedule": "Planifier",
     "sendToPassengers": "Envoyer à tous les passagers",
     "sendToDrivers": "Envoyer à tous les chauffeurs",
-    "errRequired": "Le titre et le message sont obligatoires.",
     "errSendFailed": "Échec de l'envoi du message.",
     "errWindow": "La fin doit suivre le début.",
     "previewPopup": "Aperçu de la fenêtre",
@@ -287,11 +285,13 @@
     "confirmEnd": "Terminer maintenant? Elle disparaît des téléphones.",
     "confirmDelete": "Supprimer? Elle disparaît des téléphones et de cette liste.",
     "expiresRequired": "Fin",
-    "errOfferEnd": "Une offre doit avoir une date de fin.",
     "confirmEndOffer": "Terminer cette offre maintenant? Elle disparaît des téléphones, et les passagers qui l'ont enregistrée ne peuvent plus l'utiliser. Les courses déjà réservées gardent leur rabais.",
     "filterAllKinds": "Tous les types",
     "filterAnnouncements": "Annonces",
-    "filterOffers": "Offres"
+    "filterOffers": "Offres",
+    "errTitle": "Donnez-lui un titre.",
+    "errBody": "Rédigez un message.",
+    "errEnd": "Choisissez quand il se termine."
   },
   "app": {
     "accessDenied": "Accès refusé. Personnel autorisé seulement.",

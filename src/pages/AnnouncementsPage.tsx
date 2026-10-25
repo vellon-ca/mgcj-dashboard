@@ -176,7 +176,10 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Keyed by the field each is about, and shown beside it: Send sits at the
+  // bottom of a long form, so one message at the top went unseen (Victor,
+  // 2026-10-25). `row:<id>` is a sent message's own card.
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [newCodeOpen, setNewCodeOpen] = useState(false);
   const [newCode, setNewCode] = useState(EMPTY_CODE);
   const [savingCode, setSavingCode] = useState(false);
@@ -271,6 +274,25 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  function fail(next: Record<string, string>) {
+    setErrors(next);
+    requestAnimationFrame(() =>
+      document.querySelector(".mp-field-err")?.scrollIntoView({ block: "center", behavior: "smooth" }),
+    );
+  }
+
+  function clearErr(key: string) {
+    setErrors((e) => {
+      if (!(key in e)) return e;
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
+  }
+
+  const errFor = (key: string) => (errors[key] ? <div className="mp-field-err">{errors[key]}</div> : null);
+  const invalid = (key: string) => (errors[key] ? " invalid" : "");
+
   // Shared by send and edit; returns an error key or null.
   function ctaFields(mode: CtaMode, label: string, url: string, target: string, audience: Audience) {
     if (mode === "none") return { ok: true as const, cta_label: null, cta_kind: null, cta_target: null };
@@ -285,19 +307,14 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   }
 
   async function sendMessage() {
-    setError(null);
-    if (!form.title.trim() || !form.body.trim()) {
-      setError(t("announcements.errRequired"));
-      return;
-    }
+    const errs: Record<string, string> = {};
+    if (!form.title.trim()) errs.title = t("announcements.errTitle");
+    if (!form.body.trim()) errs.body = t("announcements.errBody");
     const isOfferWithCode = form.category === "offer" && !!form.codeId;
     const cta = isOfferWithCode
       ? { ok: true as const, cta_label: null, cta_kind: null, cta_target: null }
       : ctaFields(form.ctaMode, form.ctaLabel, form.ctaUrl, form.ctaTarget, form.audience);
-    if (!cta.ok) {
-      setError(t(cta.err));
-      return;
-    }
+    if (!cta.ok) errs.cta = t(cta.err);
     const startsAt = form.startsAt ? fromDateTimeLocal(form.startsAt) : null;
     let expiresAt = form.expiresAt ? fromDateTimeLocal(form.expiresAt) : null;
     // The message must not outlive the deal it advertises.
@@ -305,16 +322,13 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
       const codeEnd = new Date(selectedCode.ends_at);
       if (!expiresAt || expiresAt > codeEnd) expiresAt = codeEnd;
     }
-    // An open-ended offer can cost the company without limit; the database
-    // refuses one too (guard_message_write, 20261025040000).
-    if (form.category === "offer" && !expiresAt) {
-      setError(t("announcements.errOfferEnd"));
-      return;
-    }
-    if (startsAt && expiresAt && startsAt >= expiresAt) {
-      setError(t("announcements.errWindow"));
-      return;
-    }
+    // Every message has an end (Victor, 2026-10-25; offers since
+    // 20261025040000, because an open-ended one can cost the company without
+    // limit). The database refuses one without, too (guard_message_write).
+    if (!expiresAt) errs.ends = t("announcements.errEnd");
+    else if (startsAt && startsAt >= expiresAt) errs.ends = t("announcements.errWindow");
+    if (Object.keys(errs).length || !cta.ok) return fail(errs);
+    setErrors({});
     const repeatMax = Math.max(1, Math.min(10, Number(form.repeatMax) || 3));
     const repeatGap = Math.max(1, Math.min(720, Number(form.repeatGap) || 24));
 
@@ -384,7 +398,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
       clearImage();
       await fetchAll();
     } catch (e: any) {
-      setError(e?.message ?? t("announcements.errSendFailed"));
+      fail({ send: e?.message ?? t("announcements.errSendFailed") });
     } finally {
       setSending(false);
     }
@@ -393,11 +407,11 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   async function createCode() {
     const codeStr = newCode.code.trim().toUpperCase();
     const amount = Number(newCode.amount);
-    if (!codeStr) return setError(t("discounts.errNoCode"));
-    if (Number.isNaN(amount) || amount <= 0) return setError(t("discounts.errBadAmount"));
-    if (newCode.amount_type === "percent" && amount > 100) return setError(t("discounts.errPctMax"));
+    if (!codeStr) return fail({ newCode: t("discounts.errNoCode") });
+    if (Number.isNaN(amount) || amount <= 0) return fail({ newCode: t("discounts.errBadAmount") });
+    if (newCode.amount_type === "percent" && amount > 100) return fail({ newCode: t("discounts.errPctMax") });
     setSavingCode(true);
-    setError(null);
+    setErrors({});
     try {
       const { data, error: insErr } = await supabase
         .from("discount_codes")
@@ -437,13 +451,14 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
       setNewCode(EMPTY_CODE);
       setNewCodeOpen(false);
     } catch (e: any) {
-      setError(e?.code === "23505" ? t("announcements.errCodeTaken") : (e?.message ?? t("announcements.errCodeFailed")));
+      fail({ newCode: e?.code === "23505" ? t("announcements.errCodeTaken") : (e?.message ?? t("announcements.errCodeFailed")) });
     } finally {
       setSavingCode(false);
     }
   }
 
   function startEdit(m: MessageRow) {
+    setErrors({});
     setEditingId(m.id);
     setEditForm({
       title: m.title,
@@ -457,18 +472,21 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
   }
 
   async function saveEdit(m: MessageRow) {
-    setError(null);
-    if (!editForm.title.trim() || !editForm.body.trim()) return setError(t("announcements.errRequired"));
+    const errs: Record<string, string> = {};
+    if (!editForm.title.trim()) errs.editTitle = t("announcements.errTitle");
+    if (!editForm.body.trim()) errs.editBody = t("announcements.errBody");
     const cta = m.discount_code_id
       ? { ok: true as const, cta_label: null, cta_kind: null, cta_target: null }
       : ctaFields(editForm.ctaMode, editForm.ctaLabel, editForm.ctaUrl, editForm.ctaTarget, m.target_type);
-    if (!cta.ok) return setError(t(cta.err));
+    if (!cta.ok) errs.editCta = t(cta.err);
     let expires = editForm.expiresAt ? fromDateTimeLocal(editForm.expiresAt) : null;
     // As at send: an offer ends no later than its code.
     const code = m.discount_code_id ? codes.find((c) => c.id === m.discount_code_id) : null;
     if (code?.ends_at && (!expires || expires > new Date(code.ends_at))) expires = new Date(code.ends_at);
-    if (m.category === "offer" && !expires) return setError(t("announcements.errOfferEnd"));
-    if (expires && m.starts_at && new Date(m.starts_at) >= expires) return setError(t("announcements.errWindow"));
+    if (!expires) errs.editEnds = t("announcements.errEnd");
+    else if (m.starts_at && new Date(m.starts_at) >= expires) errs.editEnds = t("announcements.errWindow");
+    if (Object.keys(errs).length || !cta.ok || !expires) return fail(errs);
+    setErrors({});
     setRowBusy(m.id);
     try {
       const { error: rpcErr } = await supabase.rpc("edit_announcement", {
@@ -478,7 +496,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
         p_cta_label: cta.cta_label,
         p_cta_kind: cta.cta_kind,
         p_cta_target: cta.cta_target,
-        p_expires_at: expires ? expires.toISOString() : null,
+        p_expires_at: expires.toISOString(),
       });
       if (rpcErr) throw rpcErr;
       logDispatchEvent({
@@ -490,7 +508,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
       setEditingId(null);
       await fetchAll();
     } catch (e: any) {
-      setError(e?.message ?? t("announcements.errSendFailed"));
+      fail({ [`row:${m.id}`]: e?.message ?? t("announcements.errSendFailed") });
     } finally {
       setRowBusy(null);
     }
@@ -505,7 +523,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
           : "announcements.confirmEnd";
     if (!window.confirm(t(confirmKey))) return;
     setRowBusy(m.id);
-    setError(null);
+    setErrors({});
     try {
       const { error: rpcErr } = await supabase.rpc(
         action === "end" ? "end_announcement" : "delete_announcement",
@@ -520,7 +538,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
       });
       await fetchAll();
     } catch (e: any) {
-      setError(e?.message ?? t("announcements.errSendFailed"));
+      fail({ [`row:${m.id}`]: e?.message ?? t("announcements.errSendFailed") });
     } finally {
       setRowBusy(null);
     }
@@ -570,6 +588,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
     target: string,
     audience: Audience,
     set: (patch: Partial<{ ctaMode: CtaMode; ctaLabel: string; ctaUrl: string; ctaTarget: string }>) => void,
+    errKey: string,
   ) => (
     <div className="mp-field">
       <label className="mp-label">{t("announcements.button")}</label>
@@ -606,6 +625,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
           )}
         </>
       )}
+      {errFor(errKey)}
     </div>
   );
 
@@ -641,7 +661,8 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
 
         .mp-box { background: #162133; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; margin-top: 8px; }
 
-        .mp-error { font-size: 12px; color: #F87171; margin-bottom: 10px; }
+        .mp-field-err { font-size: 12px; color: #F87171; margin-top: 6px; line-height: 1.4; }
+        .mp-input.invalid, .mp-textarea.invalid { border-color: #F87171; }
         .mp-send-btn { width: 100%; padding: 11px; border-radius: 8px; background: #E8500A; color: #fff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 6px; }
         .mp-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -707,7 +728,6 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
         {/* ── Compose ─────────────────────────────────────────────── */}
         <div className="mp-compose">
           <div className="mp-compose-title">{t("announcements.new")}</div>
-          {error && <div className="mp-error">{error}</div>}
 
           <div className="mp-field">
             <label className="mp-label">{t("announcements.audience")}</label>
@@ -800,8 +820,9 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
                       onChange={(e) => setNewCode((c) => ({ ...c, one_per_passenger: e.target.checked }))} />
                     {t("announcements.codeOnePer")}
                   </label>
+                  {errFor("newCode")}
                   <div className="mp-row2 mp-gap">
-                    <button className="mp-action" onClick={() => { setNewCodeOpen(false); setNewCode(EMPTY_CODE); }}>{t("common.cancel")}</button>
+                    <button className="mp-action" onClick={() => { clearErr("newCode"); setNewCodeOpen(false); setNewCode(EMPTY_CODE); }}>{t("common.cancel")}</button>
                     <button className="mp-action" disabled={savingCode} onClick={createCode}>
                       {savingCode ? t("common.saving") : t("announcements.newCodeCreate")}
                     </button>
@@ -813,16 +834,18 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
 
           <div className="mp-field">
             <label className="mp-label">{t("announcements.titleLabel")}</label>
-            <input className="mp-input" value={form.title} maxLength={80}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            <input className={`mp-input${invalid("title")}`} value={form.title} maxLength={80}
+              onChange={(e) => { clearErr("title"); setForm((f) => ({ ...f, title: e.target.value })); }}
               placeholder={t("announcements.titlePlaceholder")} />
+            {errFor("title")}
           </div>
 
           <div className="mp-field">
             <label className="mp-label">{t("announcements.messageLabel")}</label>
-            <textarea className="mp-textarea" value={form.body}
-              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+            <textarea className={`mp-textarea${invalid("body")}`} value={form.body}
+              onChange={(e) => { clearErr("body"); setForm((f) => ({ ...f, body: e.target.value })); }}
               placeholder={t("announcements.bodyPlaceholder")} />
+            {errFor("body")}
             <div className="mp-hint">{t("announcements.linksHint")}</div>
           </div>
 
@@ -842,9 +865,10 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
           </div>
 
           {!offerWithCode &&
-            renderCtaFields(form.ctaMode, form.ctaLabel, form.ctaUrl, form.ctaTarget, form.audience, (p) =>
-              setForm((f) => ({ ...f, ...p })),
-            )}
+            renderCtaFields(form.ctaMode, form.ctaLabel, form.ctaUrl, form.ctaTarget, form.audience, (p) => {
+              clearErr("cta");
+              setForm((f) => ({ ...f, ...p }));
+            }, "cta")}
 
           <div className="mp-field">
             <label className="mp-check">
@@ -890,14 +914,15 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
               <div>
                 <label className="mp-label">{t("announcements.startsOptional")}</label>
                 <input className="mp-input" type="datetime-local" value={form.startsAt}
-                  onChange={(e) => setForm((f) => ({ ...f, startsAt: e.target.value }))} />
+                  onChange={(e) => { clearErr("ends"); setForm((f) => ({ ...f, startsAt: e.target.value })); }} />
               </div>
               <div>
-                <label className="mp-label">{t(isOffer ? "announcements.expiresRequired" : "announcements.expiresOptional")}</label>
-                <input className="mp-input" type="datetime-local" value={form.expiresAt}
-                  onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))} />
+                <label className="mp-label">{t("announcements.expiresRequired")}</label>
+                <input className={`mp-input${invalid("ends")}`} type="datetime-local" value={form.expiresAt}
+                  onChange={(e) => { clearErr("ends"); setForm((f) => ({ ...f, expiresAt: e.target.value })); }} />
               </div>
             </div>
+            {errFor("ends")}
             {offerWithCode && selectedCode?.ends_at && (
               <div className="mp-hint">{t("announcements.endsWithCode")}</div>
             )}
@@ -914,6 +939,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
             </label>
           </div>
 
+          {errFor("send")}
           <button className="mp-send-btn" disabled={sending} onClick={sendMessage}>
             {sending
               ? t("settings.sending")
@@ -1023,21 +1049,25 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
 
                       {editing ? (
                         <div>
-                          <input className="mp-input" value={editForm.title} maxLength={80}
-                            onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} />
-                          <textarea className="mp-textarea mp-gap" value={editForm.body}
-                            onChange={(e) => setEditForm((f) => ({ ...f, body: e.target.value }))} />
+                          <input className={`mp-input${invalid("editTitle")}`} value={editForm.title} maxLength={80}
+                            onChange={(e) => { clearErr("editTitle"); setEditForm((f) => ({ ...f, title: e.target.value })); }} />
+                          {errFor("editTitle")}
+                          <textarea className={`mp-textarea mp-gap${invalid("editBody")}`} value={editForm.body}
+                            onChange={(e) => { clearErr("editBody"); setEditForm((f) => ({ ...f, body: e.target.value })); }} />
+                          {errFor("editBody")}
                           <div className="mp-gap" />
                           {!m.discount_code_id &&
-                            renderCtaFields(editForm.ctaMode, editForm.ctaLabel, editForm.ctaUrl, editForm.ctaTarget, m.target_type, (p) =>
-                              setEditForm((f) => ({ ...f, ...p })),
-                            )}
-                          <label className="mp-label">{t(m.category === "offer" ? "announcements.expiresRequired" : "announcements.expiresOptional")}</label>
-                          <input className="mp-input" type="datetime-local" value={editForm.expiresAt}
-                            onChange={(e) => setEditForm((f) => ({ ...f, expiresAt: e.target.value }))} />
+                            renderCtaFields(editForm.ctaMode, editForm.ctaLabel, editForm.ctaUrl, editForm.ctaTarget, m.target_type, (p) => {
+                              clearErr("editCta");
+                              setEditForm((f) => ({ ...f, ...p }));
+                            }, "editCta")}
+                          <label className="mp-label">{t("announcements.expiresRequired")}</label>
+                          <input className={`mp-input${invalid("editEnds")}`} type="datetime-local" value={editForm.expiresAt}
+                            onChange={(e) => { clearErr("editEnds"); setEditForm((f) => ({ ...f, expiresAt: e.target.value })); }} />
+                          {errFor("editEnds")}
                           <div className="mp-hint">{t("announcements.editHint")}</div>
                           <div className="mp-actions">
-                            <button className="mp-action" onClick={() => setEditingId(null)}>{t("common.cancel")}</button>
+                            <button className="mp-action" onClick={() => { setErrors({}); setEditingId(null); }}>{t("common.cancel")}</button>
                             <button className="mp-action" disabled={rowBusy === m.id} onClick={() => saveEdit(m)}>{t("common.save")}</button>
                           </div>
                         </div>
@@ -1092,6 +1122,7 @@ export default function AnnouncementsPage({ companyId, adminId, isAdmin, visible
                         </div>
                       )}
 
+                      {errFor(`row:${m.id}`)}
                       {!editing && (
                         <div className="mp-actions">
                           {(st === "live" || st === "scheduled") && (
