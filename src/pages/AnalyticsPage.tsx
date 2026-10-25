@@ -248,6 +248,9 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
   "report.printed": "event.reportPrinted",
   "announcement.drivers": "event.announcementDrivers",
   "announcement.passengers": "event.announcementPassengers",
+  "announcement.edited": "event.announcementEdited",
+  "announcement.ended": "event.announcementEnded",
+  "announcement.deleted": "event.announcementDeleted",
   "escalation.acknowledged": "event.escalationAcknowledged",
   "export.csv": "event.exportCsv",
   "export.pdf": "event.exportPdf",
@@ -295,6 +298,9 @@ const EVENT_COLORS: Record<string, string> = {
   "report.printed": "#A855F7",
   "announcement.drivers": "#60A5FA",
   "announcement.passengers": "#60A5FA",
+  "announcement.edited": "#60A5FA",
+  "announcement.ended": "#9CA3AF",
+  "announcement.deleted": "#F87171",
   "escalation.acknowledged": "#F59E0B",
   "export.csv": "#6B7280",
   "export.pdf": "#6B7280",
@@ -403,6 +409,9 @@ function formatEventDetails(type: string, details: any): string {
       ].filter(Boolean).join(" · ");
     case "announcement.drivers":
     case "announcement.passengers":
+    case "announcement.edited":
+    case "announcement.ended":
+    case "announcement.deleted":
       return details.title ?? "—";
     case "invoice.printed":
       return [
@@ -5056,6 +5065,9 @@ export default function AnalyticsPage({
                     <optgroup label={t("nav.announcements")}>
                       <option value="announcement.drivers">{eventLabel("announcement.drivers")}</option>
                       <option value="announcement.passengers">{eventLabel("announcement.passengers")}</option>
+                      <option value="announcement.edited">{eventLabel("announcement.edited")}</option>
+                      <option value="announcement.ended">{eventLabel("announcement.ended")}</option>
+                      <option value="announcement.deleted">{eventLabel("announcement.deleted")}</option>
                     </optgroup>
                     <optgroup label={t("nav.settings")}>
                       <option value="settings.pricing_updated">{eventLabel("settings.pricing_updated")}</option>
