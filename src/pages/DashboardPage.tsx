@@ -21,6 +21,7 @@ import DiscountsPage from "./DiscountsPage";
 import SettingsPage from "./SettingsPage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import MessagesPage from "./MessagesPage";
+import AiPage, { IconAi } from "./AiPage";
 
 import i18next from "i18next";
 import { Trans, useTranslation } from "react-i18next";
@@ -1695,6 +1696,7 @@ export default function DashboardPage({
     initialView === "announcements",
   );
   const [showMessages, setShowMessages] = useState(initialView === "messages");
+  const [showAi, setShowAi] = useState(initialView === "ai");
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
 
   // ── Driver trail (location history) ─────────────────────────────────────
@@ -2176,6 +2178,7 @@ export default function DashboardPage({
       !showSettings &&
       !showAnnouncements &&
       !showMessages &&
+      !showAi &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -2187,7 +2190,7 @@ export default function DashboardPage({
         applyCompanyFrameRef.current?.();
       }, 50);
     }
-  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, showAi, selectedDriver]);
 
   // --- the dispatcher's own opening view -------------------------------------
   const flashTimerRef = useRef<number | null>(null);
@@ -2266,6 +2269,7 @@ export default function DashboardPage({
     showSettings,
     showAnnouncements,
     showMessages,
+    showAi,
   ]);
 
   // Browser back/forward: apply whatever view the path now points at.
@@ -4216,13 +4220,14 @@ export default function DashboardPage({
     });
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "ai" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
     setShowDiscounts(dest === "discounts");
     setShowSettings(dest === "settings");
     setShowAnnouncements(dest === "announcements");
     setShowMessages(dest === "messages");
+    setShowAi(dest === "ai");
   }
 
   // Collapse the current tab/overlay state into the single active view. Overlay
@@ -4234,6 +4239,7 @@ export default function DashboardPage({
     if (showSettings) return "settings";
     if (showAnnouncements) return "announcements";
     if (showMessages) return "messages";
+    if (showAi) return "ai";
     return tab;
   }
 
@@ -4467,6 +4473,8 @@ export default function DashboardPage({
             ? t("nav.announcements")
             : showMessages
               ? t("nav.messages")
+              : showAi
+                ? t("nav.ai")
               // Was `tab.charAt(0).toUpperCase() + tab.slice(1)` — a label
               // COMPUTED from a code identifier, so the English never appeared
               // as a string anywhere and no scanner of literals could see it.
@@ -4556,6 +4564,13 @@ export default function DashboardPage({
         .db-nav-reports .db-nav-label { color: #6B7280; }
         .db-nav-reports:hover .db-nav-label, .db-nav-reports.active-util .db-nav-label { color: #F87171; }
         .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
+        .db-nav-soon { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #FDBA74; border: 1px solid rgba(232,80,10,0.35); border-radius: 999px; padding: 1px 6px; }
+        .ai-nav-icon { overflow: visible; }
+        .ai-nav-icon .ai-nav-main { transform-box: fill-box; transform-origin: center; animation: ai-nav-turn 6s ease-in-out infinite; }
+        .ai-nav-icon .ai-nav-spark { transform-box: fill-box; transform-origin: center; animation: ai-nav-twinkle 2.4s ease-in-out infinite; }
+        @keyframes ai-nav-turn { 0%, 70%, 100% { transform: rotate(0deg) scale(1); } 80% { transform: rotate(45deg) scale(0.9); } 90% { transform: rotate(90deg) scale(1); } }
+        @keyframes ai-nav-twinkle { 0%, 100% { opacity: 0.35; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.15); } }
+        @media (prefers-reduced-motion: reduce) { .ai-nav-icon * { animation: none !important; } }
         .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
         .db-nav-settings .db-nav-icon { color: #6B7280; }
         .db-nav-settings:hover .db-nav-icon, .db-nav-settings.active-util .db-nav-icon { color: #60A5FA; }
@@ -4967,7 +4982,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: navTab, labelKey }) => (
               <button
                 key={navTab}
-                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages ? " active" : ""}`}
+                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi ? " active" : ""}`}
                 onClick={() => {
                   setTab(navTab);
                   navigateTo("main");
@@ -5005,6 +5020,19 @@ export default function DashboardPage({
               {navExpanded && driverChatUnreadCount > 0 && (
                 <span className="db-badge-count">{driverChatUnreadCount}</span>
               )}
+            </button>
+            <button
+              className={`db-nav-item db-nav-ai${showAi ? " active" : ""}`}
+              onClick={() => {
+                navigateTo("ai");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconAi />
+              </span>
+              {navExpanded && <span className="db-nav-label">{t("nav.ai")}</span>}
+              {navExpanded && <span className="db-nav-soon">{t("nav.soon")}</span>}
             </button>
           </div>
           <div className="db-nav-bottom">
@@ -5105,7 +5133,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? t("rideDetail.driver"))
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -5139,7 +5167,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver ? (
               <>
                 {/* Always present, so "nothing needs me" is a readable state
                     rather than an absence. Turns red only for act_now. */}
@@ -5235,6 +5263,13 @@ export default function DashboardPage({
             )}
           </div>
 
+          <div
+            className="db-overlay"
+            style={{ display: showAi ? "flex" : "none" }}
+          >
+            <AiPage visible={showAi} />
+          </div>
+
           {cancelPendingId && (
             <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setCancelPendingId(null)}>
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
@@ -5316,7 +5351,7 @@ export default function DashboardPage({
             className="db-body"
             style={{
               display:
-                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages ? "none" : "flex",
+                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages || showAi ? "none" : "flex",
               position: "relative",
             }}
           >
