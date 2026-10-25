@@ -1951,7 +1951,7 @@ export default function DashboardPage({
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
   // The looked-up passenger, so the fare preview can ask the server about
-  // THEIR discounts (student, a saved offer) and not just the picked code.
+  // THEIR student discount and their own limits on the picked code.
   const [bookPassengerId, setBookPassengerId] = useState<string | null>(null);
   const [bookPickup, setBookPickup] = useState("");
   const [bookPickupCoords, setBookPickupCoords] = useState<{
@@ -3447,8 +3447,9 @@ export default function DashboardPage({
     // Two steps. At once: the picked code's maths (applyDiscountPreview), so
     // the box reacts to the dropdown. Then: compute_discount_for_booking for
     // this passenger, the same call submit makes — which also knows about a
-    // student discount and an offer the passenger saved in the app. A box the
-    // dispatcher has typed into is never overwritten.
+    // student discount. An offer the passenger saved in the app never applies
+    // to a dispatch booking (20261025010000); the dispatcher picks the code.
+    // A box the dispatcher has typed into is never overwritten.
     if (bookBaseFare == null) return;
     const code = discountCodes.find((c) => c.code === bookDiscountCode);
     const quick = applyDiscountPreview(bookBaseFare, code).toFixed(2);
@@ -3482,8 +3483,6 @@ export default function DashboardPage({
       if (bookDiscountCode.trim() && d.code_status !== "ok") return;
       putAuto(Math.ceil(d.discounted_fare).toFixed(2));
       if (d.discount_type === "student") setBookDiscountNote(t("booking.studentApplied"));
-      else if (d.discount_type === "code" && !bookDiscountCode.trim())
-        setBookDiscountNote(t("booking.savedOfferApplied", { amount: Number(d.discount_amount).toFixed(2) }));
     }, 300);
     return () => {
       cancelled = true;

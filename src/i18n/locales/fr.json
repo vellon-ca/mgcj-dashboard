@@ -183,7 +183,7 @@
     "categoryOffer": "Offre",
     "offerCode": "Rabais",
     "noCode": "Aucun rabais (information seulement)",
-    "noCodeHint": "Joignez un code de rabais et les passagers verront un bouton « Utiliser cette offre » qui l'enregistre dans leur compte. Le rabais s'applique automatiquement à leur prochaine course; ils ne voient jamais le code.",
+    "noCodeHint": "Joignez un code de rabais et les passagers verront un bouton « Utiliser cette offre » qui l'enregistre dans leur compte. Le rabais s'applique automatiquement lorsqu'ils réservent dans l'app; ils ne voient jamais le code. Les courses réservées par la répartition n'ont le rabais que si vous choisissez le code.",
     "codeGoesPublic": "Le rabais devient accessible à tous les passagers qui voient l'offre. Les codes que vous donnez en privé ne sont pas touchés, sauf si vous les joignez ici.",
     "codeOnePer": "Une utilisation par passager",
     "codeMax": "Jusqu'à {{count}} utilisations au total",
@@ -342,7 +342,6 @@
     "wheelchairRequired": "Véhicule accessible en fauteuil roulant requis",
     "wheelchairHint": "Sans frais supplémentaires",
     "studentApplied": "Rabais étudiant appliqué",
-    "savedOfferApplied": "Comprend {{amount}} $ de rabais d'une offre enregistrée par ce passager dans l'app",
     "manualFareNoDiscount": "Tarif saisi à la main : facturé tel quel, sans rabais."
   },
   "cancelReason": {

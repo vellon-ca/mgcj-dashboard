@@ -183,7 +183,7 @@
     "categoryOffer": "Offer",
     "offerCode": "Discount",
     "noCode": "No discount (information only)",
-    "noCodeHint": "Attach a discount code and passengers get a “Use this offer” button that saves it to their account. It comes off their next fare automatically; they never see the code.",
+    "noCodeHint": "Attach a discount code and passengers get a “Use this offer” button that saves it to their account. It comes off their next fare automatically when they book in the app; they never see the code. Rides booked by dispatch get a discount only if you pick the code.",
     "codeGoesPublic": "This makes the discount available to every passenger who sees the offer. Codes you give out privately are not affected unless you attach them here.",
     "codeOnePer": "One use per passenger",
     "codeMax": "Up to {{count}} uses in total",
@@ -342,7 +342,6 @@
     "wheelchairRequired": "Wheelchair-accessible vehicle required",
     "wheelchairHint": "No extra charge",
     "studentApplied": "Student discount applied",
-    "savedOfferApplied": "Includes ${{amount}} off from an offer this passenger saved in the app",
     "manualFareNoDiscount": "Fare entered by hand: charged as typed, no discount applied."
   },
   "cancelReason": {
