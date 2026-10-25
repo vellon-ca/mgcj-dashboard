@@ -308,7 +308,6 @@
     "amountOff": "{{amount}} $ de rabais",
     "anyVehicle": "— Tout véhicule —",
     "autoCalc": "Calculé automatiquement",
-    "autoCalcDiscount": "Calculé automatiquement · rabais appliqué",
     "autoCalcFailed": "Calcul automatique impossible — saisissez un tarif manuellement.",
     "calculating": "Calcul…",
     "createRide": "Créer la course",
@@ -341,8 +340,8 @@
     "errInvalidPhone": "Saisissez un numéro de téléphone de passager valide. Pour un numéro hors Canada ou États-Unis, commencez par + et l'indicatif pays.",
     "wheelchairRequired": "Véhicule accessible en fauteuil roulant requis",
     "wheelchairHint": "Sans frais supplémentaires",
-    "studentApplied": "Rabais étudiant appliqué",
-    "manualFareNoDiscount": "Tarif saisi à la main : facturé tel quel, sans rabais."
+    "discountLine": "{{what}} : −{{amount}} $ · Le passager paie {{pays}} $",
+    "studentDiscount": "Rabais étudiant"
   },
   "cancelReason": {
     "dispatchCancelled": "Annulée par la répartition",

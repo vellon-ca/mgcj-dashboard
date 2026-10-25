@@ -308,7 +308,6 @@
     "amountOff": "${{amount}} off",
     "anyVehicle": "— Any vehicle —",
     "autoCalc": "Auto-calculated",
-    "autoCalcDiscount": "Auto-calculated · discount applied",
     "autoCalcFailed": "Could not auto-calculate — enter a fare manually.",
     "calculating": "Calculating…",
     "createRide": "Create ride",
@@ -341,8 +340,8 @@
     "errInvalidPhone": "Enter a valid passenger phone number. For a number outside Canada or the US, start with + and the country code.",
     "wheelchairRequired": "Wheelchair-accessible vehicle required",
     "wheelchairHint": "No extra charge",
-    "studentApplied": "Student discount applied",
-    "manualFareNoDiscount": "Fare entered by hand: charged as typed, no discount applied."
+    "discountLine": "{{what}}: −${{amount}} · Passenger pays ${{pays}}",
+    "studentDiscount": "Student discount"
   },
   "cancelReason": {
     "dispatchCancelled": "Cancelled by dispatch",

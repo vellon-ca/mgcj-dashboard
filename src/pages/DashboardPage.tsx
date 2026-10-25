@@ -574,28 +574,16 @@ function fareForDistance(
   return paymentMethod === "cash" ? Math.ceil(raw) : Math.round(raw * 100) / 100;
 }
 
-// Client-side preview of `compute_discount_for_booking` (percent/fixed code
-// math only — student-discount eligibility needs a server roundtrip and is
-// still resolved for real at submit time). Mirrors the same order of
-// operations as createManualBooking: discount off the displayed base fare,
-// then ceil again since manual bookings are always cash.
-// "18" typed over "18.00" is the same fare, not a manual override.
-function sameFare(a: string, b: string): boolean {
-  const x = parseFloat(a);
-  const y = parseFloat(b);
-  return Number.isFinite(x) && Number.isFinite(y) ? Math.abs(x - y) < 0.005 : a === b;
-}
-
-function applyDiscountPreview(baseFare: number, code: DiscountCodeOption | undefined): number {
-  // Manual bookings are always cash; round up to the nearest dollar so the
-  // preview matches what will actually be charged (see submit-time Math.ceil).
-  if (!code) return Math.ceil(baseFare);
-  const amount =
-    code.amount_type === "percent"
-      ? Math.round(baseFare * (code.amount / 100) * 100) / 100
-      : Math.min(code.amount, baseFare);
-  return Math.ceil(baseFare - amount);
-}
+// compute_discount_for_booking's refusals, as translation keys. Shared by the
+// booking form's live discount line and its submit.
+const DISCOUNT_STATUS_KEYS: Record<string, string> = {
+  not_found: "booking.discountNotFound",
+  inactive: "booking.discountInactive",
+  not_started: "booking.discountNotStarted",
+  expired: "booking.discountExpired",
+  maxed: "booking.discountMaxed",
+  already_used: "booking.discountAlreadyUsed",
+};
 
 
 function DriverDetailPanel({
@@ -1974,13 +1962,13 @@ export default function DashboardPage({
   const [bookWheelchair, setBookWheelchair] = useState(false);
   const [bookDistanceMetres, setBookDistanceMetres] = useState<number | null>(null);
   const [bookBaseFare, setBookBaseFare] = useState<number | null>(null);
-  // The fare box shows what the passenger PAYS. bookFareAutoRef is the value
-  // this form last put there; if the box still holds it, submit prices from
-  // bookBaseFare (pre-discount). Until 2026-10-24 submit discounted whatever
-  // was in the box — which already had the discount in it, so a code was
-  // applied twice ($20, 10% off: shown $18, saved $17).
-  const bookFareAutoRef = useRef<string | null>(null);
-  const [bookDiscountNote, setBookDiscountNote] = useState<string | null>(null);
+  // The fare box is the fare BEFORE any discount, whether auto-calculated or
+  // typed; the discount and what the passenger pays are shown under it and
+  // applied once, at submit. Until 2026-10-25 the box held the discounted fare
+  // and submit discounted it again ($20, 10% off: shown $18, saved $17).
+  const [bookDiscountLine, setBookDiscountLine] = useState<
+    { kind: "ok"; text: string } | { kind: "refused"; text: string } | null
+  >(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
   const [companyBaseFare, setCompanyBaseFare] = useState<number | null>(null);
   const [companyRatePerKm, setCompanyRatePerKm] = useState<number | null>(null);
@@ -3444,51 +3432,54 @@ export default function DashboardPage({
   }, [bookDistanceMetres, bookVehicleClassId, companyBaseFare, companyRatePerKm]);
 
   useEffect(() => {
-    // Two steps. At once: the picked code's maths (applyDiscountPreview), so
-    // the box reacts to the dropdown. Then: compute_discount_for_booking for
-    // this passenger, the same call submit makes — which also knows about a
-    // student discount. An offer the passenger saved in the app never applies
-    // to a dispatch booking (20261025010000); the dispatcher picks the code.
-    // A box the dispatcher has typed into is never overwritten.
+    // A recalculated trip price replaces whatever is in the box, as it always
+    // has: a new route or vehicle class is a new fare.
     if (bookBaseFare == null) return;
-    const code = discountCodes.find((c) => c.code === bookDiscountCode);
-    const quick = applyDiscountPreview(bookBaseFare, code).toFixed(2);
-    const putAuto = (v: string) => {
-      // Read the ref BEFORE queueing the update: React may run the updater
-      // later, after the ref already holds `v`, and the box would then look
-      // typed-over and be charged as such.
-      const prevAuto = bookFareAutoRef.current;
-      setBookFare((prev) => (prevAuto == null || sameFare(prev, prevAuto) ? v : prev));
-      bookFareAutoRef.current = v;
-    };
-    putAuto(quick);
-    setBookDiscountNote(null);
-    if (!profile.company_id) return;
+    setBookFare(bookBaseFare.toFixed(2));
+  }, [bookBaseFare]);
+
+  useEffect(() => {
+    // What the passenger will pay: the same call submit makes, on the box's
+    // value, for this passenger (their student discount, their own limits on
+    // the code). A saved app offer never applies to a dispatch booking
+    // (20261025010000); the dispatcher picks the code.
+    setBookDiscountLine(null);
+    const fare = parseFloat(bookFare);
+    if (!profile.company_id || !Number.isFinite(fare) || fare <= 0) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const { data, error } = await supabase
         .rpc("compute_discount_for_booking", {
-          // No profile yet (a new number): nobody to have a student discount
-          // or a saved offer, so the all-zero id prices the code alone.
+          // No profile yet (a new number): nobody to have a student discount,
+          // so the all-zero id prices the code alone.
           p_user_id: bookPassengerId ?? "00000000-0000-0000-0000-000000000000",
           p_company_id: profile.company_id,
-          p_fare: bookBaseFare,
+          p_fare: fare,
           p_code: bookDiscountCode.trim() || null,
         })
         .maybeSingle();
       if (cancelled || error || !data) return;
       const d = data as { discounted_fare: number; discount_amount: number; discount_type: string | null; code_status: string };
-      // A refused code is reported at submit, with its reason; keep the quick
-      // figure until then.
-      if (bookDiscountCode.trim() && d.code_status !== "ok") return;
-      putAuto(Math.ceil(d.discounted_fare).toFixed(2));
-      if (d.discount_type === "student") setBookDiscountNote(t("booking.studentApplied"));
+      if (bookDiscountCode.trim() && d.code_status !== "ok") {
+        setBookDiscountLine({ kind: "refused", text: t(DISCOUNT_STATUS_KEYS[d.code_status] ?? "booking.discountFailed") });
+        return;
+      }
+      if (!(Number(d.discount_amount) > 0)) return;
+      setBookDiscountLine({
+        kind: "ok",
+        text: t("booking.discountLine", {
+          what: d.discount_type === "student" ? t("booking.studentDiscount") : bookDiscountCode.trim(),
+          amount: Number(d.discount_amount).toFixed(2),
+          // Cash rounds up to the dollar, exactly as submit does.
+          pays: Math.ceil(Number(d.discounted_fare)).toFixed(2),
+        }),
+      });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [bookBaseFare, bookDiscountCode, discountCodes, bookPassengerId, profile.company_id, t]);
+  }, [bookFare, bookDiscountCode, bookPassengerId, profile.company_id, t]);
 
   useEffect(() => {
     // Fetches the distance for the current pickup/dropoff unconditionally
@@ -3706,22 +3697,16 @@ export default function DashboardPage({
         }
         passengerProfile = { id: guestResult.id, name: guestResult.name };
       }
-      // Still the form's own figure -> price from the pre-discount base and let
-      // the server apply the discount. Typed over -> the dispatcher's number IS
-      // the fare, and no discount is applied on top of it. No auto figure ever
-      // (distance lookup failed) -> the typed number is the base, as before.
-      const fareOverridden = bookFareAutoRef.current != null && !sameFare(bookFare, bookFareAutoRef.current);
-      const baseFare =
-        bookFareAutoRef.current != null && !fareOverridden
-          ? bookBaseFare
-          : parseFloat(bookFare) || null;
+      // The box is the pre-discount fare (auto or typed); the discount is
+      // applied here, once.
+      const baseFare = parseFloat(bookFare) || null;
       let finalFare = baseFare;
       let preDiscountFare: number | null = null;
       let discountAmount: number | null = null;
       let discountType: string | null = null;
       let discountCodeId: string | null = null;
 
-      if (baseFare != null && baseFare > 0 && !fareOverridden) {
+      if (baseFare != null && baseFare > 0) {
         const { data: discountRaw, error: discountError } = await supabase
           .rpc("compute_discount_for_booking", {
             p_user_id: passengerProfile.id,
@@ -3741,16 +3726,8 @@ export default function DashboardPage({
         if (bookDiscountCode.trim() && discount?.code_status && discount.code_status !== "ok") {
           // Keys, not prose: the server returns a code and this is the one
           // place that turns it into words.
-          const messages: Record<string, string> = {
-            not_found: "booking.discountNotFound",
-            inactive: "booking.discountInactive",
-            not_started: "booking.discountNotStarted",
-            expired: "booking.discountExpired",
-            maxed: "booking.discountMaxed",
-            already_used: "booking.discountAlreadyUsed",
-          };
           setBookError(
-            t(messages[discount.code_status] ?? "booking.discountFailed"),
+            t(DISCOUNT_STATUS_KEYS[discount.code_status] ?? "booking.discountFailed"),
           );
           setBookLoading(false);
           return;
@@ -3854,8 +3831,7 @@ export default function DashboardPage({
       setBookVehicleClassId("");
       setBookDistanceMetres(null);
       setBookBaseFare(null);
-      bookFareAutoRef.current = null;
-      setBookDiscountNote(null);
+      setBookDiscountLine(null);
       setBookPassengerId(null);
       setBookDriver("");
       setBookScheduled("");
@@ -6465,7 +6441,7 @@ export default function DashboardPage({
                           marginLeft: 6,
                         }}
                       >
-                        {bookDiscountCode ? t("booking.autoCalcDiscount") : t("booking.autoCalc")}
+                        {t("booking.autoCalc")}
                       </span>
                     )}
                 </label>
@@ -6482,13 +6458,17 @@ export default function DashboardPage({
                     {t("booking.autoCalcFailed")}
                   </div>
                 )}
-                {bookFareAutoRef.current != null && !sameFare(bookFare, bookFareAutoRef.current) ? (
-                  <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>
-                    {t("booking.manualFareNoDiscount")}
+                {bookDiscountLine && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      marginTop: 4,
+                      color: bookDiscountLine.kind === "ok" ? "#1D9E75" : "#F59E0B",
+                    }}
+                  >
+                    {bookDiscountLine.text}
                   </div>
-                ) : bookDiscountNote ? (
-                  <div style={{ fontSize: 11, color: "#1D9E75", marginTop: 4 }}>{bookDiscountNote}</div>
-                ) : null}
+                )}
               </div>
               {vehicleClasses.length > 1 && (
                 <div>
