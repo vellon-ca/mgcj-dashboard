@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type React from "react";
 import { useTranslation } from "react-i18next";
 
 // Vellon AI: a "coming soon" placeholder for the dispatch assistant. Nothing
@@ -143,6 +144,104 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
   );
 }
 
+// The page backdrop: a dark street map at the edges, with taxis driving it and
+// ride requests appearing, being matched and routed. Decoration only — the map
+// is invented, and nothing on it stands for a real ride or driver. Masked out
+// toward the centre so it never sits under the text.
+const ROADS = [
+  "M-40 90 H1480", "M-40 270 H1480", "M-40 630 H1480", "M-40 810 H1480",
+  "M150 -40 V940", "M330 -40 V940", "M1110 -40 V940", "M1290 -40 V940",
+  "M600 -40 V90", "M840 -40 V90", "M600 810 V940", "M840 810 V940",
+  "M-40 450 C 60 450, 110 400, 150 360", "M1290 540 C 1340 480, 1400 450, 1480 450",
+];
+
+// Each taxi starts and ends off screen, so a repeat is seamless.
+const TAXIS = [
+  { d: "M-40 270 H330 V810 H1110 V940", dur: 26, begin: 0 },
+  { d: "M1480 90 H1110 V630 H1290 V-40", dur: 22, begin: -6 },
+  { d: "M150 940 V630 H330 V90 H1110 V-40", dur: 30, begin: -14 },
+  { d: "M1480 810 H1290 V270 H1480", dur: 16, begin: -3 },
+  { d: "M-40 630 H150 V-40", dur: 13, begin: -9 },
+  { d: "M840 -40 V90 H1290 V940", dur: 24, begin: -18 },
+];
+
+// A request appears (pin + ping), a route draws to the drop-off, then it clears.
+const RIDES = [
+  { x: 330, y: 630, route: "M330 630 V810 H600", to: [600, 810], delay: 0 },
+  { x: 1110, y: 270, route: "M1110 270 H1290 V90", to: [1290, 90], delay: 2.6 },
+  { x: 150, y: 270, route: "M150 270 V90 H330", to: [330, 90], delay: 5.2 },
+  { x: 1290, y: 630, route: "M1290 630 V810 H1000", to: [1000, 810], delay: 7.8 },
+];
+
+function Taxi() {
+  // Drawn pointing along +x so animateMotion's rotate="auto" faces it forward.
+  return (
+    <g transform="scale(1.25)">
+      <ellipse cx="22" cy="0" rx="20" ry="9" fill="url(#aib-beam)" />
+      <rect x="-12" y="-7" width="24" height="14" rx="4" fill="#F59E0B" />
+      <rect x="2" y="-5.5" width="6" height="11" rx="2" fill="#111827" fillOpacity="0.75" />
+      <rect x="-9" y="-5" width="4" height="10" rx="1.5" fill="#111827" fillOpacity="0.55" />
+      <rect x="-3" y="-3" width="4" height="6" rx="1" fill="#FFFBEB" />
+    </g>
+  );
+}
+
+function AiBackdrop({ animate }: { animate: boolean }) {
+  return (
+    <div className="aib" aria-hidden="true">
+      <svg className="aib-map" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id="aib-grid" width="45" height="45" patternUnits="userSpaceOnUse">
+            <path d="M45 0 H0 V45" fill="none" stroke="#FFFFFF" strokeOpacity="0.025" strokeWidth="1" />
+          </pattern>
+          <radialGradient id="aib-beam" cx="0%" cy="50%" r="100%">
+            <stop offset="0%" stopColor="#FEF3C7" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#FEF3C7" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        <g className="aib-pan">
+          <rect x="-200" y="-200" width="1840" height="1300" fill="url(#aib-grid)" />
+          {ROADS.map((d, i) => (
+            <path key={`r${i}`} d={d} fill="none" stroke="#1F2937" strokeOpacity="0.75" strokeWidth="16" strokeLinecap="round" />
+          ))}
+          {ROADS.map((d, i) => (
+            <path key={`c${i}`} d={d} fill="none" stroke="#FFFFFF" strokeOpacity="0.06" strokeWidth="1"
+              strokeDasharray="8 12" />
+          ))}
+
+          {RIDES.map((r, i) => (
+            <g key={`ride${i}`} className="aib-ride" style={{ "--d": `${r.delay}s` } as React.CSSProperties}>
+              <path className="aib-route" d={r.route} pathLength="100" fill="none" stroke="#E8500A"
+                strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <circle className="aib-ping" cx={r.x} cy={r.y} r="14" fill="none" stroke="#E8500A" strokeWidth="1.5" />
+              <g transform={`translate(${r.to[0]} ${r.to[1]})`}>
+                <g className="aib-drop">
+                  <rect x="-5" y="-5" width="10" height="10" rx="2" fill="#111827" stroke="#FDBA74" strokeWidth="2" />
+                </g>
+              </g>
+              <g transform={`translate(${r.x} ${r.y})`}>
+                <g className="aib-pin">
+                  <path d="M0 0 C -2 -6 -10 -11 -10 -19 A 10 10 0 1 1 10 -19 C 10 -11 2 -6 0 0 Z" fill="#E8500A" />
+                  <circle cx="0" cy="-19" r="3.5" fill="#111827" />
+                </g>
+              </g>
+            </g>
+          ))}
+
+          {animate && TAXIS.map((t, i) => (
+            <g key={`t${i}`}>
+              <Taxi />
+              <animateMotion dur={`${t.dur}s`} begin={`${t.begin}s`} repeatCount="indefinite"
+                rotate="auto" path={t.d} />
+            </g>
+          ))}
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 // The nav glyph: a four-point spark with a smaller one that twinkles.
 export function IconAi() {
   return (
@@ -195,10 +294,11 @@ export default function AiPage({ visible }: Props) {
 
   return (
     <div className="ai-page">
+      <AiBackdrop animate={visible && !reduced} />
       <style>{`
-        .ai-page { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 40px 24px; background:
+        .ai-page { position: relative; flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 40px 24px; background:
           radial-gradient(ellipse 60% 50% at 50% 38%, rgba(232,80,10,0.07), transparent 70%), #111827; }
-        .ai-inner { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 560px; width: 100%; }
+        .ai-inner { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 560px; width: 100%; }
 
         .ai-emblem { display: block; overflow: visible; }
         .ai-emblem .ai-spin { transform-box: view-box; transform-origin: 120px 120px; animation: ai-rotate linear infinite; }
@@ -241,9 +341,33 @@ export default function AiPage({ visible }: Props) {
         .ai-points span { display: inline-flex; align-items: center; gap: 6px; }
         .ai-points span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: #E8500A; opacity: 0.8; }
 
+        .aib { position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+          -webkit-mask-image: radial-gradient(ellipse 40% 46% at 50% 46%, transparent 0%, rgba(0,0,0,0.15) 55%, #000 100%);
+          mask-image: radial-gradient(ellipse 40% 46% at 50% 46%, transparent 0%, rgba(0,0,0,0.15) 55%, #000 100%); }
+        .aib-map { width: 100%; height: 100%; display: block; }
+        .aib-pan { animation: aib-pan 48s ease-in-out infinite alternate; }
+        @keyframes aib-pan { from { transform: translate(-18px, -10px); } to { transform: translate(18px, 10px); } }
+
+        .aib-route, .aib-ping, .aib-pin, .aib-drop { animation-duration: 10.4s; animation-iteration-count: infinite; animation-delay: var(--d); animation-fill-mode: both; }
+        .aib-route { stroke-dasharray: 100; stroke-dashoffset: 100; opacity: 0; animation-name: aib-route; animation-timing-function: ease-in-out; }
+        .aib-ping { transform-box: fill-box; transform-origin: center; opacity: 0; animation-name: aib-ping; animation-timing-function: ease-out; }
+        .aib-pin { transform-box: fill-box; transform-origin: 50% 100%; opacity: 0; animation-name: aib-pin; }
+        .aib-drop { transform-box: fill-box; transform-origin: center; opacity: 0; animation-name: aib-drop; }
+
+        @keyframes aib-pin { 0% { opacity: 0; transform: translateY(-16px) scale(0.6); } 6% { opacity: 1; transform: translateY(0) scale(1.08); }
+          9% { transform: translateY(0) scale(1); } 62% { opacity: 1; transform: translateY(0) scale(1); } 72%, 100% { opacity: 0; transform: translateY(0) scale(0.8); } }
+        @keyframes aib-ping { 0%, 5% { opacity: 0; transform: scale(0.4); } 7% { opacity: 0.7; } 26% { opacity: 0; transform: scale(2.6); }
+          27% { opacity: 0; transform: scale(0.4); } 29% { opacity: 0.5; } 46%, 100% { opacity: 0; transform: scale(2.6); } }
+        @keyframes aib-route { 0%, 14% { stroke-dashoffset: 100; opacity: 0.9; } 40% { stroke-dashoffset: 0; opacity: 0.9; }
+          62% { stroke-dashoffset: 0; opacity: 0.9; } 72%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+        @keyframes aib-drop { 0%, 38% { opacity: 0; transform: scale(0.3); } 43% { opacity: 1; transform: scale(1.2); }
+          47% { transform: scale(1); } 62% { opacity: 1; transform: scale(1); } 72%, 100% { opacity: 0; transform: scale(0.8); } }
+
         @media (prefers-reduced-motion: reduce) {
           .ai-emblem *, .ai-badge-dot, .ai-caret { animation: none !important; }
           .ai-emblem .ai-pulse { display: none; }
+          .aib-pan { animation: none; }
+          .aib-ride { display: none; }
         }
       `}</style>
 
