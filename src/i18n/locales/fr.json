@@ -20,6 +20,19 @@
     "rampOn": "Marqué accessible en fauteuil roulant",
     "rampOff": "Plus accessible en fauteuil roulant"
   },
+  "ai": {
+    "badge": "Bientôt disponible",
+    "title": "Vellon IA",
+    "subtitle": "Un assistant pour votre répartition. Posez vos questions sur les courses, les chauffeurs et les revenus en langage courant, et laissez-le signaler ce qui demande votre attention.",
+    "promptLabel": "Exemple de question",
+    "example1": "Combien de courses la voiture 7 a-t-elle faites la semaine dernière?",
+    "example2": "Quels chauffeurs ont le plus de courses payées comptant ce mois-ci?",
+    "example3": "Résume les plaintes des passagers de cette semaine.",
+    "example4": "Quand avons-nous manqué de chauffeurs le week-end dernier?",
+    "point1": "Questions en langage courant",
+    "point2": "Signale ce qui sort de l'ordinaire",
+    "point3": "Résume les commentaires"
+  },
   "analytics": {
     "acrossReviews_one": "sur {{count}} évaluation",
     "acrossReviews_other": "sur {{count}} évaluations",
@@ -764,6 +777,7 @@
     "yesterday": "Hier"
   },
   "nav": {
+    "ai": "Vellon IA",
     "analytics": "Analytique",
     "announcements": "Annonces",
     "discounts": "Rabais",
@@ -771,7 +785,8 @@
     "messages": "Messages",
     "reports": "Signalements",
     "rides": "Courses",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "soon": "Bientôt"
   },
   "noShow": {
     "reportedNoArrival": "Signalé à {{filed}} (heure d'arrivée non enregistrée)",

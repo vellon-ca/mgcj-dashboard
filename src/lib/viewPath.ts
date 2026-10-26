@@ -31,6 +31,7 @@ export const VIEW_PATHS = [
   "settings",
   "announcements",
   "messages",
+  "ai",
 ] as const;
 export type View = (typeof VIEW_PATHS)[number];
 

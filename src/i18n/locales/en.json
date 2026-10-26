@@ -20,6 +20,19 @@
     "rampOn": "Marked wheelchair accessible",
     "rampOff": "No longer wheelchair accessible"
   },
+  "ai": {
+    "badge": "Coming soon",
+    "title": "Vellon AI",
+    "subtitle": "An assistant for your dispatch desk. Ask about your rides, drivers and earnings in plain language, and let it point out what needs your attention.",
+    "promptLabel": "Example question",
+    "example1": "How many rides did car 7 do last week?",
+    "example2": "Which drivers have the most cash rides this month?",
+    "example3": "Summarize this week's passenger complaints.",
+    "example4": "When were we short on drivers last weekend?",
+    "point1": "Ask in plain language",
+    "point2": "Flags what looks unusual",
+    "point3": "Summarizes feedback"
+  },
   "analytics": {
     "acrossReviews_one": "across {{count}} review",
     "acrossReviews_other": "across {{count}} reviews",
@@ -764,6 +777,7 @@
     "yesterday": "Yesterday"
   },
   "nav": {
+    "ai": "Vellon AI",
     "analytics": "Analytics",
     "announcements": "Announcements",
     "discounts": "Discounts",
@@ -771,7 +785,8 @@
     "messages": "Messages",
     "reports": "Reports",
     "rides": "Rides",
-    "settings": "Settings"
+    "settings": "Settings",
+    "soon": "Soon"
   },
   "noShow": {
     "reportedNoArrival": "Reported {{filed}} (arrival time not recorded)",
