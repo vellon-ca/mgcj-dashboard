@@ -364,131 +364,132 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
 
   function codeStatusLabel(c: DiscountCode) {
     const now = new Date();
-    if (!c.active) return { label: t("common.inactive"), color: "#6B7280" };
+    if (!c.active) return { label: t("common.inactive"), color: "var(--c-text-3)" };
     if (c.starts_at && now < new Date(c.starts_at))
-      return { label: t("discounts.statusScheduled"), color: "#F59E0B" };
+      return { label: t("discounts.statusScheduled"), color: "var(--c-amber)" };
     if (c.ends_at && now >= new Date(c.ends_at))
-      return { label: t("discounts.statusExpired"), color: "#E24B4A" };
-    return { label: t("common.active"), color: "#1D9E75" };
+      return { label: t("discounts.statusExpired"), color: "var(--c-red)" };
+    return { label: t("common.active"), color: "var(--c-green)" };
   }
 
   return (
     <div className="dc-wrap">
       <style>{`
         .dc-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
-        .dc-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .dc-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .dc-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
-        .dc-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
-        .dc-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
-        .dc-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: #111827; }
+        .dc-panel { width: 200px; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
+        .dc-panel-title { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .dc-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .dc-section-btn:hover { background: var(--c-hover); color: var(--c-text-2); }
+        .dc-section-btn.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); color: var(--c-brand); }
+        .dc-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: var(--c-bg); }
         .dc-content::-webkit-scrollbar { width: 4px; }
-        .dc-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .dc-content::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
 
         .dc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
-        .dc-title { font-size: 18px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
-        .dc-subtitle-text { font-size: 13px; color: #6B7280; line-height: 1.5; max-width: 720px; }
+        .dc-title { font-size: 18px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
+        .dc-subtitle-text { font-size: 13px; color: var(--c-text-2); line-height: 1.5; max-width: 720px; }
 
-        .dc-save-btn { background: #E8500A; color: #fff; border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, opacity 0.12s; flex-shrink: 0; white-space: nowrap; }
-        .dc-save-btn:hover:not(:disabled) { background: #D6470B; }
+        .dc-save-btn { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, opacity 0.12s; flex-shrink: 0; white-space: nowrap; }
+        .dc-save-btn:hover:not(:disabled) { background: var(--c-brand-fill); }
         .dc-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .dc-save-btn.dc-saved { background: rgba(29,158,117,0.12); color: #1D9E75; }
+        .dc-save-btn.dc-saved { background: var(--c-surface-alt); color: var(--c-green); }
 
         .dc-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .dc-summary-card { background: #1E2A3A; border-radius: 10px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .dc-summary-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
-        .dc-summary-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; }
+        .dc-summary-card { background: var(--c-surface); border-radius: 10px; padding: 16px; border: 1px solid var(--c-border-subtle); }
+        .dc-summary-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .dc-summary-value { font-size: 22px; font-weight: 700; color: var(--c-text); line-height: 1; }
 
         .dc-settings-grid { display: flex; flex-direction: column; gap: 16px; }
 
-        .dc-card { background: #1E2A3A; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .dc-card-label { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
+        .dc-card { background: var(--c-surface); border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--c-border-subtle); }
+        .dc-card-label { font-size: 11px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
 
         .dc-toggle-row { display: flex; align-items: center; justify-content: space-between; }
         .dc-toggle-text { display: flex; flex-direction: column; gap: 2px; }
-        .dc-toggle-title { font-size: 14px; font-weight: 600; color: #E2E8F0; }
-        .dc-toggle-sub { font-size: 12px; color: #6B7280; }
+        .dc-toggle-title { font-size: 14px; font-weight: 600; color: var(--c-text); }
+        .dc-toggle-sub { font-size: 12px; color: var(--c-text-2); }
 
-        .dc-switch { position: relative; width: 42px; height: 24px; border-radius: 12px; border: none; background: rgba(255,255,255,0.1); cursor: pointer; transition: background 0.15s; flex-shrink: 0; padding: 0; }
-        .dc-switch.on { background: #E8500A; }
+        .dc-switch { position: relative; width: 42px; height: 24px; border-radius: 12px; border: none; background: var(--c-border-strong); cursor: pointer; transition: background 0.15s; flex-shrink: 0; padding: 0; }
+        .dc-switch.on { background: var(--c-brand-fill); }
         .dc-switch-knob { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 9px; background: #fff; transition: transform 0.15s; }
         .dc-switch.on .dc-switch-knob { transform: translateX(18px); }
 
-        .dc-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 16px 0; }
+        .dc-divider { height: 1px; background: var(--c-hover); margin: 16px 0; }
 
         .dc-pct-row { display: flex; align-items: center; justify-content: space-between; }
         .dc-pct-label { display: flex; flex-direction: column; gap: 2px; }
         .dc-pct-input-wrap { display: flex; align-items: center; gap: 8px; opacity: 1; transition: opacity 0.15s; }
         .dc-pct-input-wrap.disabled { opacity: 0.4; pointer-events: none; }
-        .dc-pct-input { width: 64px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #111827; color: #F1F5F9; font-size: 14px; font-weight: 600; font-family: system-ui, sans-serif; text-align: center; }
-        .dc-pct-input:focus { outline: none; border-color: #E8500A; }
-        .dc-pct-suffix { font-size: 14px; color: #6B7280; font-weight: 600; }
+        .dc-pct-input { width: 64px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 14px; font-weight: 600; font-family: system-ui, sans-serif; text-align: center; }
+        .dc-pct-input:focus { outline: none; border-color: var(--c-brand); }
+        .dc-pct-suffix { font-size: 14px; color: var(--c-text-2); font-weight: 600; }
 
-        .dc-schools-empty { font-size: 13px; color: #6B7280; padding: 8px 0; }
+        .dc-schools-empty { font-size: 13px; color: var(--c-text-2); padding: 8px 0; }
         .dc-schools { display: flex; flex-wrap: wrap; gap: 8px; }
-        .dc-school-chip { padding: 9px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #9CA3AF; font-size: 13px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, border-color 0.12s, color 0.12s; }
-        .dc-school-chip:hover { border-color: rgba(255,255,255,0.2); color: #E2E8F0; }
-        .dc-school-chip.selected { background: rgba(232,80,10,0.12); border-color: #E8500A; color: #E8500A; }
+        .dc-school-chip { padding: 9px 16px; border-radius: 20px; border: 1px solid var(--c-border); background: transparent; color: var(--c-text-2); font-size: 13px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, border-color 0.12s, color 0.12s; }
+        .dc-school-chip:hover { border-color: var(--c-border-strong); color: var(--c-text); }
+        .dc-school-chip.selected { background: var(--c-surface-sel); border-color: var(--c-brand); color: var(--c-brand); }
 
-        .dc-note { font-size: 12px; color: #6B7280; line-height: 1.5; margin-top: 14px; }
-        .dc-loading { color: #6B7280; text-align: center; padding: 60px; font-size: 14px; }
-        .dc-empty { color: #6B7280; font-size: 14px; text-align: center; padding: 48px 0; }
+        .dc-note { font-size: 12px; color: var(--c-text-2); line-height: 1.5; margin-top: 14px; }
+        .dc-loading { color: var(--c-text-2); text-align: center; padding: 60px; font-size: 14px; }
+        .dc-empty { color: var(--c-text-2); font-size: 14px; text-align: center; padding: 48px 0; }
 
         /* CODE LIST */
         .dc-codes-grid { display: flex; flex-direction: column; gap: 10px; }
-        .dc-code-card { background: #1E2A3A; border-radius: 12px; padding: 18px; border: 1px solid rgba(255,255,255,0.05); }
+        .dc-code-card { background: var(--c-surface); border-radius: 12px; padding: 18px; border: 1px solid var(--c-border-subtle); }
         .dc-code-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
         .dc-code-name-row { display: flex; align-items: center; gap: 8px; }
-        .dc-code-name { font-size: 15px; font-weight: 700; color: #F1F5F9; letter-spacing: 0.02em; }
-        .dc-copy-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: #6B7280; cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; flex-shrink: 0; }
-        .dc-copy-btn:hover { background: rgba(255,255,255,0.09); color: #E2E8F0; }
-        .dc-copy-btn.copied { background: rgba(29,158,117,0.12); border-color: rgba(29,158,117,0.3); color: #1D9E75; }
-        .dc-code-label { font-size: 12px; color: #6B7280; margin-top: 2px; }
-        .dc-code-status { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+        .dc-code-name { font-size: 15px; font-weight: 700; color: var(--c-text); letter-spacing: 0.02em; }
+        .dc-copy-btn { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; background: var(--c-hover); border: 1px solid var(--c-border); border-radius: 6px; color: var(--c-text-2); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; flex-shrink: 0; }
+        .dc-copy-btn:hover { background: var(--c-hover-strong); color: var(--c-text); }
+        .dc-copy-btn.copied { background: var(--c-surface-alt); border-color: var(--c-border); color: var(--c-green); }
+        .dc-code-label { font-size: 12px; color: var(--c-text-2); margin-top: 2px; }
+        .dc-code-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c-text); white-space: nowrap; flex-shrink: 0; }
+        .dc-code-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--c-text-2)); }
         .dc-code-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 12px; max-width: 560px; }
         .dc-code-meta-item { display: flex; flex-direction: column; gap: 2px; }
-        .dc-code-meta-label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-        .dc-code-meta-value { font-size: 13px; color: #E2E8F0; font-weight: 500; }
-        .dc-code-actions { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); }
+        .dc-code-meta-label { font-size: 10px; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+        .dc-code-meta-value { font-size: 13px; color: var(--c-text); font-weight: 500; }
+        .dc-code-actions { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--c-border-subtle); }
         .dc-code-action { padding: 6px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; border: none; transition: opacity 0.12s, background 0.12s; }
-        .dc-action-edit { background: rgba(255,255,255,0.05); color: #9CA3AF; border: 1px solid rgba(255,255,255,0.08) !important; }
-        .dc-action-edit:hover { background: rgba(255,255,255,0.09); }
-        .dc-action-history { background: rgba(74,158,255,0.08); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2) !important; }
-        .dc-action-history:hover { background: rgba(74,158,255,0.15); }
-        .dc-action-toggle { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2) !important; }
-        .dc-action-toggle:hover { background: rgba(29,158,117,0.15); }
-        .dc-action-toggle.off { background: rgba(255,255,255,0.05); color: #6B7280; border: 1px solid rgba(255,255,255,0.08) !important; }
-        .dc-action-delete { background: rgba(248,113,113,0.08); color: #F87171; border: 1px solid rgba(248,113,113,0.2) !important; }
-        .dc-action-delete:hover { background: rgba(248,113,113,0.15); }
+        .dc-action-edit { background: var(--c-hover); color: var(--c-text-2); border: 1px solid var(--c-border) !important; }
+        .dc-action-edit:hover { background: var(--c-hover-strong); }
+        .dc-action-history { background: var(--c-surface-alt); color: var(--c-blue); border: 1px solid var(--c-border) !important; }
+        .dc-action-history:hover { background: var(--c-surface-alt); }
+        .dc-action-toggle { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border) !important; }
+        .dc-action-toggle:hover { background: var(--c-surface-alt); }
+        .dc-action-toggle.off { background: var(--c-hover); color: var(--c-text-2); border: 1px solid var(--c-border) !important; }
+        .dc-action-delete { background: var(--c-surface-alt); color: var(--c-red); border: 1px solid var(--c-border) !important; }
+        .dc-action-delete:hover { background: var(--c-surface-alt); }
 
-        .dc-redemptions { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); }
-        .dc-redemption-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 12px; color: #9CA3AF; border-bottom: 1px solid rgba(255,255,255,0.03); }
-        .dc-redemption-name { color: #E2E8F0; font-weight: 500; }
-        .dc-redemption-empty { font-size: 12px; color: #6B7280; padding: 8px 0; }
+        .dc-redemptions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--c-border-subtle); }
+        .dc-redemption-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 12px; color: var(--c-text-2); border-bottom: 1px solid var(--c-border-subtle); }
+        .dc-redemption-name { color: var(--c-text); font-weight: 500; }
+        .dc-redemption-empty { font-size: 12px; color: var(--c-text-2); padding: 8px 0; }
 
         /* CREATE/EDIT FORM */
-        .dc-form-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-        .dc-form { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-        .dc-form-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 18px; }
+        .dc-form-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .dc-form { background: var(--c-surface); border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid var(--c-border); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px var(--c-shadow); }
+        .dc-form-title { font-size: 17px; font-weight: 700; color: var(--c-text); margin-bottom: 18px; }
         .dc-form-field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
-        .dc-form-label { font-size: 12px; color: #9CA3AF; font-weight: 500; }
-        .dc-form-input { padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #111827; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; }
-        .dc-form-input:focus { outline: none; border-color: #E8500A; }
+        .dc-form-label { font-size: 12px; color: var(--c-text-2); font-weight: 500; }
+        .dc-form-input { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; }
+        .dc-form-input:focus { outline: none; border-color: var(--c-brand); }
         .dc-form-code-row { display: flex; gap: 8px; }
         .dc-form-code-row .dc-form-input { flex: 1; }
-        .dc-form-generate { background: rgba(232,80,10,0.1); color: #E8500A; border: 1px solid rgba(232,80,10,0.25); border-radius: 8px; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; white-space: nowrap; transition: background 0.12s; }
-        .dc-form-generate:hover { background: rgba(232,80,10,0.18); }
+        .dc-form-generate { background: var(--c-surface-sel); color: var(--c-brand); border: 1px solid var(--c-border); border-radius: 8px; padding: 9px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; white-space: nowrap; transition: background 0.12s; }
+        .dc-form-generate:hover { background: var(--c-surface-sel); }
         .dc-form-row { display: flex; gap: 10px; }
         .dc-form-row .dc-form-field { flex: 1; }
-        .dc-form-select { padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #111827; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; }
+        .dc-form-select { padding: 9px 12px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; }
         .dc-form-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
-        .dc-form-toggle-label { font-size: 13px; color: #E2E8F0; }
-        .dc-form-hint { font-size: 11px; color: #6B7280; margin-top: -2px; }
+        .dc-form-toggle-label { font-size: 13px; color: var(--c-text); }
+        .dc-form-hint { font-size: 11px; color: var(--c-text-2); margin-top: -2px; }
         .dc-form-actions { display: flex; gap: 8px; margin-top: 20px; }
-        .dc-form-cancel { flex: 1; background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 10px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
-        .dc-form-cancel:hover { background: rgba(255,255,255,0.04); }
-        .dc-form-submit { flex: 1; background: #E8500A; border: none; color: #fff; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; }
-        .dc-form-submit:hover { background: #D6470B; }
+        .dc-form-cancel { flex: 1; background: transparent; border: 1px solid var(--c-border); color: var(--c-text-2); border-radius: 8px; padding: 10px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
+        .dc-form-cancel:hover { background: var(--c-hover); }
+        .dc-form-submit { flex: 1; background: var(--c-brand-fill); border: none; color: var(--c-on-brand); border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; }
+        .dc-form-submit:hover { background: var(--c-brand-fill); }
         .dc-form-submit:disabled { opacity: 0.6; cursor: not-allowed; }
       `}</style>
 
@@ -532,7 +533,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                   <div className="dc-summary-label">{t("common.status")}</div>
                   <div
                     className="dc-summary-value"
-                    style={{ color: enabled ? "#1D9E75" : "#6B7280", fontSize: 16 }}
+                    style={{ color: enabled ? "var(--c-green)" : "var(--c-text-2)", fontSize: 16 }}
                   >
                     {enabled ? t("discounts.enabled") : t("discounts.disabled")}
                   </div>
@@ -667,11 +668,7 @@ export default function DiscountsPage({ companyId, adminId }: Props) {
                       </div>
                       <span
                         className="dc-code-status"
-                        style={{
-                          background: status.color + "18",
-                          color: status.color,
-                          border: `1px solid ${status.color}30`,
-                        }}
+                        style={{ "--dot": status.color } as React.CSSProperties}
                       >
                         {status.label}
                       </span>

@@ -786,7 +786,9 @@
     "reports": "Signalements",
     "rides": "Courses",
     "settings": "Paramètres",
-    "soon": "Bientôt"
+    "soon": "Bientôt",
+    "lightMode": "Mode clair",
+    "darkMode": "Mode sombre"
   },
   "noShow": {
     "reportedNoArrival": "Signalé à {{filed}} (heure d'arrivée non enregistrée)",

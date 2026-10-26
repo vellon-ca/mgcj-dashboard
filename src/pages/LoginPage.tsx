@@ -91,7 +91,7 @@ export default function LoginPage() {
 
         .login-page {
           min-height: 100vh;
-          background: #0A1628;
+          background: var(--c-bg);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -105,7 +105,8 @@ export default function LoginPage() {
           width: 600px;
           height: 600px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%);
+          /* Was an indigo glow, i.e. a wash. The card carries the page now. */
+          background: none;
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
@@ -114,13 +115,13 @@ export default function LoginPage() {
 
         .login-card {
           position: relative;
-          background: #0F1F35;
+          background: var(--c-surface);
           border-radius: 20px;
           padding: 44px 40px;
           width: 100%;
           max-width: 400px;
-          border: 1px solid rgba(255,255,255,0.06);
-          box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+          border: 1px solid var(--c-border);
+          box-shadow: 0 24px 64px var(--c-shadow);
         }
 
         .login-wordmark {
@@ -135,14 +136,14 @@ export default function LoginPage() {
           font-family: 'Rajdhani', system-ui, sans-serif;
           font-size: 40px;
           font-weight: 700;
-          color: #E2E8F0;
+          color: var(--c-text);
           letter-spacing: 0.1em;
           text-transform: uppercase;
         }
 
         .login-subtitle {
           font-size: 13px;
-          color: #94A3B8;
+          color: var(--c-text-2);
           text-align: center;
           margin-bottom: 36px;
           letter-spacing: 0.04em;
@@ -153,7 +154,7 @@ export default function LoginPage() {
         .login-rule {
           width: 40px;
           height: 1px;
-          background: rgba(99,102,241,0.3);
+          background: var(--c-border-strong);
           margin: 0 auto 36px;
         }
 
@@ -165,7 +166,7 @@ export default function LoginPage() {
 
         .login-label {
           font-size: 11px;
-          color: #4A6080;
+          color: var(--c-text-2);
           font-weight: 600;
           letter-spacing: 0.06em;
           text-transform: uppercase;
@@ -175,15 +176,15 @@ export default function LoginPage() {
 
         .login-field {
           display: flex;
-          background: #0A1628;
+          background: var(--c-input);
           border-radius: 10px;
-          border: 1px solid rgba(255,255,255,0.06);
+          border: 1px solid var(--c-border);
           overflow: hidden;
           transition: border-color 0.15s;
         }
 
         .login-field:focus-within {
-          border-color: rgba(99,102,241,0.4);
+          border-color: var(--c-brand);
         }
 
         .login-input {
@@ -193,21 +194,21 @@ export default function LoginPage() {
           outline: none;
           padding: 13px 14px;
           font-size: 15px;
-          color: #F1F5F9;
+          color: var(--c-text);
           font-family: 'Inter', system-ui, sans-serif;
         }
 
-        .login-input::placeholder { color: #2A3F58; }
+        .login-input::placeholder { color: var(--c-text-3); }
 
         .login-otp-input {
           width: 100%;
-          background: #0A1628;
-          border: 1px solid rgba(255,255,255,0.06);
+          background: var(--c-input);
+          border: 1px solid var(--c-border);
           border-radius: 10px;
           outline: none;
           padding: 16px;
           font-size: 28px;
-          color: #F1F5F9;
+          color: var(--c-text);
           font-family: 'Inter', system-ui, sans-serif;
           text-align: center;
           letter-spacing: 0.35em;
@@ -216,24 +217,24 @@ export default function LoginPage() {
         }
 
         .login-otp-input:focus {
-          border-color: rgba(99,102,241,0.4);
+          border-color: var(--c-brand);
         }
 
         .login-hint {
           font-size: 12px;
-          color: #2A3F58;
+          color: var(--c-text-2);
           text-align: center;
           line-height: 1.5;
         }
 
         .login-hint strong {
-          color: #4A6080;
+          color: var(--c-text-2);
           font-weight: 500;
         }
 
         .login-btn {
-          background: #E8500A;
-          color: #fff;
+          background: var(--c-brand-fill);
+          color: var(--c-on-brand);
           border: none;
           border-radius: 10px;
           padding: 14px;
@@ -246,13 +247,13 @@ export default function LoginPage() {
           margin-top: 2px;
         }
 
-        .login-btn:hover:not(:disabled) { opacity: 0.9; }
+        .login-btn:hover:not(:disabled) { background: var(--c-brand-fill-hover); }
         .login-btn:active:not(:disabled) { transform: scale(0.99); }
         .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .login-back-btn {
           background: transparent;
-          color: #4A6080;
+          color: var(--c-text-2);
           border: none;
           font-size: 13px;
           cursor: pointer;
@@ -262,25 +263,25 @@ export default function LoginPage() {
           transition: color 0.15s;
         }
 
-        .login-back-btn:hover { color: #94A3B8; }
+        .login-back-btn:hover { color: var(--c-text); }
 
         .login-error {
-          background: rgba(226,75,74,0.08);
-          color: #F87171;
+          background: var(--c-surface-alt);
+          color: var(--c-red);
           border-radius: 8px;
           padding: 10px 14px;
           font-size: 13px;
-          border: 1px solid rgba(226,75,74,0.2);
+          border: 1px solid var(--c-border);
           line-height: 1.4;
         }
 
         .login-footer {
           margin-top: 28px;
           padding-top: 20px;
-          border-top: 1px solid rgba(255,255,255,0.06);
+          border-top: 1px solid var(--c-border);
           text-align: center;
           font-size: 12px;
-          color: #94A3B8;
+          color: var(--c-text-2);
           letter-spacing: 0.04em;
         }
       `}</style>

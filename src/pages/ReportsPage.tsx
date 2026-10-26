@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import Icon from "../components/Icon";
 import { useSubView } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
@@ -40,9 +41,11 @@ interface ReportRow {
 const HIGH_SEVERITY = new Set(["unsafe_driving", "harassment"]);
 
 const STATUS_COLORS: Record<string, string> = {
-  open: "#F59E0B",
-  reviewed: "#1D9E75",
-  dismissed: "#6B7280",
+  // Theme variables for the status dot (src/theme/tokens.ts). Never append an
+  // alpha to these: they are var() references, and washes are gone.
+  open: "var(--c-amber)",
+  reviewed: "var(--c-green)",
+  dismissed: "var(--c-text-3)",
 };
 
 interface Props {
@@ -431,115 +434,115 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
         .rp-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
 
         /* LEFT PANEL */
-        .rp-panel { width: 210px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; overflow-y: auto; }
-        .rp-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .rp-filter-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 40px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; gap: 6px; }
-        .rp-filter-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
-        .rp-filter-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
-        .rp-filter-count { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: rgba(255,255,255,0.06); color: #6B7280; flex-shrink: 0; }
-        .rp-filter-btn.active .rp-filter-count { background: rgba(232,80,10,0.15); color: #E8500A; }
-        .rp-filter-count.urgent { background: rgba(248,113,113,0.12); color: #F87171; }
+        .rp-panel { width: 210px; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; overflow-y: auto; }
+        .rp-panel-title { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .rp-filter-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 40px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; gap: 6px; }
+        .rp-filter-btn:hover { background: var(--c-hover); color: var(--c-text-2); }
+        .rp-filter-btn.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); color: var(--c-brand); }
+        .rp-filter-count { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 8px; background: var(--c-hover); color: var(--c-text-2); flex-shrink: 0; }
+        .rp-filter-btn.active .rp-filter-count { background: var(--c-surface-sel); color: var(--c-brand); }
+        .rp-filter-count.urgent { background: var(--c-surface-alt); color: var(--c-red); }
 
-        .rp-panel-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 10px 16px; }
-        .rp-panel-subtitle { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; padding: 8px 16px 6px; }
-        .rp-driver-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 12px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: system-ui, sans-serif; gap: 6px; }
-        .rp-driver-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
-        .rp-driver-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
+        .rp-panel-divider { height: 1px; background: var(--c-hover); margin: 10px 16px; }
+        .rp-panel-subtitle { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.07em; text-transform: uppercase; padding: 8px 16px 6px; }
+        .rp-driver-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 34px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 12px; font-weight: 500; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s; font-family: system-ui, sans-serif; gap: 6px; }
+        .rp-driver-btn:hover { background: var(--c-hover); color: var(--c-text-2); }
+        .rp-driver-btn.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); color: var(--c-brand); }
         .rp-driver-btn-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rp-driver-report-count { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 6px; background: rgba(255,255,255,0.05); color: #6B7280; flex-shrink: 0; }
+        .rp-driver-report-count { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 6px; background: var(--c-hover); color: var(--c-text-2); flex-shrink: 0; }
 
         /* CONTENT */
-        .rp-content { flex: 1; overflow-y: auto; padding: 24px; background: #111827; }
+        .rp-content { flex: 1; overflow-y: auto; padding: 24px; background: var(--c-bg); }
         .rp-content::-webkit-scrollbar { width: 4px; }
-        .rp-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .rp-content::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
 
         .rp-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-        .rp-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
-        .rp-subtitle-text { font-size: 12px; color: #6B7280; margin-top: 2px; }
+        .rp-title { font-size: 18px; font-weight: 700; color: var(--c-text); }
+        .rp-subtitle-text { font-size: 12px; color: var(--c-text-2); margin-top: 2px; }
 
         /* SUMMARY STRIP */
         .rp-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-        .rp-summary-card { background: #1E2A3A; border-radius: 10px; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .rp-summary-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
-        .rp-summary-value { font-size: 24px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .rp-summary-sub { font-size: 11px; color: #6B7280; margin-top: 4px; }
+        .rp-summary-card { background: var(--c-surface); border-radius: 10px; padding: 14px 16px; border: 1px solid var(--c-border-subtle); }
+        .rp-summary-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+        .rp-summary-value { font-size: 24px; font-weight: 700; color: var(--c-text); line-height: 1; }
+        .rp-summary-sub { font-size: 11px; color: var(--c-text-2); margin-top: 4px; }
 
         /* REPORT CARD */
-        .rp-card { background: #1E2A3A; border-radius: 12px; padding: 0; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.14s, background 0.14s; overflow: hidden; display: flex; }
-        .rp-card:hover { border-color: rgba(255,255,255,0.12); background: #213040; }
-        .rp-card.high-severity { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
-        .rp-card.high-severity:hover { background: #1f1010; border-color: rgba(248,113,113,0.35); }
+        .rp-card { background: var(--c-surface); border-radius: 12px; padding: 0; margin-bottom: 8px; border: 1px solid var(--c-border-subtle); cursor: pointer; transition: border-color 0.14s, background 0.14s; overflow: hidden; display: flex; }
+        .rp-card:hover { border-color: var(--c-border-strong); background: var(--c-surface); }
+        /* High severity, still open: a red border, not a red-tinted card. */
+        .rp-card.high-severity, .rp-card.high-severity:hover { border-color: var(--c-red); }
         .rp-card.dismissed-card { opacity: 0.5; }
 
-        .rp-card-accent { width: 4px; flex-shrink: 0; }
         .rp-card-body { flex: 1; padding: 14px 16px; min-width: 0; }
 
         .rp-card-row1 { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
-        .rp-card-reason { font-size: 14px; font-weight: 600; color: #E2E8F0; flex: 1; min-width: 0; }
-        .rp-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+        .rp-card-reason { font-size: 14px; font-weight: 600; color: var(--c-text); flex: 1; min-width: 0; }
+        .rp-status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c-text); white-space: nowrap; flex-shrink: 0; }
+        .rp-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--c-text-2)); }
 
         .rp-card-row2 { display: flex; gap: 16px; margin-bottom: 6px; flex-wrap: wrap; }
-        .rp-card-person { font-size: 12px; color: #9CA3AF; }
-        .rp-card-person span { color: #6B7280; }
+        .rp-card-person { font-size: 12px; color: var(--c-text-2); }
+        .rp-card-person span { color: var(--c-text-2); }
 
-        .rp-card-addr { font-size: 11px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+        .rp-card-addr { font-size: 11px; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
 
         .rp-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-        .rp-card-date { font-size: 11px; color: #6B7280; }
-        .rp-card-view-hint { font-size: 11px; color: #4a9eff; opacity: 0.7; }
+        .rp-card-date { font-size: 11px; color: var(--c-text-2); }
+        .rp-card-view-hint { font-size: 11px; color: var(--c-blue); opacity: 0.7; }
 
-        .rp-severity-inline { font-size: 10px; color: #F87171; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.18); border-radius: 5px; padding: 1px 7px; display: inline-block; margin-bottom: 6px; }
+        .rp-severity-inline { font-size: 10px; color: var(--c-red); background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 5px; padding: 1px 7px; display: inline-block; margin-bottom: 6px; }
 
-        .rp-comment-preview { font-size: 12px; color: #6B7280; font-style: italic; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rp-comment-preview { font-size: 12px; color: var(--c-text-2); font-style: italic; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-        .rp-empty { color: #6B7280; font-size: 14px; text-align: center; padding: 60px 0; }
-        .rp-loading { color: #6B7280; text-align: center; padding: 60px; font-size: 14px; }
+        .rp-empty { color: var(--c-text-2); font-size: 14px; text-align: center; padding: 60px 0; }
+        .rp-loading { color: var(--c-text-2); text-align: center; padding: 60px; font-size: 14px; }
 
         /* MODAL */
-        .rp-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); padding: 20px; }
-        .rp-modal { background: #1A2535; border-radius: 16px; width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 24px 64px rgba(0,0,0,0.6); }
-        .rp-modal-header { padding: 20px 22px 16px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; }
+        .rp-modal-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px); padding: 20px; }
+        .rp-modal { background: var(--c-surface); color: var(--c-text); border-radius: 16px; width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--c-border); box-shadow: 0 24px 64px var(--c-shadow); }
+        .rp-modal-header { padding: 20px 22px 16px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; }
         .rp-modal-header-left { flex: 1; min-width: 0; }
-        .rp-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; user-select: all; }
-        .rp-modal-title { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
-        .rp-modal-subtitle { font-size: 12px; color: #6B7280; }
+        .rp-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--c-text-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em; user-select: all; }
+        .rp-modal-title { font-size: 16px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
+        .rp-modal-subtitle { font-size: 12px; color: var(--c-text-2); }
         .rp-modal-header-actions { display: flex; gap: 8px; flex-shrink: 0; }
-        .rp-print-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #9CA3AF; border-radius: 7px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .rp-print-btn:hover { background: rgba(255,255,255,0.09); color: #E2E8F0; }
-        .rp-modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 7px; padding: 6px 10px; font-size: 16px; line-height: 1; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .rp-modal-close:hover { background: rgba(255,255,255,0.05); color: #9CA3AF; }
+        .rp-print-btn { background: var(--c-hover); border: 1px solid var(--c-border); color: var(--c-text-2); border-radius: 7px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
+        .rp-print-btn:hover { background: var(--c-hover-strong); color: var(--c-text); }
+        .rp-modal-close { background: transparent; border: 1px solid var(--c-border); color: var(--c-text-2); border-radius: 7px; padding: 6px 10px; font-size: 16px; line-height: 1; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .rp-modal-close:hover { background: var(--c-hover); color: var(--c-text-2); }
 
         .rp-modal-body { flex: 1; overflow-y: auto; padding: 0 22px 22px; }
         .rp-modal-body::-webkit-scrollbar { width: 4px; }
-        .rp-modal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .rp-modal-body::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
 
-        .rp-modal-section { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 8px; }
-        .rp-detail-row { display: flex; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); gap: 12px; }
+        .rp-modal-section { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.08em; margin: 18px 0 8px; }
+        .rp-detail-row { display: flex; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--c-border-subtle); gap: 12px; }
         .rp-detail-row:last-child { border-bottom: none; }
-        .rp-detail-label { font-size: 12px; color: #6B7280; width: 120px; flex-shrink: 0; padding-top: 1px; }
-        .rp-detail-value { font-size: 13px; color: #E2E8F0; flex: 1; }
-        .rp-detail-value.muted { color: #6B7280; font-style: italic; }
+        .rp-detail-label { font-size: 12px; color: var(--c-text-2); width: 120px; flex-shrink: 0; padding-top: 1px; }
+        .rp-detail-value { font-size: 13px; color: var(--c-text); flex: 1; }
+        .rp-detail-value.muted { color: var(--c-text-2); font-style: italic; }
 
-        .rp-comment-block { background: rgba(255,255,255,0.03); border-left: 2px solid #2D3F52; border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: 13px; color: #9CA3AF; font-style: italic; margin-top: 4px; }
+        .rp-comment-block { background: var(--c-hover); border-left: 2px solid var(--c-border-strong); border-radius: 0 6px 6px 0; padding: 10px 14px; font-size: 13px; color: var(--c-text-2); font-style: italic; margin-top: 4px; }
 
-        .rp-driver-history-note { display: inline-flex; align-items: center; gap: 5px; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.18); border-radius: 6px; padding: 3px 9px; font-size: 11px; color: #F87171; margin-top: 4px; }
-        .rp-driver-history-ok { display: inline-flex; align-items: center; gap: 5px; background: rgba(29,158,117,0.08); border: 1px solid rgba(29,158,117,0.18); border-radius: 6px; padding: 3px 9px; font-size: 11px; color: #1D9E75; margin-top: 4px; }
+        .rp-driver-history-note { display: inline-flex; align-items: center; gap: 5px; background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 6px; padding: 3px 9px; font-size: 11px; color: var(--c-red); margin-top: 4px; }
+        .rp-driver-history-ok { display: inline-flex; align-items: center; gap: 5px; background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 6px; padding: 3px 9px; font-size: 11px; color: var(--c-green); margin-top: 4px; }
 
-        .rp-notes-label { font-size: 12px; color: #9CA3AF; margin-bottom: 8px; margin-top: 16px; }
-        .rp-notes-textarea { width: 100%; background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #E2E8F0; font-family: system-ui, sans-serif; resize: vertical; min-height: 72px; outline: none; transition: border-color 0.15s; line-height: 1.5; }
-        .rp-notes-textarea:focus { border-color: rgba(232,80,10,0.4); }
-        .rp-notes-textarea::placeholder { color: #374151; }
-        .rp-notes-display { background: rgba(29,158,117,0.05); border: 1px solid rgba(29,158,117,0.15); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #9CA3AF; line-height: 1.5; margin-top: 6px; }
+        .rp-notes-label { font-size: 12px; color: var(--c-text-2); margin-bottom: 8px; margin-top: 16px; }
+        .rp-notes-textarea { width: 100%; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--c-text); font-family: system-ui, sans-serif; resize: vertical; min-height: 72px; outline: none; transition: border-color 0.15s; line-height: 1.5; }
+        .rp-notes-textarea:focus { border-color: var(--c-brand); }
+        .rp-notes-textarea::placeholder { color: var(--c-text-3); }
+        .rp-notes-display { background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--c-text-2); line-height: 1.5; margin-top: 6px; }
 
-        .rp-modal-actions { display: flex; gap: 8px; padding: 14px 22px; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+        .rp-modal-actions { display: flex; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--c-border); flex-shrink: 0; }
         .rp-btn { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; border: none; transition: opacity 0.12s, background 0.12s; white-space: nowrap; }
         .rp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .rp-btn-reviewed { background: rgba(29,158,117,0.12); color: #1D9E75; border: 1px solid rgba(29,158,117,0.25) !important; }
-        .rp-btn-reviewed:hover:not(:disabled) { background: rgba(29,158,117,0.2); }
-        .rp-btn-dismissed { background: rgba(255,255,255,0.05); color: #6B7280; border: 1px solid rgba(255,255,255,0.08) !important; }
-        .rp-btn-dismissed:hover:not(:disabled) { background: rgba(255,255,255,0.09); color: #9CA3AF; }
-        .rp-btn-close { background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08) !important; margin-left: auto; }
-        .rp-btn-close:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
+        .rp-btn-reviewed { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border) !important; }
+        .rp-btn-reviewed:hover:not(:disabled) { background: var(--c-surface-alt); }
+        .rp-btn-dismissed { background: var(--c-hover); color: var(--c-text-2); border: 1px solid var(--c-border) !important; }
+        .rp-btn-dismissed:hover:not(:disabled) { background: var(--c-hover-strong); color: var(--c-text-2); }
+        .rp-btn-close { background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border) !important; margin-left: auto; }
+        .rp-btn-close:hover { background: var(--c-hover); color: var(--c-text-2); }
       `}</style>
 
       <div className="rp-wrap">
@@ -647,13 +650,10 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                     className="rp-card"
                     style={{
                       cursor: "default",
-                      ...(open ? { borderColor: "rgba(248,113,113,0.35)" } : {}),
+                      // An open escalation is outlined red; it had a red strip.
+                      ...(open ? { borderColor: "var(--c-red)" } : {}),
                     }}
                   >
-                    <div
-                      className="rp-card-accent"
-                      style={{ background: open ? "#F8717160" : "#6B728040" }}
-                    />
                     <div className="rp-card-body">
                     <div
                       style={{
@@ -669,12 +669,12 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                           fontWeight: 700,
                           letterSpacing: "0.06em",
                           textTransform: "uppercase",
-                          color: open ? "#F87171" : "#6B7280",
+                          color: open ? "var(--c-red)" : "var(--c-text-2)",
                         }}
                       >
                         {open ? t("reports.unresolved") : t("reports.resolved")}
                       </span>
-                      <span style={{ fontSize: 11, color: "#6B7280" }}>
+                      <span style={{ fontSize: 11, color: "var(--c-text-2)" }}>
                         {fmtDateTime(e.passenger_flagged_at, {
                           dateStyle: "medium",
                           timeStyle: "short",
@@ -685,7 +685,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       style={{
                         fontSize: 13,
                         fontWeight: 700,
-                        color: "#F1F5F9",
+                        color: "var(--c-text)",
                         marginBottom: 3,
                       }}
                     >
@@ -693,7 +693,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                         .map((c) => (ESC_REASON_KEYS[c] ? t(ESC_REASON_KEYS[c]) : c))
                         .join(" · ") || t("flagReason.other")}
                     </div>
-                    <div style={{ fontSize: 12, color: "#9CA3AF" }}>
+                    <div style={{ fontSize: 12, color: "var(--c-text-2)" }}>
                       {e.passenger_name ?? t("reports.passenger")} · {e.pickup_address}
                       {e.dropoff_address ? ` → ${e.dropoff_address}` : ""}
                     </div>
@@ -701,7 +701,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       <div
                         style={{
                           fontSize: 12,
-                          color: "#CBD5E1",
+                          color: "var(--c-text-2)",
                           marginTop: 6,
                           fontStyle: "italic",
                           overflowWrap: "anywhere",
@@ -720,7 +720,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       </button>
                     )}
                     {!open && (
-                      <div style={{ fontSize: 11, color: "#6B7280", marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 6 }}>
                         {t("reports.resolvedAt", {
                           when: fmtDateTime(e.passenger_flag_resolved_at, {
                             dateStyle: "medium",
@@ -752,18 +752,18 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
           <div className="rp-summary">
             <div className="rp-summary-card">
               <div className="rp-summary-label">{t("reports.statusOpen")}</div>
-              <div className="rp-summary-value" style={{ color: openCount > 0 ? "#F59E0B" : "#F1F5F9" }}>
+              <div className="rp-summary-value" style={{ color: openCount > 0 ? "var(--c-amber-text)" : "var(--c-text)" }}>
                 {openCount}
               </div>
               {highOpen > 0 && (
-                <div className="rp-summary-sub" style={{ color: "#F87171" }}>
+                <div className="rp-summary-sub" style={{ color: "var(--c-red)" }}>
                   {t("reports.nHighSeverity", { count: highOpen })}
                 </div>
               )}
             </div>
             <div className="rp-summary-card">
               <div className="rp-summary-label">{t("reports.statusReviewed")}</div>
-              <div className="rp-summary-value" style={{ color: "#1D9E75" }}>{reviewedCount}</div>
+              <div className="rp-summary-value" style={{ color: "var(--c-green)" }}>{reviewedCount}</div>
             </div>
             <div className="rp-summary-card">
               <div className="rp-summary-label">{t("reports.statusDismissed")}</div>
@@ -784,29 +784,21 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
           ) : (
             filtered.map((r) => {
               const isHigh = HIGH_SEVERITY.has(r.reason);
-              const accentColor = isHigh && r.status === "open"
-                ? "#F87171"
-                : STATUS_COLORS[r.status];
               return (
                 <div
                   key={r.id}
                   className={`rp-card${isHigh && r.status === "open" ? " high-severity" : ""}${r.status === "dismissed" ? " dismissed-card" : ""}`}
                   onClick={() => setSelected(r)}
                 >
-                  <div className="rp-card-accent" style={{ background: accentColor + "60" }} />
                   <div className="rp-card-body">
                     {isHigh && r.status === "open" && (
-                      <div className="rp-severity-inline">⚠ {t("reports.highSeverity")}</div>
+                      <div className="rp-severity-inline"><Icon name="alert" /> {t("reports.highSeverity")}</div>
                     )}
                     <div className="rp-card-row1">
                       <div className="rp-card-reason">{reasonLabel(r.reason)}</div>
                       <span
                         className="rp-status-badge"
-                        style={{
-                          background: STATUS_COLORS[r.status] + "18",
-                          color: STATUS_COLORS[r.status],
-                          border: `1px solid ${STATUS_COLORS[r.status]}30`,
-                        }}
+                        style={{ "--dot": STATUS_COLORS[r.status] } as React.CSSProperties}
                       >
                         {statusLabel(r.status)}
                       </span>
@@ -879,7 +871,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                       {statusLabel(selected.status)}
                     </span>
                     {isHigh && (
-                      <span style={{ color: "#F87171", marginLeft: 8 }}>⚠ {t("reports.highSeverity")}</span>
+                      <span style={{ color: "var(--c-red)", marginLeft: 8 }}><Icon name="alert" /> {t("reports.highSeverity")}</span>
                     )}
                   </div>
                 </div>
@@ -901,7 +893,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                     <div style={{ fontWeight: 600 }}>{selected.driver_name ?? "—"}</div>
                     {driverCount > 1 ? (
                       <div className="rp-driver-history-note">
-                        ⚠ {t("reports.totalOnFile", { count: driverCount })}
+                        <Icon name="alert" /> {t("reports.totalOnFile", { count: driverCount })}
                       </div>
                     ) : (
                       <div className="rp-driver-history-ok">
@@ -959,7 +951,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                     {selected.ride_fare != null && (
                       <div className="rp-detail-row">
                         <div className="rp-detail-label">{t("reports.fare")}</div>
-                        <div className="rp-detail-value" style={{ fontWeight: 600, color: "#1D9E75" }}>
+                        <div className="rp-detail-value" style={{ fontWeight: 600, color: "var(--c-green)" }}>
                           ${Number(selected.ride_fare).toFixed(2)}
                         </div>
                       </div>
@@ -972,7 +964,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                 {isOpen ? (
                   <>
                     <div className="rp-notes-label">
-                      {t("reports.actionNotes")} <span style={{ color: "#4B5563" }}>{t("reports.actionNotesHint")}</span>
+                      {t("reports.actionNotes")} <span style={{ color: "var(--c-text-2)" }}>{t("reports.actionNotesHint")}</span>
                     </div>
                     <textarea
                       ref={notesRef}
@@ -1014,7 +1006,7 @@ export default function ReportsPage({ onBadgeChange, isActive, companyId, adminI
                     </button>
                   </>
                 ) : (
-                  <span style={{ fontSize: 12, color: "#6B7280", alignSelf: "center" }}>
+                  <span style={{ fontSize: 12, color: "var(--c-text-2)", alignSelf: "center" }}>
                     {selected.status === "reviewed" ? t("reports.markedReviewed") : t("reports.statusDismissed")}
                   </span>
                 )}

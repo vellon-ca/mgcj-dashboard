@@ -46,21 +46,30 @@ import {
 import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
 import DriverPicker from "../components/DriverPicker";
+import Icon from "../components/Icon";
 import { driverOptionLabel } from "../lib/driverPickerText";
 import { rankDrivers, type RankedDriver } from "../lib/driverRanking";
-import { mapsScriptUrl, darkMapStyle } from "../lib/googleMaps";
+import { mapsScriptUrl } from "../lib/googleMaps";
+import { useTheme } from "../theme/ThemeContext";
+import { mapStyle } from "../theme/tokens";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 
+// CSS colour values (theme variables), handed to .db-status-badge as --dot.
+// Never concatenate an alpha onto these: they are var() references, not hex,
+// and a wash is exactly what the 2026-10-26 palette removed.
+// in_progress was the brand orange and completed was green; now in_progress
+// is green (moving, all well) and a finished ride is plain grey, so the board's
+// colour is spent on the rides that still need attention.
 const STATUS_COLORS: Record<string, string> = {
-  pending: "#F59E0B",
-  offered: "#F59E0B",
-  assigned: "#4a9eff",
-  driver_arriving: "#4a9eff",
-  in_progress: "#E8500A",
-  completed: "#1D9E75",
-  cancelled: "#E24B4A",
-  scheduled: "#A855F7",
+  pending: "var(--c-amber)",
+  offered: "var(--c-amber)",
+  assigned: "var(--c-blue)",
+  driver_arriving: "var(--c-blue)",
+  in_progress: "var(--c-green)",
+  completed: "var(--c-text-3)",
+  cancelled: "var(--c-red)",
+  scheduled: "var(--c-purple)",
 };
 // STATUS_LABELS, FLAG_REASON_LABELS, CANCEL_REASON_LABELS,
 // SETTLEMENT_ROUTE_LABELS, REFUND_REASON_LABELS and noShowEvidence() moved to
@@ -245,6 +254,11 @@ function rideStatusColor(ride: { status: string }): string {
   return STATUS_COLORS[ride.status];
 }
 
+/** Inline style for a .db-status-badge: the dot's colour, nothing else. */
+function statusDot(ride: { status: string }): React.CSSProperties {
+  return { "--dot": rideStatusColor(ride) } as React.CSSProperties;
+}
+
 function rideStatusLabel(ride: { status: string }): string {
   return sharedRideStatusLabel(ride.status);
 }
@@ -277,158 +291,86 @@ const NAV_ITEMS: { tab: Tab; labelKey: string }[] = [
 
 function IconRides() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="1" y="3" width="15" height="13" rx="2" />
-      <path d="M16 8h4l3 3v5h-7V8z" />
-      <circle cx="5.5" cy="18.5" r="2.5" />
-      <circle cx="18.5" cy="18.5" r="2.5" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 17h14M6.5 17l1.5-5h8l1.5 5M7 17v2.5M17 17v2.5M8.5 12l1-3.5h5l1 3.5" />
     </svg>
   );
 }
 function IconDrivers() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+      <path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6" />
     </svg>
   );
 }
 function IconAnalytics() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="18" y1="20" x2="18" y2="10" />
-      <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6" y1="20" x2="6" y2="14" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 20V10M12 20V4M19 20v-7" />
     </svg>
   );
 }
 function IconReports() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <line x1="12" y1="9" x2="12" y2="13" />
-      <line x1="12" y1="17" x2="12.01" y2="17" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 21V4h11l-2 4 2 4H5" />
     </svg>
   );
 }
 function IconDiscounts() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2.59 12.58a2 2 0 0 1 0-2.83l7.17-7.17a2 2 0 0 1 1.42-.58H17a2 2 0 0 1 2 2v6.41a2 2 0 0 1-.58 1.41z" />
-      <circle cx="13" cy="7" r="1.5" fill="currentColor" stroke="none" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12V4h8l10 10-8 8z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
     </svg>
   );
 }
 function IconAnnouncements() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m3 11 18-5v12L3 14v-3z" />
-      <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 10v4h3l6 4V6L7 10H4z" />
+      <path d="M17 9a4 4 0 0 1 0 6" />
     </svg>
   );
 }
 function IconMessages() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5h16v11H9l-5 4z" />
     </svg>
   );
 }
 function IconSettings() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+      <circle cx="15" cy="7" r="2" />
+      <circle cx="9" cy="17" r="2" />
     </svg>
   );
 }
+function IconSun() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+    </svg>
+  );
+}
+
+function IconMoon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
+    </svg>
+  );
+}
+
 function IconSignOut() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" />
     </svg>
   );
 }
@@ -1000,7 +942,7 @@ function DriverDetailPanel({
               )}
               <div
                 className="dd-status-dot"
-                style={{ background: !isAccountActive ? "#EF4444" : presence === "online" ? "#1D9E75" : "#374151", flexShrink: 0 }}
+                style={{ background: !isAccountActive ? "var(--c-red)" : presence === "online" ? "var(--c-green)" : "var(--c-text-3)", flexShrink: 0 }}
               />
               <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
                 <button className="dd-action-edit" onClick={openVehicleEdit}>{t("drivers.editVehicle")}</button>
@@ -1054,15 +996,15 @@ function DriverDetailPanel({
           {!isAccountActive ? (
             <span className="dd-pill dd-pill-red">{t("common.deactivated")}</span>
           ) : isDeactivationPending ? (
-            <span className="dd-pill dd-pill-amber">⏳ {t("drivers.deactivationPending")}</span>
+            <span className="dd-pill dd-pill-amber"><Icon name="hourglass" /> {t("drivers.deactivationPending")}</span>
           ) : presence === "offline" ? (
             <span className="dd-pill dd-pill-gray">{t("drivers.offline")}</span>
           ) : awaitingReply ? (
-            <span className="dd-pill dd-pill-amber">◷ {t("drivers.offeredAwaiting")}</span>
+            <span className="dd-pill dd-pill-amber"><Icon name="clock" /> {t("drivers.offeredAwaiting")}</span>
           ) : activeRide ? (
-            <span className="dd-pill dd-pill-orange">● {t("drivers.onARide")}</span>
+            <span className="dd-pill dd-pill-orange">{t("drivers.onARide")}</span>
           ) : (
-            <span className="dd-pill dd-pill-green">● {t("drivers.available")}</span>
+            <span className="dd-pill dd-pill-green">{t("drivers.available")}</span>
           )}
           {activeRide?.status === "in_progress" && isRideSilent(driver) && (
             /* Passenger aboard and no position for 2+ minutes: usually a
@@ -1070,12 +1012,12 @@ function DriverDetailPanel({
                live tracking has frozen with it. Not shown before pickup — see
                lib/presence.ts isRideSilent. */
             <span className="dd-pill dd-pill-amber">
-              ◌ {t("drivers.outOfContact")}{lastSeen ? ` · ${lastSeen}` : ""}
+              <Icon name="signal" /> {t("drivers.outOfContact")}{lastSeen ? ` · ${lastSeen}` : ""}
             </span>
           )}
           {openReports > 0 && (
             <span className="dd-pill dd-pill-red">
-              ⚠ {t("drivers.openReportCount", { count: openReports })}
+              <Icon name="alert" /> {t("drivers.openReportCount", { count: openReports })}
             </span>
           )}
         </div>
@@ -1091,11 +1033,11 @@ function DriverDetailPanel({
                 color:
                   avgRating !== null
                     ? avgRating >= 4
-                      ? "#1D9E75"
+                      ? "var(--c-green)"
                       : avgRating >= 3
-                        ? "#F59E0B"
-                        : "#E24B4A"
-                    : "#6B7280",
+                        ? "var(--c-amber)"
+                        : "var(--c-red)"
+                    : "var(--c-text-2)",
               }}
             >
               {avgRating !== null ? `★ ${avgRating.toFixed(1)}` : "—"}
@@ -1105,7 +1047,7 @@ function DriverDetailPanel({
           <div className="dd-stat-box">
             <div
               className="dd-stat-val"
-              style={{ color: openReports > 0 ? "#F87171" : "#F1F5F9" }}
+              style={{ color: openReports > 0 ? "var(--c-red)" : "var(--c-text)" }}
             >
               {openReports}
             </div>
@@ -1250,12 +1192,7 @@ function DriverDetailPanel({
               <div className="dd-ride-row-left">
                 <span
                   className="db-status-badge"
-                  style={{
-                    background: rideStatusColor(ride) + "18",
-                    color: rideStatusColor(ride),
-                    border: `1px solid ${rideStatusColor(ride)}30`,
-                    fontSize: 10,
-                  }}
+                  style={statusDot(ride)}
                 >
                   {rideStatusLabel(ride)}
                 </span>
@@ -1325,11 +1262,11 @@ function AssignmentHold({ ride }: { ride: any }) {
         marginTop: 8,
         padding: "7px 9px",
         borderRadius: 8,
-        background: "rgba(245,158,11,0.10)",
-        border: "1px solid rgba(245,158,11,0.35)",
+        background: "var(--c-surface-alt)",
+        border: "1px solid var(--c-border)",
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#F59E0B" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--c-amber-text)" }}>
         {title}
       </div>
       {body && (
@@ -1403,33 +1340,27 @@ function shortTime(iso: string): string {
   return fmtTime(iso, { hour: "numeric", minute: "2-digit" });
 }
 
-function coverageDisplay(ride: any): { label: string; color: string; bg: string } {
+// The colour is the dot's (.db-cov-pill::before via --dot); the label stays plain text.
+function coverageDisplay(ride: any): { label: string; color: string } {
   const minsUntil = ride.scheduled_at
     ? (new Date(ride.scheduled_at).getTime() - Date.now()) / 60_000
     : Infinity;
-  if (minsUntil > 24 * 60) return { label: i18next.t("coverage.healthy"), color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+  if (minsUntil > 24 * 60) return { label: i18next.t("coverage.healthy"), color: "var(--c-green)" };
   const cov = ride.coverage_status ?? "covered";
-  if (cov === "uncovered") return { label: i18next.t("coverage.noDrivers"), color: "#F87171", bg: "rgba(248,113,113,0.12)" };
-  if (cov === "at_risk")   return { label: i18next.t("coverage.atRisk"),    color: "#F59E0B", bg: "rgba(245,158,11,0.12)" };
-  return { label: i18next.t("coverage.covered"), color: "#1D9E75", bg: "rgba(29,158,117,0.12)" };
+  if (cov === "uncovered") return { label: i18next.t("coverage.noDrivers"), color: "var(--c-red)" };
+  if (cov === "at_risk")   return { label: i18next.t("coverage.atRisk"),    color: "var(--c-amber)" };
+  return { label: i18next.t("coverage.covered"), color: "var(--c-green)" };
 }
 
 // Scheduled Ride Card
+// Information only: Assign, Edit and Cancel are in the ride's detail window,
+// which a click on the card opens.
 function ScheduledRideCard({
   ride,
-  picker,
   onCardClick,
-  onAssign,
-  onEdit,
-  onCancel,
 }: {
   ride: any;
-  /** The ranked driver list while this card is the one being assigned. */
-  picker: React.ReactNode | null;
   onCardClick: () => void;
-  onAssign: () => void;
-  onEdit: () => void;
-  onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const scheduledDate = ride.scheduled_at ? new Date(ride.scheduled_at) : null;
@@ -1447,53 +1378,42 @@ function ScheduledRideCard({
 
   return (
     <div className="db-sched-card" onClick={onCardClick}>
-      <div className="db-sched-datetime">
-        <svg
-          width="11"
-          height="11"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ flexShrink: 0, marginTop: 1 }}
-        >
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-          <line x1="16" y1="2" x2="16" y2="6" />
-          <line x1="8" y1="2" x2="8" y2="6" />
-          <line x1="3" y1="10" x2="21" y2="10" />
-        </svg>
-        <span className="db-sched-date">{formattedDate}</span>
-        <span className="db-sched-time-val">{formattedTime}</span>
-        <span
-          className="db-cov-pill"
-          style={{ color: cov.color, background: cov.bg, borderColor: cov.color + "30" }}
-        >
+      <div className="db-ride-card-top">
+        <span className="db-sched-when">
+          <Icon name="calendar" size={13} />
+          <span className="db-sched-date">{formattedDate}</span>
+          <span className="db-sched-time-val">{formattedTime}</span>
+        </span>
+        <span className="db-cov-pill" style={{ "--dot": cov.color } as React.CSSProperties}>
           {cov.label}
         </span>
       </div>
-      <div className="db-sched-body">
-        <div className="db-sched-name">
-          {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
-        </div>
-        <div className="db-sched-addr">{ride.pickup_address}</div>
-        <div className="db-sched-addr dest">{ride.dropoff_address}</div>
+      <div className="db-ride-name">
+        {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
+      </div>
+      <div className="db-ride-route">
+        {ride.pickup_address} → {ride.dropoff_address}
+      </div>
+      <div className="db-ride-foot">
+        <span className="db-ride-foot-driver">
+          {ride.driver_id && ride.confirmed_by_driver ? (
+            <span className="db-sched-driver">
+              <span className="db-sched-driver-dot" />
+              {(ride as any).driver?.profile?.name ?? t("dispatch.driverAssigned")}
+            </span>
+          ) : ride.driver_id ? (
+            ride.driver?.profile?.name ?? t("rideDetail.driver")
+          ) : (
+            t("rideDetail.unassigned")
+          )}
+        </span>
         {ride.fare_estimate && (
-          <div className="db-sched-fare">${ride.fare_estimate.toFixed(2)}</div>
+          <span className="db-ride-foot-fare">${ride.fare_estimate.toFixed(2)}</span>
         )}
       </div>
-      {ride.driver_id && ride.confirmed_by_driver && (
-        <div className="db-sched-driver-row">
-          <div className="db-sched-driver-dot" />
-          <span className="db-sched-driver-name">
-            {(ride as any).driver?.profile?.name ?? t("dispatch.driverAssigned")}
-          </span>
-        </div>
-      )}
       {ride.driver_id && !ride.confirmed_by_driver && (
-        <div className="db-pending-badge" style={{ margin: "8px 12px 0" }}>
-          ⏳ {t("dispatch.waitingForConfirm", {
+        <div className="db-pending-badge">
+          <Icon name="hourglass" /> {t("dispatch.waitingForConfirm", {
             name: (ride as any).driver?.profile?.name ?? t("rideDetail.driver"),
           })}
         </div>
@@ -1503,49 +1423,14 @@ function ScheduledRideCard({
         // told; unresolved by the deadline, the ride cancels itself. Dispatch
         // can phone them, which for many regulars is what fixes it.
         <div
-          className="db-pending-badge"
-          style={{ margin: "8px 12px 0", color: "#F87171", borderColor: "rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.10)" }}
+          className="db-pending-badge danger"
         >
+          <Icon name="alert" />{" "}
           {ride.payment_deadline_at
             ? t("dispatch.paymentIssue", { time: shortTime(ride.payment_deadline_at) })
             : t("dispatch.paymentIssueNoDeadline")}
         </div>
       )}
-      <div style={{ padding: "8px 12px 10px" }}>
-        {picker ? (
-          picker
-        ) : (
-          <div style={{ display: "flex", gap: 6 }}>
-            <button
-              className="db-sched-assign-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAssign();
-              }}
-            >
-              {ride.driver_id ? t("dispatch.reassignDriver") : t("dispatch.assignDriver")}
-            </button>
-            <button
-              className="db-sched-assign-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-            >
-              {t("common.edit")}
-            </button>
-            <button
-              className="db-cancel-ride-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancel();
-              }}
-            >
-              {t("common.cancel")}
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -1561,6 +1446,15 @@ export default function DashboardPage({
   onSignOut: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { theme, colors, toggleTheme } = useTheme();
+  // Map code runs from long-lived callbacks (realtime, the 15s poll), which
+  // would otherwise hold the palette of the render that created them.
+  const colorsRef = useRef(colors);
+  colorsRef.current = colors;
+  // Read when the map is BUILT, which happens after Google's script loads.
+  // A toggle in that gap would otherwise build the map in the old theme.
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
   const isAdmin = profile.role === "admin";
 
   // Each falls back to the raw column value, as the maps they replaced did: an
@@ -1840,10 +1734,10 @@ export default function DashboardPage({
         new google.maps.Polyline({
           path,
           map,
-          // On-fare stretches in the brand orange, everything else grey. This
+          // On-fare stretches in the brand colour, everything else grey. This
           // is the distinction a dispute actually turns on: "was the meter
           // running while you drove that way".
-          strokeColor: seg.rideId ? "#E8500A" : "#9CA3AF",
+          strokeColor: seg.rideId ? colorsRef.current.brandFill : "#9A9BA1",
           strokeOpacity: seg.rideId ? 0.95 : 0.7,
           strokeWeight: seg.rideId ? 5 : 3,
           zIndex: seg.rideId ? 2 : 1,
@@ -1861,7 +1755,7 @@ export default function DashboardPage({
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 11,
-            fillColor: "#111827",
+            fillColor: "#1B1C1F",
             fillOpacity: 1,
             strokeColor: "#fff",
             strokeWeight: 2,
@@ -1873,7 +1767,7 @@ export default function DashboardPage({
     });
 
     if (!bounds.isEmpty()) map.fitBounds(bounds, 60);
-  }, [trail, trailDriver]);
+  }, [trail, trailDriver, theme]);
 
   // The scrub marker is its own effect and its own overlay. A range input fires
   // continuously while dragged, and the effect above tears down and rebuilds
@@ -1899,9 +1793,9 @@ export default function DashboardPage({
       // recorded around then, so this is the last known position rather than
       // where the car was. Drawing it solid would assert something we do not
       // know.
-      fillColor: pos.stale ? "#fff" : "#2563EB",
+      fillColor: pos.stale ? "#fff" : colorsRef.current.brandFill,
       fillOpacity: 1,
-      strokeColor: "#2563EB",
+      strokeColor: colorsRef.current.brandFill,
       strokeWeight: 3,
     };
     if (scrubMarker.current) {
@@ -1915,7 +1809,7 @@ export default function DashboardPage({
         icon,
       });
     }
-  }, [trail, scrubT]);
+  }, [trail, scrubT, theme]);
 
   // Overlays must not outlive the view.
   useEffect(() => clearTrailOverlays, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2129,7 +2023,7 @@ export default function DashboardPage({
         // zoomed-out one reads as loading.
         center: home ? { lat: home.lat, lng: home.lng } : NEUTRAL_CENTER,
         zoom: home ? home.zoom : NEUTRAL_ZOOM,
-        styles: darkMapStyle,
+        styles: mapStyle(themeRef.current),
         disableDefaultUI: true,
         zoomControl: true,
       });
@@ -2756,9 +2650,11 @@ export default function DashboardPage({
   // --- Driver car icons ----------------------------------------------------
   // Cars are drawn as an SVG puck (data-URI icon rather than a Symbol path so
   // the ring/shadow/glyph can each carry their own colour). Green = free,
-  // amber = on a live ride; deliberately outside the pickup-blue/dropoff-orange
+  // amber = on a live ride; deliberately outside the pickup-blue/dropoff-brand
   // ride-endpoint palette so a car never reads as a ride marker.
-  const DRIVER_COLOR_FREE = "#1D9E75";
+  // Fixed across themes (the dark palette's values): a white-ringed puck reads
+  // on both maps, and a theme change would otherwise have to rebuild every car.
+  const DRIVER_COLOR_FREE = "#1EA379";
   const DRIVER_COLOR_BUSY = "#F59E0B";
 
   // Material "directions_car", 24x24 viewBox — centred by the wrapping
@@ -3067,32 +2963,47 @@ export default function DashboardPage({
           position: { lat: ride.pickup_lat, lng: ride.pickup_lng },
           map: googleMapRef.current!,
           title: `${t("analytics.col.pickup")}: ${ride.pickup_address}`,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 7,
-            fillColor: "#4a9eff",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 1.5,
-          },
+          icon: ridePinIcon("pickup"),
         });
         const mk2 = new google.maps.Marker({
           position: { lat: ride.dropoff_lat, lng: ride.dropoff_lng },
           map: googleMapRef.current!,
           title: `${t("analytics.col.dropoff")}: ${ride.dropoff_address}`,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 7,
-            fillColor: "#E8500A",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 1.5,
-          },
+          icon: ridePinIcon("dropoff"),
         });
         markersRef.current.set(`pickup-${ride.id}`, mk1);
         markersRef.current.set(`dropoff-${ride.id}`, mk2);
       });
   }
+
+  // Pickup in the status blue, drop-off in the brand colour, matching the
+  // live card's stop dots and the route line. Read through colorsRef so a
+  // theme change can repaint the pins already on the map.
+  function ridePinIcon(kind: "pickup" | "dropoff") {
+    const c = colorsRef.current;
+    return {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 7,
+      fillColor: kind === "pickup" ? c.blue : c.brandFill,
+      fillOpacity: 1,
+      strokeColor: "#fff",
+      strokeWeight: 1.5,
+    };
+  }
+
+  // A theme change restyles what is already drawn: the map is never
+  // unmounted, so nothing else would repaint it.
+  useEffect(() => {
+    const map = googleMapRef.current;
+    if (!map || typeof google === "undefined") return;
+    map.setOptions({ styles: mapStyle(theme) });
+    routePolylineRef.current?.setOptions({ strokeColor: colors.brandFill });
+    markersRef.current.forEach((m, key) => {
+      if (key.startsWith("pickup-")) m.setIcon(ridePinIcon("pickup"));
+      else if (key.startsWith("dropoff-")) m.setIcon(ridePinIcon("dropoff"));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [theme]);
 
   function clearRouteOverlay() {
     if (routePolylineRef.current) {
@@ -3107,7 +3018,7 @@ export default function DashboardPage({
     routePolylineRef.current = new google.maps.Polyline({
       path,
       map: googleMapRef.current,
-      strokeColor: "#E8500A",
+      strokeColor: colorsRef.current.brandFill,
       strokeOpacity: 0.9,
       strokeWeight: 4,
     });
@@ -4436,6 +4347,17 @@ export default function DashboardPage({
     vehicleClasses,
   }).ranked;
 
+  // A ride card's bottom-left line: "Car 7 · Sam P.", the driver's name if
+  // they have no car number, or "Unassigned". The car is the one frozen at
+  // assignment, which is what the driver was actually in.
+  function cardDriverLabel(ride: { driver_id?: string | null; car_number_at_assignment?: string | null }): string {
+    if (!ride.driver_id) return t("rideDetail.unassigned");
+    const name = drivers.find((d) => d.id === ride.driver_id)?.profile?.name ?? t("rideDetail.driver");
+    return ride.car_number_at_assignment
+      ? `${t("rideDetail.carNumber", { n: ride.car_number_at_assignment })} · ${name}`
+      : name;
+  }
+
   function renderPicker(ride: any) {
     const { ranked } = rankDrivers({
       ride,
@@ -4537,8 +4459,8 @@ export default function DashboardPage({
           height: "100%",
           alignItems: "center",
           justifyContent: "center",
-          background: "#111827",
-          color: "#E8500A",
+          background: "var(--c-bg)",
+          color: "var(--c-text-2)",
           fontFamily: "system-ui",
         }}
       >
@@ -4549,436 +4471,452 @@ export default function DashboardPage({
   return (
     <>
       <style>{`
+        /* Every colour here is a role from src/theme/tokens.ts (var(--c-...)).
+           Read that file's header before adding one: neutrals carry the page,
+           brand marks what you can act on, status colours are a dot or icon
+           beside plain text, and there are no tinted washes. NOTE no backticks
+           in here: the whole block is one template literal. */
         *, *::before, *::after { box-sizing: border-box; }
-        .db-page { display: flex; height: 100vh; background: #111827; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; position: relative; }
-        .db-nav { width: 56px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; align-items: center; padding: 0; flex-shrink: 0; z-index: 30; transition: width 0.18s cubic-bezier(0.4,0,0.2,1); overflow: hidden; }
+        .db-page { display: flex; height: 100vh; background: var(--c-bg); color: var(--c-text); font-family: system-ui, -apple-system, sans-serif; overflow: hidden; position: relative; }
+        .db-nav { width: 56px; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; align-items: center; padding: 0; flex-shrink: 0; z-index: 30; transition: width 0.18s cubic-bezier(0.4,0,0.2,1); overflow: hidden; }
         .db-nav.expanded { width: 196px; }
-        .db-nav-logo { width: 100%; height: 54px; display: flex; align-items: center; padding: 0 18px; flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-        .db-nav-logo-text { font-size: 14px; font-weight: 700; color: #E8500A; letter-spacing: -0.3px; white-space: nowrap; }
+        .db-nav-logo { width: 100%; height: 54px; display: flex; align-items: center; padding: 0 18px; flex-shrink: 0; border-bottom: 1px solid var(--c-border); }
+        .db-nav-logo-text { font-size: 14px; font-weight: 700; color: var(--c-text); letter-spacing: -0.3px; white-space: nowrap; }
         .db-nav-items { flex: 1; display: flex; flex-direction: column; padding: 8px 0; width: 100%; }
-        .db-nav-item { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; border-left: 2px solid transparent; transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
-        .db-nav-item:hover { background: rgba(255,255,255,0.05); }
-        .db-nav-item.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
-        .db-nav-icon { color: #6B7280; flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
-        .db-nav-item:hover .db-nav-icon, .db-nav-item.active .db-nav-icon { color: #E8500A; }
-        .db-nav-label { font-size: 13px; font-weight: 500; color: #6B7280; transition: color 0.12s; }
-        .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: #E8500A; }
-        .db-nav-bottom { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); width: 100%; display: flex; flex-direction: column; }
-        .db-nav-profile { display: flex; align-items: center; gap: 11px; width: 100%; height: 48px; padding: 0 19px; margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
-        .db-nav-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(232,80,10,0.15); color: #E8500A; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .db-nav-item { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; border-left: 2px solid transparent; transition: background 0.12s; white-space: nowrap; }
+        .db-nav-item:hover { background: var(--c-hover); }
+        .db-nav-item.active { background: var(--c-surface-sel); }
+        .db-nav-icon { color: var(--c-text-2); flex-shrink: 0; transition: color 0.12s; display: flex; align-items: center; position: relative; }
+        .db-nav-item:hover .db-nav-icon { color: var(--c-text); }
+        .db-nav-item.active .db-nav-icon { color: var(--c-brand); }
+        .db-nav-label { font-size: 13px; font-weight: 500; color: var(--c-text-2); transition: color 0.12s; }
+        .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: var(--c-text); }
+        .db-nav-item.active .db-nav-label { font-weight: 600; }
+        .db-nav-bottom { padding: 8px 0; border-top: 1px solid var(--c-border); width: 100%; display: flex; flex-direction: column; }
+        .db-nav-profile { display: flex; align-items: center; gap: 11px; width: 100%; height: 48px; padding: 0 19px; margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
+        .db-nav-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--c-surface-alt); color: var(--c-text); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
         .db-nav-profile-info { display: flex; flex-direction: column; overflow: hidden; }
-        .db-nav-profile-name { font-size: 13px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .db-nav-profile-role { font-size: 10px; color: #6B7280; text-transform: capitalize; }
+        .db-nav-profile-name { font-size: 13px; font-weight: 600; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-nav-profile-role { font-size: 10px; color: var(--c-text-2); text-transform: capitalize; }
+        /* Utility buttons share one look. They used to light up in their own
+           colour on hover (purple Analytics, red Reports, blue Settings). */
         .db-nav-utility { display: flex; align-items: center; gap: 11px; width: 100%; height: 40px; padding: 0 19px; background: none; border: none; cursor: pointer; white-space: nowrap; transition: background 0.12s; }
-        .db-nav-utility:hover { background: rgba(255,255,255,0.05); }
-        .db-nav-utility .db-nav-icon { color: #6B7280; }
-        .db-nav-utility:hover .db-nav-icon { color: #9CA3AF; }
-        .db-nav-utility .db-nav-label { color: #6B7280; }
-        .db-nav-utility:hover .db-nav-label { color: #9CA3AF; }
-        .db-nav-analytics .db-nav-icon { color: #6B7280; }
-        .db-nav-analytics:hover .db-nav-icon, .db-nav-analytics.active-util .db-nav-icon { color: #A855F7; }
-        .db-nav-analytics .db-nav-label { color: #6B7280; }
-        .db-nav-analytics:hover .db-nav-label, .db-nav-analytics.active-util .db-nav-label { color: #A855F7; }
-        .db-nav-reports .db-nav-icon { color: #6B7280; }
-        .db-nav-reports:hover .db-nav-icon, .db-nav-reports.active-util .db-nav-icon { color: #F87171; }
-        .db-nav-reports .db-nav-label { color: #6B7280; }
-        .db-nav-reports:hover .db-nav-label, .db-nav-reports.active-util .db-nav-label { color: #F87171; }
-        .db-nav-signout:hover .db-nav-icon { color: #E24B4A; }
-        .db-nav-soon { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #FDBA74; border: 1px solid rgba(232,80,10,0.35); border-radius: 999px; padding: 1px 6px; }
+        .db-nav-utility:hover { background: var(--c-hover); }
+        .db-nav-utility .db-nav-icon, .db-nav-utility .db-nav-label { color: var(--c-text-2); }
+        .db-nav-utility:hover .db-nav-icon, .db-nav-utility:hover .db-nav-label { color: var(--c-text); }
+        .db-nav-utility.active-util { background: var(--c-surface-sel); }
+        .db-nav-utility.active-util .db-nav-icon { color: var(--c-brand); }
+        .db-nav-utility.active-util .db-nav-label { color: var(--c-text); font-weight: 600; }
+        .db-nav-soon { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: var(--c-text-2); background: var(--c-surface-alt); border-radius: 999px; padding: 2px 6px; }
         .ai-nav-icon { overflow: visible; }
         .ai-nav-icon .ai-nav-main { transform-box: fill-box; transform-origin: center; animation: ai-nav-turn 6s ease-in-out infinite; }
         .ai-nav-icon .ai-nav-spark { transform-box: fill-box; transform-origin: center; animation: ai-nav-twinkle 2.4s ease-in-out infinite; }
         @keyframes ai-nav-turn { 0%, 70%, 100% { transform: rotate(0deg) scale(1); } 80% { transform: rotate(45deg) scale(0.9); } 90% { transform: rotate(90deg) scale(1); } }
         @keyframes ai-nav-twinkle { 0%, 100% { opacity: 0.35; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.15); } }
         @media (prefers-reduced-motion: reduce) { .ai-nav-icon * { animation: none !important; } }
-        .db-nav-signout:hover .db-nav-label { color: #E24B4A; }
-        .db-nav-settings .db-nav-icon { color: #6B7280; }
-        .db-nav-settings:hover .db-nav-icon, .db-nav-settings.active-util .db-nav-icon { color: #60A5FA; }
-        .db-nav-settings .db-nav-label { color: #6B7280; }
-        .db-nav-settings:hover .db-nav-label, .db-nav-settings.active-util .db-nav-label { color: #60A5FA; }
-        .db-badge-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: #E24B4A; border: 1.5px solid #0F1723; }
-        .db-badge-count { margin-left: auto; font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 6px; }
+        .db-badge-dot { position: absolute; top: -3px; right: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--c-red); border: 1.5px solid var(--c-surface); }
+        .db-badge-count { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; background: var(--c-surface-alt); color: var(--c-text); border-radius: 10px; padding: 1px 7px; }
+        .db-badge-count::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c-red); }
         .db-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-        .db-topbar { height: 54px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 20px; gap: 20px; flex-shrink: 0; z-index: 20; }
-        .db-topbar-title { font-size: 14px; font-weight: 600; color: #F1F5F9; margin-right: auto; }
+        .db-topbar { height: 54px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); display: flex; align-items: center; padding: 0 20px; gap: 20px; flex-shrink: 0; z-index: 20; }
+        .db-topbar-title { font-size: 14px; font-weight: 600; color: var(--c-text); margin-right: auto; }
         .db-stat-row { display: flex; align-items: center; gap: 28px; margin-right: 20px; }
         .db-stat { display: flex; flex-direction: column; align-items: flex-end; }
-        .db-stat-value { font-size: 15px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .db-stat-label { font-size: 10px; color: #6B7280; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
+        .db-stat-value { font-size: 15px; font-weight: 700; color: var(--c-text); line-height: 1; }
+        .db-stat-label { font-size: 10px; color: var(--c-text-2); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
         .db-stat-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; position: relative; top: -1px; }
-        .db-new-ride-btn { background: #E8500A; color: #fff; border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; white-space: nowrap; }
-        .db-new-ride-btn:hover { opacity: 0.88; }
-        .db-back-btn { background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; }
-        .db-back-btn:hover { color: #9CA3AF; border-color: rgba(255,255,255,0.15); }
+        .db-new-ride-btn { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 7px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.15s; white-space: nowrap; }
+        .db-new-ride-btn:hover { background: var(--c-brand-fill-hover); }
+        .db-back-btn { background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; }
+        .db-back-btn:hover { color: var(--c-text); border-color: var(--c-border-strong); }
         .db-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
-        .db-panel { width: 336px; background: #111827; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
-        .db-panel-header { padding: 14px 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
-        .db-panel-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; }
-        .db-panel-count { font-size: 22px; font-weight: 700; color: #F1F5F9; margin-top: 2px; line-height: 1; }
+        .db-panel { width: 336px; background: var(--c-bg); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+        .db-panel-header { padding: 14px 14px 10px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
+        .db-panel-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.07em; text-transform: uppercase; }
+        .db-panel-count { font-size: 22px; font-weight: 700; color: var(--c-text); margin-top: 2px; line-height: 1; }
         .db-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
         .db-panel-scroll::-webkit-scrollbar { width: 3px; }
-        .db-panel-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
-        .db-driver-search { width: 100%; box-sizing: border-box; margin-top: 8px; margin-bottom: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); border-radius: 8px; color: #E2E8F0; font-size: 12px; padding: 6px 10px; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.12s; }
-        .db-driver-search::placeholder { color: #4B5563; }
-        .db-driver-search:focus { border-color: rgba(255,255,255,0.2); }
-        .db-section-divider { margin: 10px 0 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
-        .db-section-divider-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
-        .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; }
-        .db-empty { font-size: 13px; color: #6B7280; text-align: center; padding: 24px 0; }
-        .db-ride-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
-        .db-ride-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
-        .db-ride-card.selected { border-color: rgba(232,80,10,0.45); }
-        /* Recents used to be opacity 0.7 on top of a #6B7280 secondary
-           grey, which composited to roughly 2.3:1 on the card — below AA
-           and genuinely hard to read. Past rides are de-emphasised by
-           being below the divider, not by being dimmed. */
+        .db-panel-scroll::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
+        .db-driver-search { width: 100%; box-sizing: border-box; margin-top: 8px; margin-bottom: 10px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; color: var(--c-text); font-size: 12px; padding: 6px 10px; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.12s; }
+        .db-driver-search::placeholder { color: var(--c-text-3); }
+        .db-driver-search:focus { border-color: var(--c-brand); }
+        .db-section-divider { margin: 10px 0 8px; border-top: 1px solid var(--c-border); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+        .db-section-divider-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
+        .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; color: var(--c-text-2); }
+        .db-empty { font-size: 13px; color: var(--c-text-2); text-align: center; padding: 24px 0; }
+        .db-ride-card { background: var(--c-surface); border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid var(--c-border); cursor: pointer; transition: border-color 0.12s; }
+        .db-ride-card:hover { border-color: var(--c-border-strong); }
+        .db-ride-card.selected, .db-ride-card.selected:hover { border-color: var(--c-brand); }
+        /* Past rides are de-emphasised by sitting below the divider, never by
+           dimming: opacity on a secondary grey composited below AA. */
         .db-ride-card.recent .db-ride-addr,
         .db-ride-card.recent .db-ride-fare,
-        .db-ride-card.recent .db-ride-time { color: #94A3B8; }
+        .db-ride-card.recent .db-ride-time { color: var(--c-text-2); }
         .db-ride-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
-        .db-status-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; letter-spacing: 0.02em; font-family: system-ui, -apple-system, sans-serif; }
-        .db-ride-time { font-size: 11px; color: #6B7280; }
-        .db-ride-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
-        .db-ride-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .db-ride-addr.dest { color: rgba(232,80,10,0.8); }
-        .db-ride-fare { font-size: 12px; font-weight: 600; color: #6B7280; margin-top: 4px; }
-        .db-pending-badge { font-size: 11px; color: #F59E0B; background: rgba(245,158,11,0.08); border-radius: 6px; padding: 4px 8px; margin-top: 6px; border: 1px solid rgba(245,158,11,0.15); }
-        .db-assign-btn { width: 100%; background: rgba(74,158,255,0.07); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-top: 8px; transition: background 0.12s; }
-        .db-assign-btn:hover { background: rgba(74,158,255,0.13); }
-        .db-assign-label { font-size: 11px; color: #6B7280; margin: 8px 0 4px; }
-        .db-assign-driver-btn { width: 100%; background: rgba(29,158,117,0.07); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s; }
-        .db-assign-driver-btn:hover { background: rgba(29,158,117,0.13); }
+        /* A status is a dot plus plain text. The colour arrives as --dot from
+           STATUS_COLORS; it was a tinted pill with coloured text. */
+        .db-status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c-text); letter-spacing: 0.01em; font-family: system-ui, -apple-system, sans-serif; white-space: nowrap; }
+        .db-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--c-text-2)); }
+        .db-ride-time { font-size: 11px; color: var(--c-text-2); }
+        .db-ride-name { font-size: 13px; font-weight: 600; color: var(--c-text); margin-bottom: 3px; }
+        .db-ride-addr { font-size: 11px; color: var(--c-text-2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-ride-addr.dest { color: var(--c-text); }
+        .db-ride-fare { font-size: 12px; font-weight: 600; color: var(--c-text-2); margin-top: 4px; }
+        /* Card body, shared by live, scheduled and recent cards: pickup → drop-off
+           on one wrapping line, then driver (left) and fare (right). */
+        .db-ride-route { font-size: 12px; line-height: 1.45; color: var(--c-text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+        .db-ride-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 6px; font-size: 12px; }
+        .db-ride-foot-driver { color: var(--c-text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .db-ride-foot-fare { font-weight: 600; color: var(--c-text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .db-ride-card.recent .db-ride-foot-fare { color: var(--c-text-2); }
+        .db-pending-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-amber-text); background: var(--c-surface-alt); border-radius: 6px; padding: 4px 8px; margin-top: 6px; border: 1px solid var(--c-border); }
+        .db-pending-badge.danger { color: var(--c-red); }
+        .db-assign-btn { width: 100%; background: var(--c-surface-alt); color: var(--c-brand); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; margin-top: 8px; transition: background 0.12s, border-color 0.12s; }
+        .db-assign-btn:hover { background: var(--c-hover-strong); border-color: var(--c-border-strong); }
+        .db-assign-label { font-size: 11px; color: var(--c-text-2); margin: 8px 0 4px; }
+        .db-assign-driver-btn { width: 100%; background: var(--c-surface-alt); color: var(--c-text); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; margin-bottom: 4px; transition: background 0.12s, border-color 0.12s; }
+        .db-assign-driver-btn:hover { background: var(--c-hover-strong); border-color: var(--c-brand); }
         .db-pick-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; text-align: left; }
-        .db-pick-row.demoted { background: rgba(107,114,128,0.06); color: #9CA3AF; border-color: rgba(107,114,128,0.22); }
-        .db-pick-row.demoted:hover { background: rgba(107,114,128,0.12); }
+        .db-pick-row.demoted { background: transparent; color: var(--c-text-2); border-color: var(--c-border); }
+        .db-pick-row.demoted:hover { background: var(--c-hover); }
         .db-pick-row.current, .db-pick-row.current:hover { cursor: default; background: transparent; }
         .db-pick-main { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
         .db-pick-name { display: flex; align-items: center; gap: 6px; font-weight: 600; }
-        .db-pick-meta { font-size: 10.5px; color: #6B7280; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .db-pick-issues { font-size: 10.5px; color: #F59E0B; font-weight: 500; }
+        .db-pick-meta { font-size: 10.5px; color: var(--c-text-2); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-pick-issues { font-size: 10.5px; color: var(--c-amber-text); font-weight: 500; }
         .db-pick-dist { font-size: 11px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-        .db-pick-tag { font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: rgba(148,163,184,0.15); color: #CBD5E1; text-transform: uppercase; letter-spacing: 0.03em; }
-        .db-pick-tag.best { background: rgba(29,158,117,0.18); color: #34D399; }
-        .db-pick-divider { font-size: 10.5px; color: #6B7280; margin: 8px 0 4px; padding-top: 6px; border-top: 1px dashed rgba(107,114,128,0.3); }
-        .db-pick-empty { font-size: 11px; color: #6B7280; margin-bottom: 6px; }
-        .db-cancel-assign-btn { background: transparent; color: #6B7280; border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
-        .db-cancel-assign-btn:hover { color: #9CA3AF; }
-        .db-cancel-ride-btn { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .db-cancel-ride-btn:hover { background: rgba(226,75,74,0.14); }
-        .db-sched-card { background: #1a1f2e; border-radius: 10px; margin-bottom: 6px; border: 1px solid rgba(168,85,247,0.2); border-left: 3px solid #A855F7; cursor: pointer; overflow: hidden; transition: border-color 0.12s, background 0.12s; }
-        .db-sched-card:hover { background: #1e2438; border-color: rgba(168,85,247,0.35); border-left-color: #A855F7; }
-        .db-sched-datetime { display: flex; align-items: center; gap: 6px; background: rgba(168,85,247,0.08); padding: 7px 12px; border-bottom: 1px solid rgba(168,85,247,0.12); color: #A855F7; }
-        .db-sched-date { font-size: 11px; font-weight: 600; color: #C084FC; flex: 1; }
-        .db-sched-time-val { font-size: 12px; font-weight: 700; color: #E9D5FF; }
-        .db-sched-body { padding: 10px 12px 0; }
-        .db-sched-name { font-size: 13px; font-weight: 600; color: #E2E8F0; margin-bottom: 3px; }
-        .db-sched-addr { font-size: 11px; color: #6B7280; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .db-sched-addr.dest { color: rgba(232,80,10,0.8); }
-        .db-sched-fare { font-size: 12px; font-weight: 600; color: #6B7280; margin-top: 4px; }
-        .db-sched-driver-row { display: flex; align-items: center; gap: 6px; margin: 8px 12px 0; padding: 5px 8px; background: rgba(29,158,117,0.06); border: 1px solid rgba(29,158,117,0.15); border-radius: 6px; }
-        .db-sched-driver-dot { width: 6px; height: 6px; border-radius: 50%; background: #1D9E75; flex-shrink: 0; }
-        .db-sched-driver-name { font-size: 11px; font-weight: 500; color: #1D9E75; }
-        .db-sched-assign-btn { flex: 1; background: rgba(168,85,247,0.07); color: #C084FC; border: 1px solid rgba(168,85,247,0.2); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .db-sched-assign-btn:hover { background: rgba(168,85,247,0.13); }
-        .db-cov-pill { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; border: 1px solid; margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
-        .db-cov-bar { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; border: 1px solid; }
+        .db-pick-tag { font-size: 9.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--c-bg); color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.03em; }
+        .db-pick-tag.best { color: var(--c-green); }
+        .db-pick-divider { font-size: 10.5px; color: var(--c-text-2); margin: 8px 0 4px; padding-top: 6px; border-top: 1px dashed var(--c-border-strong); }
+        .db-pick-empty { font-size: 11px; color: var(--c-text-2); margin-bottom: 6px; }
+        .db-cancel-assign-btn { background: transparent; color: var(--c-text-2); border: none; font-size: 11px; cursor: pointer; padding: 4px 0; font-family: system-ui, sans-serif; transition: color 0.12s; }
+        .db-cancel-assign-btn:hover { color: var(--c-text); }
+        .db-cancel-ride-btn { background: var(--c-surface-alt); color: var(--c-red); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, border-color 0.12s; white-space: nowrap; }
+        .db-float-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .db-float-actions > button { flex: 1 1 auto; }
+        .db-float-primary { flex-basis: 100% !important; background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 7px; padding: 8px 0; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .db-float-primary:hover { background: var(--c-brand-fill-hover); }
+        .db-cancel-ride-btn:hover { background: var(--c-hover-strong); border-color: var(--c-red); }
+        /* Scheduled rides: an ordinary card. Purple is kept to the calendar
+           icon and the pickup time (Victor 2026-10-26) — it was a purple
+           border, a purple left bar and a purple-washed header. */
+        .db-sched-card { background: var(--c-surface); border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid var(--c-border); cursor: pointer; transition: border-color 0.12s; }
+        .db-sched-card:hover { border-color: var(--c-border-strong); }
+        .db-sched-when { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--c-purple); }
+        .db-sched-date { font-size: 11px; font-weight: 600; color: var(--c-text-2); white-space: nowrap; }
+        .db-sched-time-val { font-size: 12px; font-weight: 700; color: var(--c-purple); white-space: nowrap; }
+        .db-sched-driver { display: inline-flex; align-items: center; gap: 6px; color: var(--c-text); }
+        .db-sched-driver-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-green); flex-shrink: 0; }
+        .db-sched-assign-btn { flex: 1; background: var(--c-surface-alt); color: var(--c-brand); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 0; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, border-color 0.12s; }
+        .db-sched-assign-btn:hover { background: var(--c-hover-strong); border-color: var(--c-border-strong); }
+        /* Coverage: a dot plus plain text, colour as --dot. */
+        .db-cov-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; color: var(--c-text-2); margin-left: auto; flex-shrink: 0; letter-spacing: 0.02em; }
+        .db-cov-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dot, var(--c-text-2)); }
+        .db-cov-bar { display: flex; align-items: center; gap: 7px; margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; background: var(--c-surface-alt); }
         .db-cov-bar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-        .db-cov-bar-text { font-size: 11px; font-weight: 600; }
-        .db-cov-toast { position: fixed; bottom: 24px; right: 24px; display: flex; align-items: center; gap: 10px; background: #1E2A3A; border: 1px solid rgba(245,158,11,0.35); border-radius: 10px; padding: 12px 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); font-size: 13px; color: #F9FAFB; z-index: 9999; max-width: 320px; animation: db-toast-in 0.2s ease; }
-        .db-cov-toast-icon { color: #F59E0B; font-size: 15px; flex-shrink: 0; }
-        .db-cov-toast-close { background: none; border: none; color: #6B7280; cursor: pointer; font-size: 13px; padding: 0 0 0 6px; line-height: 1; flex-shrink: 0; }
-        .db-cov-toast-close:hover { color: #9CA3AF; }
+        .db-cov-bar-text { font-size: 11px; font-weight: 600; color: var(--c-text); }
+        .db-cov-toast { position: fixed; bottom: 24px; right: 24px; display: flex; align-items: center; gap: 10px; background: var(--c-surface-float); border: 1px solid var(--c-border-strong); border-radius: 10px; padding: 12px 16px; box-shadow: 0 4px 20px var(--c-shadow); font-size: 13px; color: var(--c-text); z-index: 9999; max-width: 320px; animation: db-toast-in 0.2s ease; }
+        .db-cov-toast-icon { color: var(--c-amber); font-size: 15px; flex-shrink: 0; }
+        .db-cov-toast-close { background: none; border: none; color: var(--c-text-2); cursor: pointer; font-size: 13px; padding: 0 0 0 6px; line-height: 1; flex-shrink: 0; }
+        .db-cov-toast-close:hover { color: var(--c-text); }
         @keyframes db-toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .db-driver-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
-        .db-driver-card:hover { background: #213040; border-color: rgba(255,255,255,0.1); }
+        .db-driver-card { background: var(--c-surface); border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid var(--c-border); cursor: pointer; transition: border-color 0.12s; }
+        .db-driver-card:hover { border-color: var(--c-border-strong); }
         .db-driver-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-        .db-driver-avatar { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.12); }
-        .db-driver-avatar-photo { width: 34px; height: 34px; border-radius: 17px; object-fit: cover; flex-shrink: 0; border: 1px solid rgba(74,158,255,0.18); }
-        .db-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; display: flex; align-items: baseline; gap: 8px; }
+        .db-driver-avatar { width: 34px; height: 34px; border-radius: 17px; background: var(--c-surface-alt); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--c-text); flex-shrink: 0; }
+        .db-driver-avatar-photo { width: 34px; height: 34px; border-radius: 17px; object-fit: cover; flex-shrink: 0; border: 1px solid var(--c-border); }
+        .db-driver-name { font-size: 13px; font-weight: 600; color: var(--c-text); display: flex; align-items: baseline; gap: 8px; }
         .db-driver-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .db-car-num { margin-left: auto; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; }
-        .db-driver-sub { font-size: 11px; color: #6B7280; margin-top: 1px; }
-        .db-driver-phone { font-size: 11px; color: #6B7280; margin-top: 3px; }
+        .db-car-num { margin-left: auto; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.08em; }
+        .db-driver-sub { font-size: 11px; color: var(--c-text-2); margin-top: 1px; }
+        .db-driver-phone { font-size: 11px; color: var(--c-text-2); margin-top: 3px; }
         .db-online-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto; }
-        .db-driver-status-on-ride { font-size: 11px; color: #E8500A; margin-top: 3px; font-weight: 500; }
-        .db-driver-status-available { font-size: 11px; color: #1D9E75; margin-top: 3px; font-weight: 500; }
+        .db-driver-status-on-ride, .db-driver-status-available { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text); margin-top: 3px; font-weight: 500; }
+        .db-driver-status-on-ride::before, .db-driver-status-available::before { content: ""; width: 6px; height: 6px; border-radius: 50%; }
+        .db-driver-status-on-ride::before { background: var(--c-amber); }
+        .db-driver-status-available::before { background: var(--c-green); }
         .db-invite-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-        .db-invite-input { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
-        .db-invite-input:focus { border-color: rgba(232,80,10,0.35); }
-        .db-invite-input::placeholder { color: #6B7280; }
-        .db-phone-hint { font-size: 11px; color: #6B7280; font-family: system-ui, -apple-system, sans-serif; margin-top: 6px; line-height: 1.45; }
+        .db-invite-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--c-text); outline: none; font-family: system-ui, sans-serif; transition: border-color 0.15s; }
+        .db-invite-input:focus { border-color: var(--c-brand); }
+        .db-invite-input::placeholder { color: var(--c-text-3); }
+        .db-phone-hint { font-size: 11px; color: var(--c-text-2); font-family: system-ui, -apple-system, sans-serif; margin-top: 6px; line-height: 1.45; }
         /* Country chip + national number. db-tel is position:relative so the
            search popover anchors to the field; it must stay above the modal's
-           own stacking context, hence the z-index. NOTE no backticks in here:
-           the whole block is one template literal and a stray one ends it. */
+           own stacking context, hence the z-index. */
         .db-tel { position: relative; }
-        .db-tel-row { display: flex; align-items: stretch; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; overflow: hidden; transition: border-color 0.15s; }
-        .db-tel-row:focus-within { border-color: rgba(232,80,10,0.35); }
-        .db-tel-modal .db-tel-row { background: #111827; }
-        .db-tel-chip { display: flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.04); border: none; border-right: 1px solid rgba(255,255,255,0.08); padding: 0 10px; cursor: pointer; color: #F1F5F9; font-family: system-ui, sans-serif; }
-        .db-tel-chip:hover { background: rgba(255,255,255,0.07); }
+        .db-tel-row { display: flex; align-items: stretch; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; transition: border-color 0.15s; }
+        .db-tel-row:focus-within { border-color: var(--c-brand); }
+        .db-tel-modal .db-tel-row { background: var(--c-input); }
+        .db-tel-chip { display: flex; align-items: center; gap: 5px; background: var(--c-surface-alt); border: none; border-right: 1px solid var(--c-border); padding: 0 10px; cursor: pointer; color: var(--c-text); font-family: system-ui, sans-serif; }
+        .db-tel-chip:hover { background: var(--c-hover-strong); }
         .db-tel-flag { font-size: 15px; }
         .db-tel-dial { font-size: 13px; font-weight: 600; }
-        .db-tel-caret { font-size: 9px; color: #6B7280; }
-        .db-tel-input { flex: 1; min-width: 0; background: transparent; border: none; padding: 10px 12px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
-        .db-tel-input::placeholder { color: #6B7280; }
-        .db-tel-pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: 280px; max-width: 90vw; background: #1A2433; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.45); padding: 8px; }
-        .db-tel-search { width: 100%; box-sizing: border-box; background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: #F1F5F9; outline: none; font-family: system-ui, sans-serif; }
-        .db-tel-search::placeholder { color: #6B7280; }
+        .db-tel-caret { font-size: 9px; color: var(--c-text-2); }
+        .db-tel-input { flex: 1; min-width: 0; background: transparent; border: none; padding: 10px 12px; font-size: 13px; color: var(--c-text); outline: none; font-family: system-ui, sans-serif; }
+        .db-tel-input::placeholder { color: var(--c-text-3); }
+        .db-tel-pop { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: 280px; max-width: 90vw; background: var(--c-surface); border: 1px solid var(--c-border-strong); border-radius: 10px; box-shadow: 0 12px 32px var(--c-shadow); padding: 8px; }
+        .db-tel-search { width: 100%; box-sizing: border-box; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; padding: 8px 10px; font-size: 13px; color: var(--c-text); outline: none; font-family: system-ui, sans-serif; }
+        .db-tel-search::placeholder { color: var(--c-text-3); }
         .db-tel-list { max-height: 260px; overflow-y: auto; margin-top: 6px; }
         /* .db-modal is overflow-y:auto, so a popover tall enough to pass its
            bottom edge gets clipped and has to be scrolled to. Shorter list in
            that variant instead. */
         .db-tel-modal .db-tel-list { max-height: 180px; }
         .db-tel-item { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: none; padding: 8px 8px; cursor: pointer; text-align: left; border-radius: 6px; font-family: system-ui, sans-serif; }
-        .db-tel-item:hover { background: rgba(255,255,255,0.06); }
-        .db-tel-item-on { background: rgba(232,80,10,0.12); }
-        .db-tel-name { flex: 1; font-size: 13px; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .db-tel-dial-muted { font-size: 12px; color: #6B7280; }
-        .db-tel-empty { padding: 14px 8px; font-size: 12px; color: #6B7280; text-align: center; font-family: system-ui, sans-serif; }
-        .db-invite-btn { background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
-        .db-invite-btn:hover { opacity: 0.88; }
+        .db-tel-item:hover { background: var(--c-hover-strong); }
+        .db-tel-item-on { background: var(--c-surface-sel); }
+        .db-tel-name { flex: 1; font-size: 13px; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .db-tel-dial-muted { font-size: 12px; color: var(--c-text-2); }
+        .db-tel-empty { padding: 14px 8px; font-size: 12px; color: var(--c-text-2); text-align: center; font-family: system-ui, sans-serif; }
+        .db-invite-btn { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.15s; }
+        .db-invite-btn:hover { background: var(--c-brand-fill-hover); }
         .db-invite-btn:disabled { opacity: 0.5; }
-        .db-invite-success { background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px; }
-        .db-invite-card { background: #1E2A3A; border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); }
+        .db-invite-success { background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 12px; }
+        .db-invite-card { background: var(--c-surface); border-radius: 10px; padding: 12px; margin-bottom: 6px; border: 1px solid var(--c-border); }
         .db-invite-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-        .db-invite-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
-        .db-invite-phone { font-size: 11px; color: #6B7280; margin-bottom: 8px; }
+        .db-invite-name { font-size: 13px; font-weight: 600; color: var(--c-text); }
+        .db-invite-phone { font-size: 11px; color: var(--c-text-2); margin-bottom: 8px; }
         .db-invite-code-row { display: flex; align-items: center; justify-content: space-between; }
-        .db-invite-code { font-size: 15px; font-weight: 700; color: #E8500A; letter-spacing: 0.18em; }
-        .db-revoke-btn { background: rgba(226,75,74,0.08); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 6px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .db-revoke-btn:hover { background: rgba(226,75,74,0.14); }
+        .db-invite-code { font-size: 15px; font-weight: 700; color: var(--c-text); letter-spacing: 0.18em; font-variant-numeric: tabular-nums; }
+        .db-revoke-btn { background: var(--c-surface-alt); color: var(--c-red); border: 1px solid var(--c-border); border-radius: 6px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: border-color 0.12s; }
+        .db-revoke-btn:hover { border-color: var(--c-red); }
         .db-map-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
         .db-map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-        .db-overlay { flex: 1; overflow: hidden; background: #111827; display: flex; flex-direction: column; }
-        .db-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-        .db-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; }
-        .db-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; font-family: system-ui, -apple-system, sans-serif; }
-        .db-modal-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; font-family: system-ui, -apple-system, sans-serif; }
-        .db-modal-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
-        .db-modal-input:focus { border-color: rgba(232,80,10,0.4); }
-        .db-modal-input::placeholder { color: #6B7280; }
-        .db-modal-select { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-overlay { flex: 1; overflow: hidden; background: var(--c-bg); display: flex; flex-direction: column; }
+        .db-modal-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .db-modal { background: var(--c-surface); border-radius: 14px; padding: 26px; width: 100%; max-width: 440px; border: 1px solid var(--c-border); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px var(--c-shadow); color: var(--c-text); font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-title { font-size: 17px; font-weight: 700; color: var(--c-text); margin-bottom: 20px; font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-label { font-size: 11px; color: var(--c-text-2); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; font-family: system-ui, -apple-system, sans-serif; }
+        .db-modal-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
+        .db-modal-input:focus { border-color: var(--c-brand); }
+        .db-modal-input::placeholder { color: var(--c-text-3); }
+        .db-modal-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
         .db-modal-select:disabled { opacity: 0.55; cursor: not-allowed; }
-        .db-modal-hint { font-size: 11px; color: #6B7280; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
-        .pac-container { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
-        .pac-item { padding: 8px 12px; color: #9CA3AF; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
+        .db-modal-hint { font-size: 11px; color: var(--c-text-2); margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
+        .pac-container { background: var(--c-surface); border: 1px solid var(--c-border-strong); border-radius: 8px; margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; box-shadow: 0 8px 32px var(--c-shadow); }
+        .pac-item { padding: 8px 12px; color: var(--c-text-2); font-size: 13px; border-top: 1px solid var(--c-border-subtle); cursor: pointer; }
         .pac-item:first-child { border-top: none; }
-        .pac-item:hover, .pac-item-selected { background: rgba(232,80,10,0.1); color: #E2E8F0; }
-        .pac-item-query { color: #E2E8F0; font-size: 13px; }
-        .pac-matched { color: #E8500A; font-weight: 600; }
+        .pac-item:hover, .pac-item-selected { background: var(--c-surface-sel); color: var(--c-text); }
+        .pac-item-query { color: var(--c-text); font-size: 13px; }
+        .pac-matched { color: var(--c-brand); font-weight: 600; }
         .pac-icon { display: none; }
         .pac-logo:after { display: none; }
-        .db-modal-cancel-btn { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .db-modal-cancel-btn:hover { background: rgba(255,255,255,0.04); }
-        .db-modal-submit-btn { flex: 2; background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: opacity 0.15s; }
-        .db-modal-submit-btn:hover { opacity: 0.88; }
+        .db-modal-cancel-btn { flex: 1; background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .db-modal-cancel-btn:hover { background: var(--c-hover); color: var(--c-text); }
+        .db-modal-submit-btn { flex: 2; background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.15s; }
+        .db-modal-submit-btn:hover { background: var(--c-brand-fill-hover); }
         .db-modal-submit-btn:disabled { opacity: 0.5; }
-        /* Floating live-ride card — sits over the bottom-left of the map, list + map stay visible */
-        .db-ride-float { position: absolute; left: 16px; top: 72px; z-index: 60; width: 300px; max-height: calc(100% - 88px); overflow-y: auto; background: rgba(22,31,46,0.97); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; }
+        /* Floating live-ride card: sits over the top-left of the map, list + map stay visible. */
+        .db-ride-float { position: absolute; left: 16px; top: 72px; z-index: 60; width: 300px; max-height: calc(100% - 88px); overflow-y: auto; background: var(--c-surface-float); backdrop-filter: blur(6px); border: 1px solid var(--c-border); border-radius: 14px; box-shadow: 0 12px 40px var(--c-shadow); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; color: var(--c-text); font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; }
         @keyframes dbFloatIn { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .db-ride-float-head { display: flex; align-items: center; gap: 8px; }
-        .db-ride-float-time { font-size: 12px; color: #6B7280; }
-        .db-ride-float-close { margin-left: auto; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; border-radius: 7px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background 0.12s; }
-        .db-ride-float-close:hover { background: rgba(255,255,255,0.12); color: #E2E8F0; }
-        .db-ride-float-pax { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-top: -2px; }
+        .db-ride-float-time { font-size: 12px; color: var(--c-text-2); }
+        .db-ride-float-close { margin-left: auto; background: var(--c-surface-alt); border: 1px solid var(--c-border); color: var(--c-text-2); border-radius: 7px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; flex-shrink: 0; transition: background 0.12s; }
+        .db-ride-float-close:hover { background: var(--c-hover-strong); color: var(--c-text); }
+        .db-ride-float-pax { font-size: 17px; font-weight: 700; color: var(--c-text); margin-top: -2px; }
         .db-ride-float-contacts { display: flex; flex-direction: column; gap: 8px; }
         .db-phone-row { display: flex; align-items: center; gap: 8px; }
-        .db-phone-role { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; flex-shrink: 0; }
-        .db-phone-num { font-size: 13px; color: #E2E8F0; font-weight: 500; font-variant-numeric: tabular-nums; flex: 1; }
-        /* Attention panel — an OVERLAY, not a layout column. A column would
+        .db-phone-role { font-size: 11px; color: var(--c-text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; flex-shrink: 0; }
+        .db-phone-num { font-size: 13px; color: var(--c-text); font-weight: 500; font-variant-numeric: tabular-nums; flex: 1; }
+        /* Attention panel: an OVERLAY, not a layout column. A column would
            resize db-map-wrap, and the live-ride map.fitBounds framing was
            computed at the old width. Sits right; db-ride-float is left:16px so
            they never collide. */
-        .db-alerts { position: absolute; right: 16px; top: 72px; z-index: 62; width: 312px; max-height: calc(100% - 88px); display: flex; flex-direction: column; background: rgba(22,31,46,0.97); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; overflow: hidden; }
-        .db-alerts-head { display: flex; align-items: center; gap: 8px; padding: 13px 14px 11px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
-        .db-alerts-title { font-size: 11px; font-weight: 600; color: #6B7280; letter-spacing: 0.07em; text-transform: uppercase; }
-        .db-alerts-count { font-size: 10px; font-weight: 700; background: rgba(226,75,74,0.15); color: #F87171; border-radius: 10px; padding: 1px 7px; }
-        .db-alerts-close { margin-left: auto; background: none; border: none; color: #6B7280; font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 4px; }
-        .db-alerts-close:hover { color: #E2E8F0; }
+        .db-alerts { position: absolute; right: 16px; top: 72px; z-index: 62; width: 312px; max-height: calc(100% - 88px); display: flex; flex-direction: column; background: var(--c-surface-float); backdrop-filter: blur(6px); border: 1px solid var(--c-border); border-radius: 14px; box-shadow: 0 12px 40px var(--c-shadow); color: var(--c-text); font-family: system-ui, -apple-system, sans-serif; animation: dbFloatIn 0.16s ease-out; overflow: hidden; }
+        .db-alerts-head { display: flex; align-items: center; gap: 8px; padding: 13px 14px 11px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
+        .db-alerts-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.07em; text-transform: uppercase; }
+        .db-alerts-count { font-size: 10px; font-weight: 700; background: var(--c-surface-alt); color: var(--c-text); border-radius: 10px; padding: 1px 7px; }
+        .db-alerts-close { margin-left: auto; background: none; border: none; color: var(--c-text-2); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 4px; }
+        .db-alerts-close:hover { color: var(--c-text); }
         .db-alerts-scroll { overflow-y: auto; padding: 8px; }
         .db-alerts-scroll::-webkit-scrollbar { width: 3px; }
-        .db-alerts-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
-        .db-alert-row { width: 100%; text-align: left; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border-radius: 9px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); cursor: pointer; margin-bottom: 6px; font-family: inherit; transition: background 0.12s, border-color 0.12s; }
-        .db-alert-row:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
-        .db-alert-row.flag { border-color: rgba(248,113,113,0.32); background: rgba(248,113,113,0.08); }
-        .db-alert-row.flag:hover { background: rgba(248,113,113,0.13); }
+        .db-alerts-scroll::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
+        .db-alert-row { width: 100%; text-align: left; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border-radius: 9px; background: var(--c-surface); border: 1px solid var(--c-border); cursor: pointer; margin-bottom: 6px; font-family: inherit; color: var(--c-text); transition: border-color 0.12s; }
+        .db-alert-row:hover { border-color: var(--c-border-strong); }
+        .db-alert-row.flag { border-color: var(--c-red); }
         .db-alert-glyph { font-size: 13px; line-height: 16px; flex-shrink: 0; }
         .db-alert-body { display: block; flex: 1; min-width: 0; }
-        .db-alert-title { display: block; font-size: 12px; font-weight: 700; color: #F1F5F9; line-height: 16px; }
-        .db-alert-row.flag .db-alert-title { color: #F87171; }
-        .db-alert-detail { display: block; font-size: 11px; color: #9CA3AF; line-height: 15px; margin-top: 2px; overflow-wrap: anywhere; }
-        .db-alert-meta { display: block; font-size: 10px; color: #6B7280; margin-top: 3px; }
-        .db-alerts-empty { padding: 22px 16px; text-align: center; color: #6B7280; font-size: 12px; }
-        .db-alert-btn { position: relative; background: transparent; border: 1px solid rgba(255,255,255,0.10); border-radius: 7px; padding: 6px 11px; font-size: 13px; font-weight: 600; color: #9CA3AF; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
-        .db-alert-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
-        .db-alert-btn.hot { color: #F87171; border-color: rgba(248,113,113,0.4); background: rgba(248,113,113,0.08); }
-        .db-flag-box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: rgba(248,113,113,0.10); border: 1px solid rgba(248,113,113,0.35); display: flex; gap: 8px; align-items: flex-start; }
-        .db-flag-glyph { color: #F87171; font-size: 13px; line-height: 16px; flex-shrink: 0; }
+        .db-alert-title { display: block; font-size: 12px; font-weight: 700; color: var(--c-text); line-height: 16px; }
+        .db-alert-row.flag .db-alert-title { color: var(--c-red); }
+        .db-alert-detail { display: block; font-size: 11px; color: var(--c-text-2); line-height: 15px; margin-top: 2px; overflow-wrap: anywhere; }
+        .db-alert-meta { display: block; font-size: 10px; color: var(--c-text-2); margin-top: 3px; }
+        .db-alerts-empty { padding: 22px 16px; text-align: center; color: var(--c-text-2); font-size: 12px; }
+        .db-alert-btn { position: relative; display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 11px; font-size: 13px; font-weight: 600; color: var(--c-text-2); cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
+        .db-alert-btn:hover { color: var(--c-text); border-color: var(--c-border-strong); }
+        .db-alert-btn.hot { color: var(--c-red); border-color: var(--c-red); }
+        .db-flag-box { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--c-surface-alt); border: 1px solid var(--c-red); display: flex; gap: 8px; align-items: flex-start; }
+        .db-flag-glyph { color: var(--c-red); font-size: 13px; line-height: 16px; flex-shrink: 0; }
         .db-flag-body { flex: 1; min-width: 0; }
-        .db-flag-head { color: #F87171; font-size: 12px; font-weight: 700; line-height: 16px; }
-        /* Reasons hang off the same left edge as the heading — the icon lives in
+        .db-flag-head { color: var(--c-red); font-size: 12px; font-weight: 700; line-height: 16px; }
+        /* Reasons hang off the same left edge as the heading; the icon lives in
            its own column, so nothing is faked with padding or spaces. */
         .db-flag-list { list-style: none; margin: 3px 0 0; padding: 0; }
-        .db-flag-item { color: #FCA5A5; font-size: 11.5px; font-weight: 600; line-height: 16px; display: flex; gap: 6px; }
-        .db-flag-item::before { content: "•"; color: rgba(248,113,113,0.65); flex-shrink: 0; }
-        .db-flag-note { color: #FCA5A5; font-size: 11px; line-height: 15px; margin-top: 4px; opacity: 0.9; overflow-wrap: anywhere; }
-        .db-flag-resolve { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #E2E8F0; border-radius: 7px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
-        .db-flag-resolve:hover { background: rgba(255,255,255,0.12); }
-        .db-phone-copy { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #E2E8F0; border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; transition: background 0.12s; font-family: system-ui, -apple-system, sans-serif; }
-        .db-phone-copy:hover { background: rgba(255,255,255,0.12); }
-        .db-live-driver { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 12px 14px; }
-        .db-live-driver-name { font-size: 14px; font-weight: 600; color: #E2E8F0; }
-        .db-live-driver-veh { font-size: 12px; color: #94A3B8; margin-top: 2px; }
-        .db-live-track { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .db-flag-item { color: var(--c-text); font-size: 11.5px; font-weight: 600; line-height: 16px; display: flex; gap: 6px; }
+        .db-flag-item::before { content: "•"; color: var(--c-red); flex-shrink: 0; }
+        .db-flag-note { color: var(--c-text-2); font-size: 11px; line-height: 15px; margin-top: 4px; overflow-wrap: anywhere; }
+        .db-flag-resolve { background: var(--c-surface); border: 1px solid var(--c-border-strong); color: var(--c-text); border-radius: 7px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-flag-resolve:hover { background: var(--c-hover-strong); }
+        .db-phone-copy { background: var(--c-surface-alt); border: 1px solid var(--c-border); color: var(--c-text); border-radius: 7px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; transition: background 0.12s; font-family: system-ui, -apple-system, sans-serif; }
+        .db-phone-copy:hover { background: var(--c-hover-strong); }
+        .db-live-driver { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--c-surface-alt); border: 1px solid var(--c-border-subtle); border-radius: 10px; padding: 12px 14px; }
+        .db-live-driver-name { font-size: 14px; font-weight: 600; color: var(--c-text); }
+        .db-live-driver-veh { font-size: 12px; color: var(--c-text-2); margin-top: 2px; }
+        .db-live-track { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--c-text-2); }
         .db-live-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
         .db-live-route { display: flex; flex-direction: column; gap: 12px; position: relative; }
-        .db-live-route::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 14px; width: 2px; background: rgba(255,255,255,0.12); }
+        .db-live-route::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 14px; width: 2px; background: var(--c-border-strong); }
         .db-live-stop { display: flex; gap: 12px; align-items: flex-start; position: relative; }
-        .db-live-stop-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 2px; flex-shrink: 0; border: 2px solid #161F2E; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); z-index: 1; }
-        .db-live-stop-label { font-size: 11px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-        .db-live-stop-addr { font-size: 13px; color: #E2E8F0; margin-top: 2px; line-height: 1.35; }
+        .db-live-stop-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 2px; flex-shrink: 0; border: 2px solid var(--c-surface); box-shadow: 0 0 0 1px var(--c-border-strong); z-index: 1; }
+        .db-live-stop-label { font-size: 11px; color: var(--c-text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+        .db-live-stop-addr { font-size: 13px; color: var(--c-text); margin-top: 2px; line-height: 1.35; }
         .db-live-chips { display: flex; gap: 8px; }
-        .db-live-chip { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; color: #E2E8F0; }
+        .db-live-chip { background: var(--c-surface-alt); border: 1px solid var(--c-border-subtle); border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; color: var(--c-text); }
         .db-live-contact { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
-        .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .db-detail-label { font-size: 12px; color: #6B7280; font-weight: 500; font-family: system-ui, -apple-system, sans-serif; }
-        .db-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; font-family: system-ui, -apple-system, sans-serif; }
-        .db-detail-row-warning { background: rgba(226,75,74,0.1); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
-        .db-detail-value-warning { color: #E24B4A; font-weight: 700; }
-        .dd-panel { position: absolute; inset: 0; background: #111827; display: flex; flex-direction: column; overflow: hidden; }
-        .dd-header { height: 48px; background: #0F1723; border-bottom: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
-        .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: #6B7280; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
-        .dd-back:hover { color: #9CA3AF; }
+        .db-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--c-border-subtle); }
+        .db-detail-label { font-size: 12px; color: var(--c-text-2); font-weight: 500; font-family: system-ui, -apple-system, sans-serif; }
+        .db-detail-value { font-size: 13px; color: var(--c-text); font-weight: 500; max-width: 60%; text-align: right; font-family: system-ui, -apple-system, sans-serif; }
+        .db-detail-row-warning { background: var(--c-surface-alt); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
+        .db-detail-value-warning { color: var(--c-red); font-weight: 700; }
+        .dd-panel { position: absolute; inset: 0; background: var(--c-bg); color: var(--c-text); display: flex; flex-direction: column; overflow: hidden; }
+        .dd-header { height: 48px; background: var(--c-surface); border-bottom: 1px solid var(--c-border); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
+        .dd-back { display: flex; align-items: center; gap: 7px; background: none; border: none; color: var(--c-text-2); font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; padding: 0; transition: color 0.12s; }
+        .dd-back:hover { color: var(--c-text); }
         .dd-scroll { flex: 1; overflow-y: auto; padding: 16px; }
         .dd-scroll::-webkit-scrollbar { width: 3px; }
-        .dd-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .dd-scroll::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 2px; }
         .dd-profile { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-        .dd-avatar-photo { width: 52px; height: 52px; border-radius: 26px; object-fit: cover; border: 2px solid rgba(74,158,255,0.2); flex-shrink: 0; }
-        .dd-avatar-initials { width: 52px; height: 52px; border-radius: 26px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #4a9eff; flex-shrink: 0; border: 2px solid rgba(74,158,255,0.12); }
+        .dd-avatar-photo { width: 52px; height: 52px; border-radius: 26px; object-fit: cover; border: 2px solid var(--c-border); flex-shrink: 0; }
+        .dd-avatar-initials { width: 52px; height: 52px; border-radius: 26px; background: var(--c-surface-alt); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: var(--c-text); flex-shrink: 0; }
         .dd-profile-info { flex: 1; min-width: 0; }
-        .dd-driver-num { font-size: 12px; font-weight: 600; color: #6B7280; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; flex-shrink: 0; }
-        .dd-profile-name { font-size: 16px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dd-profile-sub { font-size: 12px; color: #6B7280; }
-        .dd-profile-phone { font-size: 12px; color: #6B7280; margin-top: 2px; }
+        .dd-driver-num { font-size: 12px; font-weight: 600; color: var(--c-text-2); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; flex-shrink: 0; }
+        .dd-profile-name { font-size: 16px; font-weight: 700; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dd-profile-sub { font-size: 12px; color: var(--c-text-2); }
+        .dd-profile-phone { font-size: 12px; color: var(--c-text-2); margin-top: 2px; }
         .dd-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         .dd-status-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-        .dd-pill { font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 10px; }
-        .dd-pill-green { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); }
-        .dd-pill-orange { background: rgba(232,80,10,0.1); color: #E8500A; border: 1px solid rgba(232,80,10,0.2); }
-        .dd-pill-gray { background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2); }
-        .dd-pill-red { background: rgba(226,75,74,0.1); color: #F87171; border: 1px solid rgba(226,75,74,0.2); }
+        /* Driver status chips: a neutral chip with a status dot. */
+        .dd-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; border-radius: 20px; padding: 3px 10px; background: var(--c-surface-alt); color: var(--c-text); }
+        .dd-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--dot, var(--c-text-2)); }
+        /* A chip that carries its own icon needs no dot as well. */
+        .dd-pill:has(svg)::before { display: none; }
+        .dd-pill-green { --dot: var(--c-green); }
+        .dd-pill-orange { --dot: var(--c-amber); }
+        .dd-pill-gray { --dot: var(--c-text-3); color: var(--c-text-2); }
+        .dd-pill-red { --dot: var(--c-red); }
+        .dd-pill-amber { --dot: var(--c-amber); }
         .dd-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
-        .dd-stat-box { background: #1E2A3A; border-radius: 10px; padding: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.05); }
-        .dd-stat-val { font-size: 18px; font-weight: 700; color: #F1F5F9; }
-        .dd-stat-lbl { font-size: 10px; color: #6B7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
-        .dd-trail-btn { width: 100%; text-align: left; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: #111827; margin-bottom: 18px; display: block; }
-        .dd-trail-btn:hover { background: #F3F4F6; border-color: #D1D5DB; }
-        .dd-trail-hint { display: block; font-size: 11px; font-weight: 400; color: #6B7280; margin-top: 2px; }
+        .dd-stat-box { background: var(--c-surface); border-radius: 10px; padding: 12px; text-align: center; border: 1px solid var(--c-border); }
+        .dd-stat-val { font-size: 18px; font-weight: 700; color: var(--c-text); }
+        .dd-stat-lbl { font-size: 10px; color: var(--c-text-2); font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+        .dd-trail-btn { width: 100%; text-align: left; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 11px 13px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--c-text); margin-bottom: 18px; display: block; }
+        .dd-trail-btn:hover { border-color: var(--c-border-strong); }
+        .dd-trail-hint { display: block; font-size: 11px; font-weight: 400; color: var(--c-text-2); margin-top: 2px; }
 
-        /* Trail overlay — floats over the always-mounted map, never replaces it. */
         /* The dispatcher's view controls. Bottom-LEFT at 34px up: bottom-right
            is Google's zoom control and terms link, and bottom-0 is their logo,
            which must not be covered. */
-        .db-map-view-ctl { position: absolute; left: 12px; bottom: 34px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: rgba(17,24,39,0.72); backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); border: 1px solid rgba(255,255,255,0.09); box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-family: system-ui, -apple-system, sans-serif; }
-        .db-map-view-btn { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: #94A3B8; border-radius: 8px; cursor: pointer; transition: background 0.12s, color 0.12s, transform 0.12s; }
-        .db-map-view-btn:hover { background: rgba(255,255,255,0.09); color: #F1F5F9; }
+        .db-map-view-ctl { position: absolute; left: 12px; bottom: 34px; z-index: 5; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: var(--c-surface-float); backdrop-filter: blur(12px) saturate(150%); -webkit-backdrop-filter: blur(12px) saturate(150%); border: 1px solid var(--c-border); box-shadow: 0 8px 24px var(--c-shadow); font-family: system-ui, -apple-system, sans-serif; }
+        .db-map-view-btn { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: none; background: transparent; color: var(--c-text-2); border-radius: 8px; cursor: pointer; transition: background 0.12s, color 0.12s, transform 0.12s; }
+        .db-map-view-btn:hover { background: var(--c-hover-strong); color: var(--c-text); }
         .db-map-view-btn:active { transform: scale(0.92); }
-        .db-map-view-btn:focus-visible { outline: 2px solid #E8500A; outline-offset: 1px; }
-        .db-map-view-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.12); margin: 0 2px; }
-        .db-map-view-flash { font-size: 11px; font-weight: 600; color: #1D9E75; padding: 0 8px 0 4px; white-space: nowrap; animation: dbViewFlash 0.18s ease-out; }
+        .db-map-view-btn:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 1px; }
+        .db-map-view-sep { width: 1px; height: 16px; background: var(--c-border-strong); margin: 0 2px; }
+        .db-map-view-flash { font-size: 11px; font-weight: 600; color: var(--c-green); padding: 0 8px 0 4px; white-space: nowrap; animation: dbViewFlash 0.18s ease-out; }
         @keyframes dbViewFlash { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
-        .db-trail { position: absolute; top: 16px; left: 16px; width: 300px; max-height: calc(100% - 32px); overflow-y: auto; background: #fff; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 14px; z-index: 5; }
+        /* Trail overlay: floats over the always-mounted map, never replaces it. */
+        .db-trail { position: absolute; top: 16px; left: 16px; width: 300px; max-height: calc(100% - 32px); overflow-y: auto; background: var(--c-surface-float); border: 1px solid var(--c-border); border-radius: 12px; box-shadow: 0 8px 24px var(--c-shadow); padding: 14px; z-index: 5; color: var(--c-text); }
         .db-trail-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-        .db-trail-name { font-size: 14px; font-weight: 700; color: #111827; }
-        .db-trail-sub { font-size: 11px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
-        .db-trail-close { background: none; border: none; color: #6B7280; font-size: 12px; cursor: pointer; padding: 2px 4px; }
-        .db-trail-close:hover { color: #111827; }
+        .db-trail-name { font-size: 14px; font-weight: 700; color: var(--c-text); }
+        .db-trail-sub { font-size: 11px; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+        .db-trail-close { background: none; border: none; color: var(--c-text-2); font-size: 12px; cursor: pointer; padding: 2px 4px; }
+        .db-trail-close:hover { color: var(--c-text); }
         .db-trail-dates { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
-        .db-trail-dates input { flex: 1; border: 1px solid #E5E7EB; border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; }
-        .db-trail-dates button { width: 28px; height: 28px; border: 1px solid #E5E7EB; background: #fff; border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1; color: #374151; }
+        .db-trail-dates input { flex: 1; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); border-radius: 8px; padding: 6px 8px; font-size: 12px; font-family: inherit; }
+        .db-trail-dates button { width: 28px; height: 28px; border: 1px solid var(--c-border); background: var(--c-surface-alt); border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1; color: var(--c-text); }
         .db-trail-dates button:disabled { opacity: 0.35; cursor: default; }
-        .db-trail-empty { font-size: 12px; color: #6B7280; padding: 10px 0; }
-        .db-trail-note { font-size: 11px; color: #9CA3AF; margin-top: 6px; line-height: 1.45; }
+        .db-trail-empty { font-size: 12px; color: var(--c-text-2); padding: 10px 0; }
+        .db-trail-note { font-size: 11px; color: var(--c-text-2); margin-top: 6px; line-height: 1.45; }
         .db-trail-stats { display: flex; gap: 8px; margin-bottom: 14px; }
-        .db-trail-stats > div { flex: 1; background: #F9FAFB; border-radius: 8px; padding: 8px 6px; text-align: center; font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.05em; }
-        .db-trail-stats span { display: block; font-size: 15px; font-weight: 700; color: #111827; letter-spacing: 0; text-transform: none; margin-bottom: 1px; }
+        .db-trail-stats > div { flex: 1; background: var(--c-surface-alt); border-radius: 8px; padding: 8px 6px; text-align: center; font-size: 10px; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.05em; }
+        .db-trail-stats span { display: block; font-size: 15px; font-weight: 700; color: var(--c-text); letter-spacing: 0; text-transform: none; margin-bottom: 1px; }
         .db-trail-scrub { margin-bottom: 12px; }
-        .db-trail-scrub-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; color: #9CA3AF; margin-bottom: 4px; }
-        .db-trail-scrub-head strong { font-size: 12px; color: #111827; }
-        .db-trail-scrub input[type=range] { width: 100%; accent-color: #2563EB; }
-        .db-trail-reset { background: none; border: none; color: #2563EB; font-size: 11px; cursor: pointer; padding: 2px 0; }
-        .db-trail-legend { display: flex; gap: 12px; font-size: 11px; color: #6B7280; margin-bottom: 12px; }
+        .db-trail-scrub-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; color: var(--c-text-2); margin-bottom: 4px; }
+        .db-trail-scrub-head strong { font-size: 12px; color: var(--c-text); }
+        .db-trail-scrub input[type=range] { width: 100%; accent-color: var(--c-brand-fill); }
+        .db-trail-reset { background: none; border: none; color: var(--c-brand); font-size: 11px; font-weight: 600; cursor: pointer; padding: 2px 0; }
+        .db-trail-legend { display: flex; gap: 12px; font-size: 11px; color: var(--c-text-2); margin-bottom: 12px; }
         .db-trail-legend span { display: flex; align-items: center; gap: 5px; }
         .db-trail-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-        .db-trail-legend i.fare { background: #E8500A; }
-        .db-trail-legend i.idle { background: #9CA3AF; }
+        .db-trail-legend i.fare { background: var(--c-brand-fill); }
+        .db-trail-legend i.idle { background: var(--c-text-3); }
         .db-trail-stops { display: flex; flex-direction: column; gap: 4px; }
         .db-trail-shifts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
-        .db-trail-shift { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 9px; border: 1px solid #F3F4F6; border-radius: 8px; background: #fff; }
-        .db-trail-shift-reason { width: 100%; font-size: 11px; color: #6B7280; }
-        .db-trail-stop { display: flex; align-items: center; gap: 8px; width: 100%; background: #fff; border: 1px solid #F3F4F6; border-radius: 8px; padding: 7px 9px; cursor: pointer; text-align: left; }
-        .db-trail-stop:hover { background: #F9FAFB; border-color: #E5E7EB; }
-        .db-trail-stop-n { width: 18px; height: 18px; border-radius: 9px; background: #111827; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .db-trail-stop-time { flex: 1; font-size: 12px; color: #374151; }
-        .db-trail-stop-dur { font-size: 11px; font-weight: 600; color: #6B7280; }
+        .db-trail-shift { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 9px; border: 1px solid var(--c-border-subtle); border-radius: 8px; background: var(--c-surface); }
+        .db-trail-shift-reason { width: 100%; font-size: 11px; color: var(--c-text-2); }
+        .db-trail-stop { display: flex; align-items: center; gap: 8px; width: 100%; background: var(--c-surface); border: 1px solid var(--c-border-subtle); border-radius: 8px; padding: 7px 9px; cursor: pointer; text-align: left; color: var(--c-text); }
+        .db-trail-stop:hover { border-color: var(--c-border-strong); }
+        .db-trail-stop-n { width: 18px; height: 18px; border-radius: 9px; background: var(--c-text); color: var(--c-surface); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .db-trail-stop-time { flex: 1; font-size: 12px; color: var(--c-text); }
+        .db-trail-stop-dur { font-size: 11px; font-weight: 600; color: var(--c-text-2); }
 
-        .dd-section-label { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
-        .dd-empty { font-size: 13px; color: #6B7280; text-align: center; padding: 24px 0; }
-        .dd-ride-row { background: #1E2A3A; border-radius: 10px; padding: 11px 12px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+        .dd-section-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; margin-bottom: 8px; }
+        .dd-empty { font-size: 13px; color: var(--c-text-2); text-align: center; padding: 24px 0; }
+        .dd-ride-row { background: var(--c-surface); border-radius: 10px; padding: 11px 12px; margin-bottom: 6px; border: 1px solid var(--c-border); display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .dd-ride-row-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-        .dd-ride-passenger { font-size: 12px; font-weight: 600; color: #E2E8F0; margin-top: 4px; }
-        .dd-ride-addr { font-size: 11px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .dd-ride-time { font-size: 10px; color: #6B7280; }
-        .dd-ride-fare { font-size: 13px; font-weight: 600; color: #6B7280; white-space: nowrap; padding-top: 2px; }
-        .dd-pill-amber { background: rgba(245,158,11,0.1); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); }
-        .dd-action-deactivate { background: rgba(245,158,11,0.08); color: #F59E0B; border: 1px solid rgba(245,158,11,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-action-deactivate:hover { background: rgba(245,158,11,0.15); }
-        .dd-action-activate { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-action-activate:hover { background: rgba(29,158,117,0.15); }
-        .dd-action-delete { background: rgba(226,75,74,0.07); color: #F87171; border: 1px solid rgba(226,75,74,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-action-delete:hover:not(:disabled) { background: rgba(226,75,74,0.14); }
+        .dd-ride-passenger { font-size: 12px; font-weight: 600; color: var(--c-text); margin-top: 4px; }
+        .dd-ride-addr { font-size: 11px; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dd-ride-time { font-size: 10px; color: var(--c-text-2); }
+        .dd-ride-fare { font-size: 13px; font-weight: 600; color: var(--c-text-2); white-space: nowrap; padding-top: 2px; }
+        /* Driver actions: neutral buttons; the label colour says what kind. */
+        .dd-action-deactivate, .dd-action-activate, .dd-action-delete, .dd-action-edit { background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: border-color 0.12s, background 0.12s; }
+        .dd-action-deactivate { color: var(--c-amber-text); }
+        .dd-action-activate { color: var(--c-green); }
+        .dd-action-delete { color: var(--c-red); }
+        .dd-action-edit { color: var(--c-brand); }
+        .dd-action-deactivate:hover, .dd-action-activate:hover, .dd-action-edit:hover, .dd-action-delete:hover:not(:disabled) { background: var(--c-hover-strong); border-color: var(--c-border-strong); }
         .dd-action-delete:disabled { opacity: 0.35; cursor: not-allowed; }
-        .dd-confirm-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
-        .dd-confirm-box { background: #1E2A3A; border-radius: 14px; padding: 24px; max-width: 300px; width: calc(100% - 32px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 16px 48px rgba(0,0,0,0.5); }
-        .dd-confirm-title { font-size: 16px; font-weight: 700; color: #F1F5F9; margin-bottom: 10px; }
-        .dd-confirm-body { font-size: 13px; color: #9CA3AF; line-height: 1.5; margin-bottom: 10px; }
-        .dd-confirm-warning { font-size: 12px; color: #F87171; background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.18); border-radius: 8px; padding: 8px 12px; margin-bottom: 18px; }
+        .dd-confirm-overlay { position: absolute; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
+        .dd-confirm-box { background: var(--c-surface); border-radius: 14px; padding: 24px; max-width: 300px; width: calc(100% - 32px); border: 1px solid var(--c-border); box-shadow: 0 16px 48px var(--c-shadow); }
+        .dd-confirm-title { font-size: 16px; font-weight: 700; color: var(--c-text); margin-bottom: 10px; }
+        .dd-confirm-body { font-size: 13px; color: var(--c-text-2); line-height: 1.5; margin-bottom: 10px; }
+        .dd-confirm-warning { font-size: 12px; color: var(--c-red); background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 8px; padding: 8px 12px; margin-bottom: 18px; }
         .dd-confirm-actions { display: flex; gap: 8px; }
-        .dd-confirm-cancel { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 9px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-confirm-cancel:hover:not(:disabled) { background: rgba(255,255,255,0.05); }
-        .dd-confirm-ok { flex: 1; background: rgba(245,158,11,0.12); color: #F59E0B; border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-confirm-ok:hover:not(:disabled) { background: rgba(245,158,11,0.2); }
-        .dd-confirm-ok.danger { background: rgba(226,75,74,0.1); color: #F87171; border-color: rgba(226,75,74,0.25); }
-        .dd-confirm-ok.danger:hover:not(:disabled) { background: rgba(226,75,74,0.18); }
-        .dd-confirm-ok.green { background: rgba(29,158,117,0.1); color: #1D9E75; border-color: rgba(29,158,117,0.25); }
-        .dd-action-edit { background: rgba(74,158,255,0.07); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-action-edit:hover { background: rgba(74,158,255,0.14); }
-        .dd-vehicle-card { background: #1E2A3A; border-radius: 10px; padding: 13px; margin-bottom: 4px; border: 1px solid rgba(255,255,255,0.05); }
-        .db-ride-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
+        .dd-confirm-cancel { flex: 1; background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border); border-radius: 8px; padding: 9px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-confirm-cancel:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
+        /* Confirm buttons are solid: brand by default, red for a destructive
+           one. They used to be amber/red/green washes. */
+        .dd-confirm-ok { flex: 1; background: var(--c-brand-fill); color: var(--c-on-brand); border: 1px solid transparent; border-radius: 8px; padding: 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-confirm-ok:hover:not(:disabled) { background: var(--c-brand-fill-hover); }
+        .dd-confirm-ok.danger { background: var(--c-red-fill); color: #FFFFFF; }
+        .dd-confirm-ok.danger:hover:not(:disabled) { filter: brightness(1.08); background: var(--c-red-fill); }
+        .dd-confirm-ok.green { background: var(--c-brand-fill); }
+        .dd-confirm-ok.green:hover:not(:disabled) { background: var(--c-brand-fill-hover); }
+        .dd-vehicle-card { background: var(--c-surface); border-radius: 10px; padding: 13px; margin-bottom: 4px; border: 1px solid var(--c-border); }
+        .db-ride-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
         .dd-vehicle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .dd-vehicle-field { display: flex; flex-direction: column; gap: 4px; }
-        .dd-vehicle-field-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; }
-        .dd-vehicle-input { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 6px 10px; outline: none; width: 100%; box-sizing: border-box; }
-        .dd-vehicle-input:focus { border-color: rgba(74,158,255,0.4); }
+        .dd-vehicle-field-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; }
+        .dd-vehicle-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; padding: 6px 10px; outline: none; width: 100%; box-sizing: border-box; }
+        .dd-vehicle-input:focus { border-color: var(--c-brand); }
         .dd-class-picker { display: flex; gap: 6px; flex-wrap: wrap; }
-        .dd-class-option { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 7px 12px; cursor: pointer; text-align: left; font-family: system-ui, sans-serif; transition: border-color 0.12s, background 0.12s; }
-        .dd-class-option.selected { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
-        .dd-class-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
-        .dd-class-cap { font-size: 11px; color: #6B7280; margin-top: 1px; }
-        .dd-class-hint { display: block; font-size: 11px; color: #6B7280; margin-top: 6px; }
-        .db-access-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; cursor: pointer; font-size: 13px; color: #E2E8F0; }
-        .db-access-toggle:has(input:checked) { border-color: #4a9eff; background: rgba(74,158,255,0.08); }
-        .db-access-hint { font-size: 11px; color: #6B7280; }
-        .dd-vehicle-error { font-size: 12px; color: #F87171; margin-top: 8px; }
+        .dd-class-option { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 7px 12px; cursor: pointer; text-align: left; font-family: system-ui, sans-serif; transition: border-color 0.12s, background 0.12s; }
+        .dd-class-option.selected { border-color: var(--c-brand); background: var(--c-surface-sel); }
+        .dd-class-name { font-size: 13px; font-weight: 600; color: var(--c-text); }
+        .dd-class-cap { font-size: 11px; color: var(--c-text-2); margin-top: 1px; }
+        .dd-class-hint { display: block; font-size: 11px; color: var(--c-text-2); margin-top: 6px; }
+        .db-access-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--c-text); }
+        .db-access-toggle:has(input:checked) { border-color: var(--c-brand); background: var(--c-surface-sel); }
+        .db-access-hint { font-size: 11px; color: var(--c-text-2); }
+        .dd-vehicle-error { font-size: 12px; color: var(--c-red); margin-top: 8px; }
         .dd-vehicle-actions { display: flex; gap: 8px; margin-top: 12px; }
-        .dd-vehicle-cancel { flex: 1; background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
-        .dd-vehicle-cancel:hover { background: rgba(255,255,255,0.04); }
-        .dd-vehicle-save { flex: 1; background: #E8500A; color: #fff; border: none; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
-        .dd-vehicle-save:hover:not(:disabled) { background: #D6470B; }
+        .dd-vehicle-cancel { flex: 1; background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border); border-radius: 8px; padding: 8px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; }
+        .dd-vehicle-cancel:hover { background: var(--c-hover); color: var(--c-text); }
+        .dd-vehicle-save { flex: 1; background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 8px; padding: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; }
+        .dd-vehicle-save:hover:not(:disabled) { background: var(--c-brand-fill-hover); }
         .dd-vehicle-save:disabled { opacity: 0.5; cursor: not-allowed; }
-        .dd-confirm-ok.green:hover:not(:disabled) { background: rgba(29,158,117,0.18); }
         .dd-confirm-ok:disabled, .dd-confirm-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
+        /* Sun/moon toggle in the nav's bottom group. */
+        .db-nav-theme .db-nav-icon svg { display: block; }
       `}</style>
 
       <div className="db-page">
@@ -5134,6 +5072,23 @@ export default function DashboardPage({
               </span>
               {navExpanded && <span className="db-nav-label">{t("nav.settings")}</span>}
             </button>
+            {/* Shows what a click switches TO: a sun in dark mode, a moon in
+                light. Remembered per browser (ThemeContext.tsx). */}
+            <button
+              className="db-nav-utility db-nav-theme"
+              onClick={toggleTheme}
+              title={theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
+              aria-label={theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
+            >
+              <span className="db-nav-icon">
+                {theme === "dark" ? <IconSun /> : <IconMoon />}
+              </span>
+              {navExpanded && (
+                <span className="db-nav-label">
+                  {theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
+                </span>
+              )}
+            </button>
             <button
               className="db-nav-utility db-nav-signout"
               onClick={onSignOut}
@@ -5159,7 +5114,7 @@ export default function DashboardPage({
                   <span className="db-stat-value">
                     <span
                       className="db-stat-dot"
-                      style={{ background: "#F59E0B" }}
+                      style={{ background: "var(--c-amber)" }}
                     />
                     {stats.activeRides}
                   </span>
@@ -5169,7 +5124,7 @@ export default function DashboardPage({
                   <span className="db-stat-value">
                     <span
                       className="db-stat-dot"
-                      style={{ background: "#1D9E75" }}
+                      style={{ background: "var(--c-green)" }}
                     />
                     {stats.driversOnline}
                   </span>
@@ -5180,7 +5135,7 @@ export default function DashboardPage({
                   <span className="db-stat-label">{t("stats.today")}</span>
                 </div>
                 <div className="db-stat">
-                  <span className="db-stat-value" style={{ color: "#1D9E75" }}>
+                  <span className="db-stat-value" style={{ color: "var(--c-green)" }}>
                     ${stats.revenueToday.toFixed(2)}
                   </span>
                   <span className="db-stat-label">{t("stats.revenue")}</span>
@@ -5199,7 +5154,7 @@ export default function DashboardPage({
                   onClick={() => setAlertsOpen((v) => !v)}
                   title={t("attention.title")}
                 >
-                  ⚑ {alerts.length}
+                  <Icon name="flag" size={13} /> {alerts.length}
                 </button>
                 <button
                   className="db-new-ride-btn"
@@ -5291,7 +5246,7 @@ export default function DashboardPage({
           </div>
 
           {cancelPendingId && (
-            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setCancelPendingId(null)}>
+            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1100 }} onClick={() => setCancelPendingId(null)}>
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
                 <div className="dd-confirm-title">{t("dispatch.cancelRideTitle")}</div>
                 <div className="dd-confirm-body">
@@ -5306,7 +5261,7 @@ export default function DashboardPage({
                       return (
                         <>
                           {who}
-                          <div style={{ marginTop: 8, color: "#F59E0B" }}>
+                          <div style={{ marginTop: 8, color: "var(--c-amber-text)" }}>
                             {t("dispatch.cancelMidRideWarning")}
                           </div>
                         </>
@@ -5329,7 +5284,7 @@ export default function DashboardPage({
           )}
 
           {confirmHoldAssign && (
-            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1000 }} onClick={() => setConfirmHoldAssign(null)}>
+            <div className="dd-confirm-overlay" style={{ position: "fixed", zIndex: 1100 }} onClick={() => setConfirmHoldAssign(null)}>
               <div className="dd-confirm-box" onClick={(e) => e.stopPropagation()}>
                 <div className="dd-confirm-title">{t("dispatch.assignAnywayTitle")}</div>
                 <div className="dd-confirm-body">
@@ -5376,7 +5331,7 @@ export default function DashboardPage({
             }}
           >
             {detailOverlayActive && (
-              <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)", zIndex: 40, pointerEvents: "none" }} />
+              <div style={{ position: "absolute", inset: 0, background: "var(--c-scrim)", backdropFilter: "blur(2px)", zIndex: 40, pointerEvents: "none" }} />
             )}
 
             <div className="db-panel">
@@ -5403,11 +5358,7 @@ export default function DashboardPage({
                         <div className="db-ride-card-top">
                           <span
                             className="db-status-badge"
-                            style={{
-                              background: rideStatusColor(ride) + "18",
-                              color: rideStatusColor(ride),
-                              border: `1px solid ${rideStatusColor(ride)}30`,
-                            }}
+                            style={statusDot(ride)}
                           >
                             {rideStatusLabel(ride)}
                           </span>
@@ -5418,17 +5369,15 @@ export default function DashboardPage({
                         <div className="db-ride-name">
                           {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
                         </div>
-                        <div className="db-ride-addr">
-                          {ride.pickup_address}
+                        <div className="db-ride-route">
+                          {ride.pickup_address} → {ride.dropoff_address}
                         </div>
-                        <div className="db-ride-addr dest">
-                          {ride.dropoff_address}
+                        <div className="db-ride-foot">
+                          <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
+                          {ride.fare_estimate && (
+                            <span className="db-ride-foot-fare">${ride.fare_estimate.toFixed(2)}</span>
+                          )}
                         </div>
-                        {ride.fare_estimate && (
-                          <div className="db-ride-fare">
-                            ${ride.fare_estimate.toFixed(2)}
-                          </div>
-                        )}
                         <AssignmentHold ride={ride} />
                         {(ride as any).passenger_flagged_at &&
                           !(ride as any).passenger_flag_resolved_at &&
@@ -5449,7 +5398,7 @@ export default function DashboardPage({
                             const single = codes.length <= 1;
                             return (
                               <div className="db-flag-box">
-                                <span className="db-flag-glyph">⚑</span>
+                                <span className="db-flag-glyph"><Icon name="flag" size={13} /></span>
                                 <div className="db-flag-body">
                                   <div className="db-flag-head">
                                     {single
@@ -5484,108 +5433,12 @@ export default function DashboardPage({
                               </div>
                             );
                           })()}
-                        {(ride.status === "pending" ||
-                          ride.status === "offered" ||
-                          ride.status === "assigned") && (
-                          <div style={{ marginTop: 8 }}>
-                            {assigningRide === ride.id ? (
-                              renderPicker(ride)
-                            ) : (
-                              <div style={{ display: "flex", gap: 6 }}>
-                                <button
-                                  className="db-assign-btn"
-                                  style={{ flex: 1, marginTop: 0 }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAssigningRide(ride.id);
-                                  }}
-                                >
-                                  {ride.driver_id
-                                    ? t("dispatch.reassignDriver")
-                                    : t("dispatch.assignDriver")}
-                                </button>
-                                <button
-                                  className="db-assign-btn"
-                                  style={{ flex: 1, marginTop: 0 }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRideDetail(ride);
-                                    startEditRide(ride);
-                                  }}
-                                >
-                                  {t("common.edit")}
-                                </button>
-                                <button
-                                  className="db-cancel-ride-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCancelPendingId(ride.id);
-                                  }}
-                                >
-                                  {t("common.cancel")}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {ride.status === "driver_arriving" && (
-                          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                            <button
-                              className="db-assign-btn"
-                              style={{ flex: 1, marginTop: 0 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRideDetail(ride);
-                                startEditRide(ride);
-                              }}
-                            >
-                              {t("common.edit")}
-                            </button>
-                            <button
-                              className="db-cancel-ride-btn"
-                              style={{ flex: 1 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCancelPendingId(ride.id);
-                              }}
-                            >
-                              {t("dispatch.cancelRide")}
-                            </button>
-                          </div>
-                        )}
-                        {/* A ride in progress still needs dispatch controls:
-                            a driver who mis-marks pickup traps the passenger,
-                            who has no cancel and can't rebook. This is the only
-                            way out. Both actions are already permitted
-                            server-side for an admin actor. */}
-                        {ride.status === "in_progress" && (
-                          <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                            <button
-                              className="db-assign-btn"
-                              style={{ flex: 1, marginTop: 0 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRideDetail(ride);
-                                startEditRide(ride);
-                              }}
-                            >
-                              {t("common.edit")}
-                            </button>
-                            <button
-                              className="db-cancel-ride-btn"
-                              style={{ flex: 1 }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCancelPendingId(ride.id);
-                              }}
-                            >
-                              {t("dispatch.cancelRide")}
-                            </button>
-                          </div>
-                        )}
+                        {/* Assign, Edit and Cancel live in the panel this card
+                            opens (Victor 2026-10-26: cards carry information,
+                            the panel carries the actions). */}
                         {ride.status === "offered" && (
                           <div className="db-pending-badge">
-                            ⏳ {t("dispatch.awaitingConfirmation")}
+                            <Icon name="hourglass" /> {t("dispatch.awaitingConfirmation")}
                           </div>
                         )}
                       </div>
@@ -5599,7 +5452,6 @@ export default function DashboardPage({
                           </span>
                           <span
                             className="db-section-divider-count"
-                            style={{ color: "#A855F7" }}
                           >
                             {scheduledRides.length}
                           </span>
@@ -5610,7 +5462,7 @@ export default function DashboardPage({
                           );
                           const uncovered = soon.filter((r: any) => r.coverage_status === "uncovered").length;
                           const atRisk    = soon.filter((r: any) => r.coverage_status === "at_risk").length;
-                          const barColor  = uncovered > 0 ? "#F87171" : atRisk > 0 ? "#F59E0B" : "#1D9E75";
+                          const barColor  = uncovered > 0 ? "var(--c-red)" : atRisk > 0 ? "var(--c-amber)" : "var(--c-green)";
                           const barText   = uncovered > 0
                             ? t("coverage.barUncovered", { count: uncovered }) +
                               (atRisk > 0 ? ` · ${t("coverage.barAtRiskSuffix", { count: atRisk })}` : "")
@@ -5620,9 +5472,9 @@ export default function DashboardPage({
                                 ? t("coverage.barAllCovered")
                                 : t("coverage.barNoRides");
                           return (
-                            <div className="db-cov-bar" style={{ borderColor: barColor + "30", background: barColor + "0d" }}>
+                            <div className="db-cov-bar">
                               <span className="db-cov-bar-dot" style={{ background: barColor }} />
-                              <span className="db-cov-bar-text" style={{ color: barColor }}>{barText}</span>
+                              <span className="db-cov-bar-text">{barText}</span>
                             </div>
                           );
                         })()}
@@ -5630,14 +5482,7 @@ export default function DashboardPage({
                           <ScheduledRideCard
                             key={ride.id}
                             ride={ride}
-                            picker={assigningRide === ride.id ? renderPicker(ride) : null}
                             onCardClick={() => setRideDetail(ride)}
-                            onAssign={() => setAssigningRide(ride.id)}
-                            onEdit={() => {
-                              setRideDetail(ride);
-                              startEditRide(ride);
-                            }}
-                            onCancel={() => setCancelPendingId(ride.id)}
                           />
                         ))}
                       </>
@@ -5647,7 +5492,7 @@ export default function DashboardPage({
                       <span className="db-section-divider-title">{t("dispatch.recent")}</span>
                       <span
                         className="db-section-divider-count"
-                        style={{ color: "#6B7280" }}
+                        style={{ color: "var(--c-text-2)" }}
                       >
                         {recentRides.length}
                       </span>
@@ -5661,33 +5506,29 @@ export default function DashboardPage({
                         <div className="db-ride-card-top">
                           <span
                             className="db-status-badge"
-                            style={{
-                              background: rideStatusColor(ride) + "18",
-                              color: rideStatusColor(ride),
-                              border: `1px solid ${rideStatusColor(ride)}30`,
-                            }}
+                            style={statusDot(ride)}
                           >
                             {rideStatusLabel(ride)}
                           </span>
-                          <span
-                            className="db-ride-fare"
-                            style={{ marginTop: 0 }}
-                          >
+                          <span className="db-ride-time">
+                            {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        </div>
+                        <div className="db-ride-name">
+                          {(ride as any).passenger?.name ?? t("common.unknown")}
+                        </div>
+                        <div className="db-ride-route">
+                          {ride.pickup_address} → {ride.dropoff_address}
+                        </div>
+                        <div className="db-ride-foot">
+                          <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
+                          <span className="db-ride-foot-fare">
                             {ride.fare_final
                               ? `$${ride.fare_final.toFixed(2)}`
                               : ride.fare_estimate
                                 ? `$${ride.fare_estimate.toFixed(2)}`
                                 : ""}
                           </span>
-                        </div>
-                        <div className="db-ride-name" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                          <span>{(ride as any).passenger?.name ?? t("common.unknown")}</span>
-                          <span className="db-ride-time" style={{ fontSize: 10, fontWeight: 400 }}>
-                            {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <div className="db-ride-addr">
-                          {ride.pickup_address} → {ride.dropoff_address}
                         </div>
                       </div>
                     ))}
@@ -5741,7 +5582,7 @@ export default function DashboardPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#1D9E75",
+                            color: "var(--c-green)",
                             marginBottom: 4,
                           }}
                         >
@@ -5752,7 +5593,7 @@ export default function DashboardPage({
                             fontSize: 24,
                             fontWeight: 700,
                             letterSpacing: "0.2em",
-                            color: "#F1F5F9",
+                            color: "var(--c-text)",
                           }}
                         >
                           {inviteSuccess}
@@ -5760,7 +5601,7 @@ export default function DashboardPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#6B7280",
+                            color: "var(--c-text-2)",
                             marginTop: 4,
                           }}
                         >
@@ -5783,7 +5624,7 @@ export default function DashboardPage({
                           </span>
                           <span
                             className="db-section-divider-count"
-                            style={{ color: "#F59E0B" }}
+                            style={{ color: "var(--c-amber-text)" }}
                           >
                             {pendingInvites.length}
                           </span>
@@ -5796,11 +5637,7 @@ export default function DashboardPage({
                               </div>
                               <span
                                 className="db-status-badge"
-                                style={{
-                                  background: "#F59E0B18",
-                                  color: "#F59E0B",
-                                  border: "1px solid #F59E0B30",
-                                }}
+                                style={{ "--dot": "var(--c-amber)" } as React.CSSProperties}
                               >
                                 {t("drivers.pending")}
                               </span>
@@ -5839,7 +5676,7 @@ export default function DashboardPage({
                       </span>
                       <span
                         className="db-section-divider-count"
-                        style={{ color: "#6B7280" }}
+                        style={{ color: "var(--c-text-2)" }}
                       >
                         {drivers.filter(d => !(d as any).profile?.deleted_at).length}
                       </span>
@@ -5923,25 +5760,25 @@ export default function DashboardPage({
                                 {driver.wheelchair_accessible ? " \u00B7 \u267F" : ""}
                               </div>
                               {!isAccountActive ? (
-                                <div style={{ fontSize: 11, color: "#F87171", marginTop: 3, fontWeight: 500 }}>
+                                <div style={{ fontSize: 11, color: "var(--c-red)", marginTop: 3, fontWeight: 500 }}>
                                   {t("common.deactivated")}
                                 </div>
                               ) : isDeactivationPending ? (
-                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ⏳ {t("drivers.deactivationPending")}
+                                <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 3, fontWeight: 500 }}>
+                                  <Icon name="hourglass" /> {t("drivers.deactivationPending")}
                                 </div>
                               ) : presence === "offline" ? null : awaitingReply ? (
-                                <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 3, fontWeight: 500 }}>
-                                  ◷ {t("drivers.offeredAwaiting")}
+                                <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 3, fontWeight: 500 }}>
+                                  <Icon name="clock" /> {t("drivers.offeredAwaiting")}
                                 </div>
                               ) : driverActiveRide ? (
                                 <div className="db-driver-status-on-ride">
-                                  ● {t("drivers.onARide")}
+                                  {t("drivers.onARide")}
                                   {driverActiveRide.status === "in_progress" && isRideSilent(driver as any) ? ` · ${t("drivers.outOfContactLower")}` : ""}
                                 </div>
                               ) : (
                                 <div className="db-driver-status-available">
-                                  ● {t("drivers.available")}
+                                  {t("drivers.available")}
                                 </div>
                               )}
                             </div>
@@ -5949,10 +5786,10 @@ export default function DashboardPage({
                               className="db-online-dot"
                               style={{
                                 background: !isAccountActive
-                                  ? "#E24B4A"
+                                  ? "var(--c-red)"
                                   : presence === "online"
-                                  ? "#1D9E75"
-                                  : "#374151",
+                                  ? "var(--c-green)"
+                                  : "var(--c-text-3)",
                               }}
                             />
                           </div>
@@ -5993,7 +5830,7 @@ export default function DashboardPage({
                           : t("attention.soundOff")
                       }
                     >
-                      {alertSound ? "🔔" : "🔕"}
+                      <Icon name={alertSound ? "bell" : "bellOff"} size={14} />
                     </button>
                     <button
                       className="db-alerts-close"
@@ -6027,7 +5864,7 @@ export default function DashboardPage({
                             }}
                           >
                             <span className="db-alert-glyph">
-                              {a.source === "passenger_flag" ? "⚑" : "⌛"}
+                              <Icon name={a.source === "passenger_flag" ? "flag" : "hourglass"} size={13} />
                             </span>
                             <span className="db-alert-body">
                               <span className="db-alert-title">{a.title}</span>
@@ -6229,13 +6066,12 @@ export default function DashboardPage({
                 const vehicle = drvRow
                   ? [drvRow.vehicle_make, drvRow.vehicle_model].filter(Boolean).join(" ")
                   : "";
-                const color = rideStatusColor(rd);
                 return (
                   <div className="db-ride-float">
                     <div className="db-ride-float-head">
                       <span
                         className="db-status-badge"
-                        style={{ background: color + "18", color, border: `1px solid ${color}30` }}
+                        style={statusDot(rd)}
                       >
                         {rideStatusLabel(rd)}
                       </span>
@@ -6262,8 +6098,8 @@ export default function DashboardPage({
                         {vehicle && <div className="db-live-driver-veh">{vehicle}</div>}
                       </div>
                       {rd.driver_id && (
-                        <span className="db-live-track" style={{ color: tracking ? "#1D9E75" : "#6B7280" }}>
-                          <span className="db-live-dot" style={{ background: tracking ? "#1D9E75" : "#6B7280" }} />
+                        <span className="db-live-track" style={{ color: tracking ? "var(--c-green)" : "var(--c-text-2)" }}>
+                          <span className="db-live-dot" style={{ background: tracking ? "var(--c-green)" : "var(--c-text-2)" }} />
                           {tracking ? t("dispatch.live") : t("dispatch.noSignal")}
                         </span>
                       )}
@@ -6272,14 +6108,14 @@ export default function DashboardPage({
                     {/* Route */}
                     <div className="db-live-route">
                       <div className="db-live-stop">
-                        <span className="db-live-stop-dot" style={{ background: "#4a9eff" }} />
+                        <span className="db-live-stop-dot" style={{ background: "var(--c-blue)" }} />
                         <div>
                           <div className="db-live-stop-label">{t("reports.pickup")}</div>
                           <div className="db-live-stop-addr">{rd.pickup_address}</div>
                         </div>
                       </div>
                       <div className="db-live-stop">
-                        <span className="db-live-stop-dot" style={{ background: "#E8500A" }} />
+                        <span className="db-live-stop-dot" style={{ background: "var(--c-brand-fill)" }} />
                         <div>
                           <div className="db-live-stop-label">{t("reports.dropoff")}</div>
                           <div className="db-live-stop-addr">{rd.dropoff_address}</div>
@@ -6318,6 +6154,31 @@ export default function DashboardPage({
                             </button>
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* The ride's actions, moved here off the card. Assigning
+                        is offered until the driver is on the way; a ride in
+                        progress keeps Edit and Cancel, which is the only way
+                        out when a driver mis-marks pickup. */}
+                    {assigningRide === rd.id ? (
+                      renderPicker(rd)
+                    ) : (
+                      <div className="db-float-actions">
+                        {(rd.status === "pending" || rd.status === "offered" || rd.status === "assigned") && (
+                          <button
+                            className="db-float-primary"
+                            onClick={() => setAssigningRide(rd.id)}
+                          >
+                            {rd.driver_id ? t("dispatch.reassignDriver") : t("dispatch.assignDriver")}
+                          </button>
+                        )}
+                        <button className="db-assign-btn" style={{ marginTop: 0 }} onClick={() => startEditRide(rd)}>
+                          {t("common.edit")}
+                        </button>
+                        <button className="db-cancel-ride-btn" onClick={() => setCancelPendingId(rd.id)}>
+                          {t("dispatch.cancelRide")}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -6376,7 +6237,7 @@ export default function DashboardPage({
                     <span
                       style={{
                         fontSize: 10,
-                        color: "#1D9E75",
+                        color: "var(--c-green)",
                         fontWeight: 400,
                         marginLeft: 6,
                         textTransform: "none",
@@ -6389,7 +6250,7 @@ export default function DashboardPage({
                     <span
                       style={{
                         fontSize: 10,
-                        color: "#6B7280",
+                        color: "var(--c-text-2)",
                         fontWeight: 400,
                         marginLeft: 6,
                         textTransform: "none",
@@ -6432,7 +6293,7 @@ export default function DashboardPage({
                       right: 10,
                       top: 34,
                       fontSize: 11,
-                      color: "#1D9E75",
+                      color: "var(--c-green)",
                     }}
                   >
                     ✓
@@ -6462,7 +6323,7 @@ export default function DashboardPage({
                       right: 10,
                       top: 34,
                       fontSize: 11,
-                      color: "#1D9E75",
+                      color: "var(--c-green)",
                     }}
                   >
                     ✓
@@ -6476,7 +6337,7 @@ export default function DashboardPage({
                     <span
                       style={{
                         fontSize: 10,
-                        color: "#6B7280",
+                        color: "var(--c-text-2)",
                         fontWeight: 400,
                         marginLeft: 6,
                       }}
@@ -6491,7 +6352,7 @@ export default function DashboardPage({
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#1D9E75",
+                          color: "var(--c-green)",
                           fontWeight: 400,
                           marginLeft: 6,
                         }}
@@ -6509,7 +6370,7 @@ export default function DashboardPage({
                   onChange={(e) => setBookFare(e.target.value)}
                 />
                 {bookFareError && (
-                  <div style={{ fontSize: 11, color: "#F59E0B", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
                     {t("booking.autoCalcFailed")}
                   </div>
                 )}
@@ -6518,7 +6379,7 @@ export default function DashboardPage({
                     style={{
                       fontSize: 11,
                       marginTop: 4,
-                      color: bookDiscountLine.kind === "ok" ? "#1D9E75" : "#F59E0B",
+                      color: bookDiscountLine.kind === "ok" ? "var(--c-green)" : "var(--c-amber-text)",
                     }}
                   >
                     {bookDiscountLine.text}
@@ -6562,7 +6423,7 @@ export default function DashboardPage({
                   <span
                     style={{
                       fontSize: 10,
-                      color: "#6B7280",
+                      color: "var(--c-text-2)",
                       fontWeight: 400,
                       marginLeft: 6,
                       textTransform: "none",
@@ -6630,11 +6491,11 @@ export default function DashboardPage({
                 <div
                   style={{
                     fontSize: 12,
-                    color: "#F87171",
-                    background: "rgba(248,113,113,0.08)",
+                    color: "var(--c-red)",
+                    background: "var(--c-surface-alt)",
                     borderRadius: 8,
                     padding: "8px 12px",
-                    border: "1px solid rgba(248,113,113,0.2)",
+                    border: "1px solid var(--c-border)",
                   }}
                 >
                   {bookError}
@@ -6708,7 +6569,7 @@ export default function DashboardPage({
                 style={{
                   background: "none",
                   border: "none",
-                  color: "#6B7280",
+                  color: "var(--c-text-2)",
                   cursor: "pointer",
                   fontSize: 20,
                 }}
@@ -6730,15 +6591,11 @@ export default function DashboardPage({
             >
               <span
                 className="db-status-badge"
-                style={{
-                  background: rideStatusColor(rideDetail) + "18",
-                  color: rideStatusColor(rideDetail),
-                  border: `1px solid ${rideStatusColor(rideDetail)}30`,
-                }}
+                style={statusDot(rideDetail)}
               >
                 {rideStatusLabel(rideDetail)}
               </span>
-              <span style={{ fontSize: 12, color: "#6B7280" }}>
+              <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>
                 {fmtDateTime(rideDetail.created_at, {
                   dateStyle: "medium",
                   timeStyle: "short",
@@ -6783,7 +6640,7 @@ export default function DashboardPage({
                         right: 10,
                         top: 34,
                         fontSize: 11,
-                        color: "#1D9E75",
+                        color: "var(--c-green)",
                       }}
                     >
                       ✓
@@ -6810,7 +6667,7 @@ export default function DashboardPage({
                         right: 10,
                         top: 34,
                         fontSize: 11,
-                        color: "#1D9E75",
+                        color: "var(--c-green)",
                       }}
                     >
                       ✓
@@ -6824,7 +6681,7 @@ export default function DashboardPage({
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#6B7280",
+                          color: "var(--c-text-2)",
                           fontWeight: 400,
                           marginLeft: 6,
                         }}
@@ -6836,7 +6693,7 @@ export default function DashboardPage({
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#1D9E75",
+                          color: "var(--c-green)",
                           fontWeight: 400,
                           marginLeft: 6,
                         }}
@@ -6848,7 +6705,7 @@ export default function DashboardPage({
                       <span
                         style={{
                           fontSize: 10,
-                          color: "#E8500A",
+                          color: "var(--c-brand)",
                           fontWeight: 400,
                           marginLeft: 6,
                         }}
@@ -6947,11 +6804,11 @@ export default function DashboardPage({
                   <div
                     style={{
                       fontSize: 12,
-                      color: "#F87171",
-                      background: "rgba(248,113,113,0.08)",
+                      color: "var(--c-red)",
+                      background: "var(--c-surface-alt)",
                       borderRadius: 8,
                       padding: "8px 12px",
-                      border: "1px solid rgba(248,113,113,0.2)",
+                      border: "1px solid var(--c-border)",
                     }}
                   >
                     {editError}
@@ -7158,6 +7015,28 @@ export default function DashboardPage({
                     </div>
                   );
                 })}
+                {/* A scheduled ride's Assign and Cancel, moved here off its
+                    card. The picker opens in place, above the buttons. */}
+                {rideDetail.status === "scheduled" && (
+                  assigningRide === rideDetail.id ? (
+                    <div style={{ marginTop: 16 }}>{renderPicker(rideDetail)}</div>
+                  ) : (
+                    <div className="db-float-actions" style={{ marginTop: 16 }}>
+                      <button
+                        className="db-float-primary"
+                        onClick={() => setAssigningRide(rideDetail.id)}
+                      >
+                        {rideDetail.driver_id ? t("dispatch.reassignDriver") : t("dispatch.assignDriver")}
+                      </button>
+                      <button
+                        className="db-cancel-ride-btn"
+                        onClick={() => setCancelPendingId(rideDetail.id)}
+                      >
+                        {t("dispatch.cancelRide")}
+                      </button>
+                    </div>
+                  )
+                )}
                 <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
                   <button
                     className="db-modal-cancel-btn"
@@ -7171,7 +7050,7 @@ export default function DashboardPage({
                   {isAdmin && canOfferRefund(rideDetail) && (
                     <button
                       className="db-modal-cancel-btn"
-                      style={{ flex: 1, color: "#F87171" }}
+                      style={{ flex: 1, color: "var(--c-red)" }}
                       onClick={() => setRefundTarget(rideDetail)}
                     >
                       {t("refund.button")}
@@ -7195,7 +7074,7 @@ export default function DashboardPage({
 
       {coverageToast && (
         <div className="db-cov-toast">
-          <span className="db-cov-toast-icon">⚠</span>
+          <span className="db-cov-toast-icon"><Icon name="alert" size={15} /></span>
           <span>{coverageToast}</span>
           <button className="db-cov-toast-close" onClick={() => setCoverageToast(null)}>✕</button>
         </div>
@@ -7204,5 +7083,5 @@ export default function DashboardPage({
   );
 }
 
-// darkMapStyle + the Maps script URL now live in src/lib/googleMaps.ts, shared
+// The Maps script URL lives in src/lib/googleMaps.ts (map styles: src/theme/tokens.ts), shared
 // with the service-area editor. See that file for why the URL must be shared.

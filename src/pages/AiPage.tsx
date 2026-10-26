@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type React from "react";
 import { useTranslation } from "react-i18next";
+import { useTheme } from "../theme/ThemeContext";
 
 // Vellon AI: a "coming soon" placeholder for the dispatch assistant. Nothing
 // here reads data or calls a model. The example questions are illustrations,
@@ -33,6 +34,7 @@ const EDGES: [number, number][] = [
 ];
 
 export function AiEmblem({ size = 240 }: { size?: number }) {
+  const { colors: c } = useTheme();
   return (
     <svg
       className="ai-emblem"
@@ -43,17 +45,17 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
     >
       <defs>
         <radialGradient id="ai-glow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#E8500A" stopOpacity="0.32" />
-          <stop offset="55%" stopColor="#E8500A" stopOpacity="0.08" />
-          <stop offset="100%" stopColor="#E8500A" stopOpacity="0" />
+          <stop offset="0%" stopColor={c.brandFill} stopOpacity="0.32" />
+          <stop offset="55%" stopColor={c.brandFill} stopOpacity="0.08" />
+          <stop offset="100%" stopColor={c.brandFill} stopOpacity="0" />
         </radialGradient>
         <linearGradient id="ai-core" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FF7A3D" />
-          <stop offset="100%" stopColor="#C2410C" />
+          <stop offset="0%" stopColor={c.brand} />
+          <stop offset="100%" stopColor={c.brandFillHover} />
         </linearGradient>
         <linearGradient id="ai-sweep" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#E8500A" stopOpacity="0" />
-          <stop offset="100%" stopColor="#E8500A" stopOpacity="0.28" />
+          <stop offset="0%" stopColor={c.brandFill} stopOpacity="0" />
+          <stop offset="100%" stopColor={c.brandFill} stopOpacity="0.28" />
         </linearGradient>
       </defs>
 
@@ -66,30 +68,30 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
 
       {/* Outer ring: fine ticks */}
       <g className="ai-spin ai-ring-1">
-        <circle cx="120" cy="120" r="106" fill="none" stroke="#E8500A" strokeOpacity="0.35"
+        <circle cx="120" cy="120" r="106" fill="none" stroke={c.brandFill} strokeOpacity="0.35"
           strokeWidth="1" strokeDasharray="1.5 7" />
       </g>
       {/* Middle ring: two bright arcs over a faint track */}
-      <circle cx="120" cy="120" r="90" fill="none" stroke="#FFFFFF" strokeOpacity="0.06" strokeWidth="1" />
+      <circle cx="120" cy="120" r="90" fill="none" stroke={c.text} strokeOpacity="0.06" strokeWidth="1" />
       <g className="ai-spin ai-ring-2">
-        <circle cx="120" cy="120" r="90" fill="none" stroke="#E8500A" strokeWidth="1.5"
+        <circle cx="120" cy="120" r="90" fill="none" stroke={c.brandFill} strokeWidth="1.5"
           strokeLinecap="round" pathLength="100" strokeDasharray="18 32" />
       </g>
       {/* Inner ring: dotted, counter-rotating */}
       <g className="ai-spin ai-ring-3">
-        <circle cx="120" cy="120" r="72" fill="none" stroke="#FDBA74" strokeOpacity="0.45"
+        <circle cx="120" cy="120" r="72" fill="none" stroke={c.brand} strokeOpacity="0.45"
           strokeWidth="2" strokeLinecap="round" strokeDasharray="0.1 9" />
       </g>
 
       {/* Orbiting satellites */}
       <g className="ai-spin ai-orbit-1">
-        <circle cx="120" cy="30" r="3.2" fill="#FF7A3D" />
+        <circle cx="120" cy="30" r="3.2" fill={c.brand} />
       </g>
       <g className="ai-spin ai-orbit-2">
-        <circle cx="120" cy="48" r="2.2" fill="#FDBA74" />
+        <circle cx="120" cy="48" r="2.2" fill={c.brand} />
       </g>
       <g className="ai-spin ai-orbit-3">
-        <circle cx="120" cy="14" r="1.8" fill="#FFFFFF" fillOpacity="0.7" />
+        <circle cx="120" cy="14" r="1.8" fill={c.text} fillOpacity="0.7" />
       </g>
 
       {/* Network: faint edges, a pulse travelling along each, glowing nodes */}
@@ -98,7 +100,7 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
           <path
             key={`e${i}`}
             d={`M${NODES[a].x} ${NODES[a].y} L${NODES[b].x} ${NODES[b].y}`}
-            stroke="#E8500A"
+            stroke={c.brandFill}
             strokeOpacity="0.18"
             strokeWidth="1"
           />
@@ -109,7 +111,7 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
             className="ai-pulse"
             style={{ animationDelay: `${(i * 0.37).toFixed(2)}s` }}
             d={`M${NODES[a].x} ${NODES[a].y} L${NODES[b].x} ${NODES[b].y}`}
-            stroke="#FFB27A"
+            stroke={c.brand}
             strokeWidth="1.6"
             strokeLinecap="round"
             pathLength="100"
@@ -125,7 +127,7 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
             cx={n.x}
             cy={n.y}
             r="3"
-            fill="#FF7A3D"
+            fill={c.brand}
           />
         ))}
       </g>
@@ -133,9 +135,9 @@ export function AiEmblem({ size = 240 }: { size?: number }) {
       {/* Core */}
       <g className="ai-core">
         <rect x="92" y="92" width="56" height="56" rx="16" fill="url(#ai-core)" />
-        <rect x="92.5" y="92.5" width="55" height="55" rx="15.5" fill="none" stroke="#FFFFFF" strokeOpacity="0.25" />
+        <rect x="92.5" y="92.5" width="55" height="55" rx="15.5" fill="none" stroke={c.onBrand} strokeOpacity="0.25" />
         <text x="120" y="128.5" textAnchor="middle" fontSize="23" fontWeight="800"
-          fill="#FFFFFF" letterSpacing="0.5" fontFamily="inherit">
+          fill={c.onBrand} letterSpacing="0.5" fontFamily="inherit">
           {/* i18n-ok — the mark itself, not a label. */}
           AI
         </text>
@@ -174,25 +176,35 @@ const RIDES = [
 ];
 
 function Taxi() {
+  const { colors: c } = useTheme();
   // Drawn pointing along +x so animateMotion's rotate="auto" faces it forward.
   return (
     <g transform="scale(1.25)">
       <ellipse cx="22" cy="0" rx="20" ry="9" fill="url(#aib-beam)" />
       <rect x="-12" y="-7" width="24" height="14" rx="4" fill="#F59E0B" />
-      <rect x="2" y="-5.5" width="6" height="11" rx="2" fill="#111827" fillOpacity="0.75" />
-      <rect x="-9" y="-5" width="4" height="10" rx="1.5" fill="#111827" fillOpacity="0.55" />
+      <rect x="2" y="-5.5" width="6" height="11" rx="2" fill={c.bg} fillOpacity="0.75" />
+      <rect x="-9" y="-5" width="4" height="10" rx="1.5" fill={c.bg} fillOpacity="0.55" />
       <rect x="-3" y="-3" width="4" height="6" rx="1" fill="#FFFBEB" />
     </g>
   );
 }
 
+// Road colours per theme. The dark values are the original look; in light,
+// `surfaceAlt` is only a shade off the page background and the roads vanished.
+const ROAD = {
+  dark: { fill: "#25262A", fillOpacity: 0.75, dashOpacity: 0.06 },
+  light: { fill: "#DCDCD8", fillOpacity: 1, dashOpacity: 0.12 },
+} as const;
+
 function AiBackdrop({ animate }: { animate: boolean }) {
+  const { colors: c, theme } = useTheme();
+  const road = ROAD[theme];
   return (
     <div className="aib" aria-hidden="true">
       <svg className="aib-map" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
         <defs>
           <pattern id="aib-grid" width="45" height="45" patternUnits="userSpaceOnUse">
-            <path d="M45 0 H0 V45" fill="none" stroke="#FFFFFF" strokeOpacity="0.025" strokeWidth="1" />
+            <path d="M45 0 H0 V45" fill="none" stroke={c.text} strokeOpacity="0.025" strokeWidth="1" />
           </pattern>
           <radialGradient id="aib-beam" cx="0%" cy="50%" r="100%">
             <stop offset="0%" stopColor="#FEF3C7" stopOpacity="0.35" />
@@ -203,30 +215,30 @@ function AiBackdrop({ animate }: { animate: boolean }) {
         <g className="aib-pan">
           <rect x="-200" y="-200" width="1840" height="1300" fill="url(#aib-grid)" />
           {ROADS.map((d, i) => (
-            <path key={`r${i}`} d={d} fill="none" stroke="#1F2937" strokeOpacity="0.75" strokeWidth="16" strokeLinecap="round" />
+            <path key={`r${i}`} d={d} fill="none" stroke={road.fill} strokeOpacity={road.fillOpacity} strokeWidth="16" strokeLinecap="round" />
           ))}
           {ROADS.map((d, i) => (
-            <path key={`c${i}`} d={d} fill="none" stroke="#FFFFFF" strokeOpacity="0.06" strokeWidth="1"
+            <path key={`c${i}`} d={d} fill="none" stroke={c.text} strokeOpacity={road.dashOpacity} strokeWidth="1"
               strokeDasharray="8 12" />
           ))}
 
           {RIDES.map((r, i) => (
             // i18n-ok — keys, CSS variables and SVG transforms, not copy.
             <g key={`ride${i}`} className="aib-ride" style={{ "--d": `${r.delay}s` } as React.CSSProperties}>
-              <path className="aib-route" d={r.route} pathLength="100" fill="none" stroke="#E8500A"
+              <path className="aib-route" d={r.route} pathLength="100" fill="none" stroke={c.brandFill}
                 strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-              <circle className="aib-ping" cx={r.x} cy={r.y} r="14" fill="none" stroke="#E8500A" strokeWidth="1.5" />
+              <circle className="aib-ping" cx={r.x} cy={r.y} r="14" fill="none" stroke={c.brandFill} strokeWidth="1.5" />
               {/* i18n-ok — an SVG transform, not copy. */}
               <g transform={`translate(${r.to[0]} ${r.to[1]})`}>
                 <g className="aib-drop">
-                  <rect x="-5" y="-5" width="10" height="10" rx="2" fill="#111827" stroke="#FDBA74" strokeWidth="2" />
+                  <rect x="-5" y="-5" width="10" height="10" rx="2" fill={c.bg} stroke={c.brand} strokeWidth="2" />
                 </g>
               </g>
               {/* i18n-ok — an SVG transform, not copy. */}
               <g transform={`translate(${r.x} ${r.y})`}>
                 <g className="aib-pin">
-                  <path d="M0 0 C -2 -6 -10 -11 -10 -19 A 10 10 0 1 1 10 -19 C 10 -11 2 -6 0 0 Z" fill="#E8500A" />
-                  <circle cx="0" cy="-19" r="3.5" fill="#111827" />
+                  <path d="M0 0 C -2 -6 -10 -11 -10 -19 A 10 10 0 1 1 10 -19 C 10 -11 2 -6 0 0 Z" fill={c.brandFill} />
+                  <circle cx="0" cy="-19" r="3.5" fill={c.bg} />
                 </g>
               </g>
             </g>
@@ -248,7 +260,7 @@ function AiBackdrop({ animate }: { animate: boolean }) {
 // The nav glyph: a four-point spark with a smaller one that twinkles.
 export function IconAi() {
   return (
-    <svg className="ai-nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg className="ai-nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
         className="ai-nav-main"
         d="M10 3.5c.6 3.6 2.4 5.4 6 6-3.6.6-5.4 2.4-6 6-.6-3.6-2.4-5.4-6-6 3.6-.6 5.4-2.4 6-6z"
@@ -259,7 +271,7 @@ export function IconAi() {
       <path
         className="ai-nav-spark"
         d="M18.5 13.5c.3 1.6 1 2.3 2.5 2.5-1.5.3-2.2 1-2.5 2.5-.3-1.5-1-2.2-2.5-2.5 1.5-.2 2.2-.9 2.5-2.5z"
-        fill="#E8500A"
+        fill="currentColor"
       />
     </svg>
   );
@@ -300,7 +312,7 @@ export default function AiPage({ visible }: Props) {
       <AiBackdrop animate={visible && !reduced} />
       <style>{`
         .ai-page { position: relative; flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 40px 24px; background:
-          radial-gradient(ellipse 60% 50% at 50% 38%, rgba(232,80,10,0.07), transparent 70%), #111827; }
+          radial-gradient(ellipse 60% 50% at 50% 38%, var(--c-surface-sel), transparent 70%), var(--c-bg); }
         .ai-inner { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 560px; width: 100%; }
 
         .ai-emblem { display: block; overflow: visible; }
@@ -325,24 +337,24 @@ export default function AiPage({ visible }: Props) {
         @keyframes ai-glow { 0%, 100% { opacity: 0.7; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
 
         .ai-badge { margin-top: 28px; display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border-radius: 999px;
-          border: 1px solid rgba(232,80,10,0.35); color: #FDBA74; font-size: 11px; font-weight: 700; letter-spacing: 0.9px; text-transform: uppercase; }
-        .ai-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #E8500A; animation: ai-ping 1.8s ease-out infinite; }
-        @keyframes ai-ping { 0% { box-shadow: 0 0 0 0 rgba(232,80,10,0.6); } 100% { box-shadow: 0 0 0 7px rgba(232,80,10,0); } }
+          border: 1px solid var(--c-brand); color: var(--c-brand); font-size: 11px; font-weight: 700; letter-spacing: 0.9px; text-transform: uppercase; }
+        .ai-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-brand-fill); animation: ai-ping 1.8s ease-out infinite; }
+        @keyframes ai-ping { 0% { box-shadow: 0 0 0 0 var(--c-shadow); } 100% { box-shadow: 0 0 0 7px var(--c-shadow); } }
 
-        .ai-title { margin: 14px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -0.6px; color: #F3F4F6; }
-        .ai-sub { margin: 10px 0 0; font-size: 14px; line-height: 1.55; color: #9CA3AF; max-width: 440px; }
+        .ai-title { margin: 14px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -0.6px; color: var(--c-text); }
+        .ai-sub { margin: 10px 0 0; font-size: 14px; line-height: 1.55; color: var(--c-text-2); max-width: 440px; }
 
         .ai-prompt { margin-top: 28px; width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); text-align: left; color: #9CA3AF; }
-        .ai-prompt-text { flex: 1; min-width: 0; font-size: 14px; color: #E5E7EB; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ai-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: #E8500A; animation: ai-caret 1s steps(1) infinite; }
+          background: var(--c-hover); border: 1px solid var(--c-border); text-align: left; color: var(--c-text-2); }
+        .ai-prompt-text { flex: 1; min-width: 0; font-size: 14px; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ai-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: var(--c-brand-fill); animation: ai-caret 1s steps(1) infinite; }
         @keyframes ai-caret { 50% { opacity: 0; } }
         .ai-send { flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
-          background: rgba(255,255,255,0.05); color: #6B7280; }
+          background: var(--c-hover); color: var(--c-text-2); }
 
-        .ai-points { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; font-size: 12px; color: #6B7280; }
+        .ai-points { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; font-size: 12px; color: var(--c-text-2); }
         .ai-points span { display: inline-flex; align-items: center; gap: 6px; }
-        .ai-points span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: #E8500A; opacity: 0.8; }
+        .ai-points span::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--c-brand-fill); opacity: 0.8; }
 
         .aib { position: absolute; inset: 0; overflow: hidden; pointer-events: none;
           -webkit-mask-image: radial-gradient(ellipse 40% 46% at 50% 46%, transparent 0%, rgba(0,0,0,0.15) 55%, #000 100%);

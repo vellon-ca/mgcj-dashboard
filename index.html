@@ -5,11 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Paints the browser's own canvas, scrollbars and form controls dark
-         before a single byte of CSS is parsed. Without it the first frame is
-         the default white page, which read as a flash on the way in from
-         vellon.ca. -->
-    <meta name="color-scheme" content="dark" />
+    <!-- First paint in the user's theme, before any CSS or JS module loads.
+         Reads the key ThemeContext.tsx writes (vd_theme) and the two page
+         backgrounds from src/theme/tokens.ts (bg) — change them together.
+         Without it the first frame is the browser's default white (or, for a
+         light-mode user, a dark frame), which read as a flash on the way in
+         from vellon.ca. Inline scripts are allowed by vercel.json's CSP. -->
+    <script>
+      (function () {
+        var t = "dark";
+        try { if (localStorage.getItem("vd_theme") === "light") t = "light"; } catch (e) {}
+        var d = document.documentElement;
+        d.dataset.theme = t;
+        d.style.colorScheme = t;
+        d.style.background = t === "light" ? "#F5F5F4" : "#111113";
+      })();
+    </script>
 
     <title>Vellon Dispatch</title>
 
@@ -24,12 +35,8 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@600;700&display=swap"
     />
 
-    <!-- Inline so it applies on the first paint, with no extra request. #0A1628
-         is the sign-in background: an unauthenticated visitor sees one
-         continuous colour from first paint through to the rendered form. -->
     <style>
-      html, body { background: #0A1628; }
-      body { font-family: 'Inter', system-ui, sans-serif; color: #E5E7EB; }
+      body { font-family: 'Inter', system-ui, sans-serif; }
     </style>
   </head>
   <body>

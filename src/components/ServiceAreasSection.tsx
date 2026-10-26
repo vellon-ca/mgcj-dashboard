@@ -28,7 +28,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-import { loadGoogleMaps, darkMapStyle } from "../lib/googleMaps";
+import { loadGoogleMaps } from "../lib/googleMaps";
+import { useTheme } from "../theme/ThemeContext";
+import { mapStyle } from "../theme/tokens";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM } from "../lib/serviceAreaFraming";
 import { Trans, useTranslation } from "react-i18next";
 
@@ -71,11 +73,14 @@ interface Impact {
 // The hardcoded Annapolis Valley centre that used to be here is deleted along
 // with every other copy of it.
 
-const AREA_COLOR = "#E8500A";       // brand orange, matches the Settings accent
+// Google Maps needs real hex, so these are not theme variables. The pickup
+// area is the brand blue (it was the old brand orange); the drop-off-only
+// purple is kept until Victor decides what it should be.
+const AREA_COLOR = "#3D6BF5";
 const AREA_COLOR_DROPOFF = "#A855F7"; // purple: dropoff-only, i.e. a destination
 
 function colorFor(a: Pick<ServiceArea, "allows_pickup" | "allows_dropoff" | "active">) {
-  if (!a.active) return "#6B7280";
+  if (!a.active) return "#8A8C91";
   return a.allows_pickup ? AREA_COLOR : AREA_COLOR_DROPOFF;
 }
 
@@ -108,6 +113,10 @@ const toLiterals = (path: google.maps.LatLng[]): google.maps.LatLngLiteral[] =>
 
 export default function ServiceAreasSection({ companyId }: Props) {
   const { t } = useTranslation();
+  const { theme } = useTheme();
+  // Read at map creation, which waits on Google's script.
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
   const [areas, setAreas] = useState<ServiceArea[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,6 +131,9 @@ export default function ServiceAreasSection({ companyId }: Props) {
 
   const mapDivRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
+  useEffect(() => {
+    mapRef.current?.setOptions({ styles: mapStyle(theme) });
+  }, [theme]);
   // Drawing mode is read inside a map-click listener registered once, so it has
   // to come from a ref — a captured state value would be whatever it was at
   // mount forever. Same stale-closure trap as the RN timers.
@@ -207,7 +219,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
         mapRef.current = new google.maps.Map(mapDivRef.current, {
           center: NEUTRAL_CENTER,
           zoom: NEUTRAL_ZOOM,
-          styles: darkMapStyle,
+          styles: mapStyle(themeRef.current),
           disableDefaultUI: true,
           zoomControl: true,
           clickableIcons: false,
@@ -590,30 +602,30 @@ export default function ServiceAreasSection({ companyId }: Props) {
   return (
     <div className="sa-root">
       <style>{`
-        .sa-map { width: 100%; height: 420px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); background: #0e1626; }
+        .sa-map { width: 100%; height: 420px; border-radius: 12px; overflow: hidden; border: 1px solid var(--c-border); background: var(--c-bg); }
         .sa-city { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-        .sa-city-label { font-size: 12px; color: #9CA3AF; font-weight: 600; }
+        .sa-city-label { font-size: 12px; color: var(--c-text-2); font-weight: 600; }
         .sa-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-        .sa-btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #1E2A3A; color: #E2E8F0; font-size: 13px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; }
-        .sa-btn:hover { background: #24344a; }
-        .sa-btn.active { background: rgba(232,80,10,0.15); border-color: #E8500A; color: #E8500A; }
-        .sa-search { flex: 1; min-width: 200px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: #1E2A3A; color: #E2E8F0; font-size: 13px; font-family: system-ui, sans-serif; }
+        .sa-btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text); font-size: 13px; font-weight: 500; cursor: pointer; font-family: system-ui, sans-serif; }
+        .sa-btn:hover { background: var(--c-hover-strong); }
+        .sa-btn.active { background: var(--c-surface-sel); border-color: var(--c-brand); color: var(--c-brand); }
+        .sa-search { flex: 1; min-width: 200px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; }
         .sa-grid { display: grid; grid-template-columns: 1fr 300px; gap: 14px; align-items: start; }
         @media (max-width: 900px) { .sa-grid { grid-template-columns: 1fr; } }
-        .sa-card { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 12px; }
+        .sa-card { background: var(--c-surface); border: 1px solid var(--c-border-subtle); border-radius: 10px; padding: 12px; }
         .sa-card + .sa-card { margin-top: 8px; }
-        .sa-card.selected { border-color: #E8500A; }
-        .sa-name { width: 100%; background: transparent; border: none; color: #E2E8F0; font-size: 13px; font-weight: 600; font-family: system-ui, sans-serif; padding: 0; }
-        .sa-name:focus { outline: none; border-bottom: 1px solid rgba(255,255,255,0.2); }
-        .sa-meta { font-size: 11px; color: #6B7280; margin-top: 2px; }
-        .sa-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9CA3AF; margin-top: 8px; cursor: pointer; }
-        .sa-del { background: none; border: none; color: #6B7280; font-size: 11px; cursor: pointer; padding: 0; margin-top: 8px; }
-        .sa-del:hover { color: #ef4444; }
+        .sa-card.selected { border-color: var(--c-brand); }
+        .sa-name { width: 100%; background: transparent; border: none; color: var(--c-text); font-size: 13px; font-weight: 600; font-family: system-ui, sans-serif; padding: 0; }
+        .sa-name:focus { outline: none; border-bottom: 1px solid var(--c-border-strong); }
+        .sa-meta { font-size: 11px; color: var(--c-text-2); margin-top: 2px; }
+        .sa-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-2); margin-top: 8px; cursor: pointer; }
+        .sa-del { background: none; border: none; color: var(--c-text-2); font-size: 11px; cursor: pointer; padding: 0; margin-top: 8px; }
+        .sa-del:hover { color: var(--c-red); }
         .sa-impact { border-radius: 10px; padding: 12px; font-size: 12px; line-height: 1.5; margin-bottom: 10px; }
-        .sa-impact.ok { background: rgba(29,158,117,0.1); border: 1px solid rgba(29,158,117,0.25); color: #6ee7b7; }
-        .sa-impact.warn { background: rgba(232,80,10,0.1); border: 1px solid rgba(232,80,10,0.3); color: #fdba74; }
-        .sa-warn { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; border-radius: 10px; padding: 10px 12px; font-size: 12px; margin-bottom: 10px; }
-        .sa-empty { color: #6B7280; font-size: 12px; padding: 8px 0; }
+        .sa-impact.ok { background: var(--c-surface-alt); border: 1px solid var(--c-border); color: var(--c-green); }
+        .sa-impact.warn { background: var(--c-surface-sel); border: 1px solid var(--c-brand); color: var(--c-brand); }
+        .sa-warn { background: var(--c-surface-alt); border: 1px solid var(--c-border); color: var(--c-red); border-radius: 10px; padding: 10px 12px; font-size: 12px; margin-bottom: 10px; }
+        .sa-empty { color: var(--c-text-2); font-size: 12px; padding: 8px 0; }
         .sa-list { min-width: 0; }
 
         /* Tall mode. Paired with .st-content-fill in SettingsPage: the root
@@ -631,7 +643,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
           .sa-map { height: 100%; min-height: 320px; }
           .sa-list { overflow-y: auto; min-height: 0; padding-right: 4px; }
           .sa-list::-webkit-scrollbar { width: 4px; }
-          .sa-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+          .sa-list::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
         }
       `}</style>
 
