@@ -211,15 +211,18 @@ function AiBackdrop({ animate }: { animate: boolean }) {
           ))}
 
           {RIDES.map((r, i) => (
+            // i18n-ok — keys, CSS variables and SVG transforms, not copy.
             <g key={`ride${i}`} className="aib-ride" style={{ "--d": `${r.delay}s` } as React.CSSProperties}>
               <path className="aib-route" d={r.route} pathLength="100" fill="none" stroke="#E8500A"
                 strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               <circle className="aib-ping" cx={r.x} cy={r.y} r="14" fill="none" stroke="#E8500A" strokeWidth="1.5" />
+              {/* i18n-ok — an SVG transform, not copy. */}
               <g transform={`translate(${r.to[0]} ${r.to[1]})`}>
                 <g className="aib-drop">
                   <rect x="-5" y="-5" width="10" height="10" rx="2" fill="#111827" stroke="#FDBA74" strokeWidth="2" />
                 </g>
               </g>
+              {/* i18n-ok — an SVG transform, not copy. */}
               <g transform={`translate(${r.x} ${r.y})`}>
                 <g className="aib-pin">
                   <path d="M0 0 C -2 -6 -10 -11 -10 -19 A 10 10 0 1 1 10 -19 C 10 -11 2 -6 0 0 Z" fill="#E8500A" />
