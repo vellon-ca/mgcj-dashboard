@@ -83,16 +83,4 @@ export function loadGoogleMaps(): Promise<void> {
   return loadPromise;
 }
 
-// Shared with DashboardPage so the two maps look like the same product. These
-// are DashboardPage's original values, moved here rather than re-picked — a
-// second palette that is nearly the same is worse than one that is shared.
-export const darkMapStyle: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#1d2c3f" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8ec3b9" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#1a3646" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#253d56" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#2c6675" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1626" }] },
-  { featureType: "poi", stylers: [{ visibility: "off" }] },
-  { featureType: "transit", stylers: [{ visibility: "off" }] },
-];
+

@@ -345,26 +345,26 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
       <style>{`
         .mc-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
 
-        .mc-list { width: 280px; flex-shrink: 0; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); overflow-y: auto; }
-        .mc-list-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 16px 16px 10px; }
+        .mc-list { width: 280px; flex-shrink: 0; background: var(--c-surface); border-right: 1px solid var(--c-border); overflow-y: auto; }
+        .mc-list-title { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; padding: 16px 16px 10px; }
         .mc-driver-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: none; border-left: 2px solid transparent; cursor: pointer; text-align: left; transition: background 0.12s, border-color 0.12s; }
-        .mc-driver-row:hover { background: rgba(255,255,255,0.04); }
-        .mc-driver-row.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); }
-        .mc-avatar { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; flex-shrink: 0; object-fit: cover; }
-        .mc-avatar-fallback { width: 34px; height: 34px; border-radius: 17px; background: #1E3A5F; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #93C5FD; }
+        .mc-driver-row:hover { background: var(--c-hover); }
+        .mc-driver-row.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); }
+        .mc-avatar { width: 34px; height: 34px; border-radius: 17px; background: var(--c-surface-alt); flex-shrink: 0; object-fit: cover; }
+        .mc-avatar-fallback { width: 34px; height: 34px; border-radius: 17px; background: var(--c-surface-alt); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--c-blue); }
         .mc-driver-info { flex: 1; min-width: 0; }
         .mc-driver-name-row { display: flex; align-items: center; gap: 6px; }
-        .mc-driver-name { font-size: 13px; font-weight: 600; color: #E2E8F0; }
-        .mc-unread-dot { width: 7px; height: 7px; border-radius: 3.5px; background: #E8500A; flex-shrink: 0; }
-        .mc-driver-preview { font-size: 12px; color: #6B7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+        .mc-driver-name { font-size: 13px; font-weight: 600; color: var(--c-text); }
+        .mc-unread-dot { width: 7px; height: 7px; border-radius: 3.5px; background: var(--c-brand-fill); flex-shrink: 0; }
+        .mc-driver-preview { font-size: 12px; color: var(--c-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
 
-        .mc-thread { flex: 1; display: flex; flex-direction: column; background: #111827; min-width: 0; }
-        .mc-thread-header { padding: 16px 24px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 15px; font-weight: 700; color: #F1F5F9; flex-shrink: 0; }
-        .mc-thread-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #6B7280; font-size: 14px; }
+        .mc-thread { flex: 1; display: flex; flex-direction: column; background: var(--c-bg); min-width: 0; }
+        .mc-thread-header { padding: 16px 24px; border-bottom: 1px solid var(--c-border); font-size: 15px; font-weight: 700; color: var(--c-text); flex-shrink: 0; }
+        .mc-thread-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--c-text-2); font-size: 14px; }
         .mc-thread-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
 
         .mc-date-sep { display: flex; align-items: center; justify-content: center; margin: 6px 0 4px; }
-        .mc-date-sep span { font-size: 11px; font-weight: 600; color: #6B7280; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 999px; padding: 3px 12px; }
+        .mc-date-sep span { font-size: 11px; font-weight: 600; color: var(--c-text-2); background: var(--c-hover); border: 1px solid var(--c-border); border-radius: 999px; padding: 3px 12px; }
         .mc-bubble-link { color: inherit; text-decoration: underline; word-break: break-all; }
 
         .mc-bubble-row { display: flex; }
@@ -372,19 +372,19 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
         .mc-bubble-row.driver { justify-content: flex-start; }
         .mc-bubble-col { display: inline-flex; flex-direction: column; max-width: 70%; }
         .mc-bubble { padding: 9px 13px; border-radius: 14px; font-size: 13px; line-height: 19px; word-break: break-word; }
-        .mc-bubble.admin { background: rgba(232,80,10,0.16); color: #FDE4D3; border-bottom-right-radius: 4px; }
-        .mc-bubble.driver { background: #1E2A3A; color: #E2E8F0; border-bottom-left-radius: 4px; }
-        .mc-bubble-time { font-size: 10px; color: #6B7280; margin-top: 3px; }
+        .mc-bubble.admin { background: var(--c-brand-fill); color: var(--c-on-brand); border-bottom-right-radius: 4px; }
+        .mc-bubble.driver { background: var(--c-surface); color: var(--c-text); border-bottom-left-radius: 4px; }
+        .mc-bubble-time { font-size: 10px; color: var(--c-text-2); margin-top: 3px; }
         .mc-bubble-row.admin .mc-bubble-time { text-align: right; }
 
-        .mc-input-row { display: flex; gap: 10px; padding: 14px 24px; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
-        .mc-input { flex: 1; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px 14px; color: #E2E8F0; font-size: 13px; font-family: system-ui, sans-serif; }
-        .mc-input:focus { outline: none; border-color: #E8500A; }
-        .mc-send-btn { padding: 0 18px; border-radius: 10px; background: #E8500A; color: #fff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; }
+        .mc-input-row { display: flex; gap: 10px; padding: 14px 24px; border-top: 1px solid var(--c-border); flex-shrink: 0; }
+        .mc-input { flex: 1; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 14px; color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; }
+        .mc-input:focus { outline: none; border-color: var(--c-brand); }
+        .mc-send-btn { padding: 0 18px; border-radius: 10px; background: var(--c-brand-fill); color: var(--c-on-brand); border: none; font-size: 13px; font-weight: 700; cursor: pointer; }
         .mc-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .mc-empty { color: #6B7280; font-size: 13px; text-align: center; padding: 30px 16px; }
-        .mc-loading { color: #6B7280; text-align: center; padding: 40px; font-size: 14px; }
+        .mc-empty { color: var(--c-text-2); font-size: 13px; text-align: center; padding: 30px 16px; }
+        .mc-loading { color: var(--c-text-2); text-align: center; padding: 40px; font-size: 14px; }
       `}</style>
 
       <div className="mc-wrap">

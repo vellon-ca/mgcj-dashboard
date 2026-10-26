@@ -46,10 +46,11 @@ function tone(status: string | null | undefined): Tone {
   return "todo";
 }
 
-const PILL: Record<Tone, { bg: string; fg: string }> = {
-  ok: { bg: "rgba(29,158,117,0.12)", fg: "#1D9E75" },
-  wait: { bg: "rgba(245,158,11,0.12)", fg: "#F59E0B" },
-  todo: { bg: "rgba(248,113,113,0.12)", fg: "#F87171" },
+// A status is a dot beside plain text (src/theme/tokens.ts, rule 3).
+const PILL: Record<Tone, { dot: string }> = {
+  ok: { dot: "var(--c-green)" },
+  wait: { dot: "var(--c-amber)" },
+  todo: { dot: "var(--c-red)" },
 };
 
 export default function CardPaymentsSection({ companyId }: Props) {
@@ -108,15 +109,16 @@ export default function CardPaymentsSection({ companyId }: Props) {
   const pill = (tn: Tone) => (
     <span
       style={{
-        background: PILL[tn].bg,
-        color: PILL[tn].fg,
-        borderRadius: 999,
-        padding: "4px 10px",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        color: "var(--c-text)",
         fontSize: 12,
         fontWeight: 600,
         whiteSpace: "nowrap",
       }}
     >
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: PILL[tn].dot, flexShrink: 0 }} />
       {t(`settings.card.status.${tn}`)}
     </span>
   );
@@ -140,11 +142,11 @@ export default function CardPaymentsSection({ companyId }: Props) {
       </div>
 
       {loading && !status ? (
-        <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+        <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
       ) : status?.state === "not_created" ? (
         <div className="st-card">
           <p className="st-card-label">{t("settings.card.notCreatedTitle")}</p>
-          <p style={{ color: "#CBD5E1", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+          <p style={{ color: "var(--c-text-2)", fontSize: 13, lineHeight: 1.6, margin: 0 }}>
             {t("settings.card.notCreatedBody")}
           </p>
         </div>
@@ -174,7 +176,7 @@ export default function CardPaymentsSection({ companyId }: Props) {
               {/* Stripe's requirement codes, as sent (e.g.
                   person.verification.proof_of_liveness). Not translated or
                   reworded here: the list is open-ended on Stripe's side. */}
-              <ul style={{ margin: 0, paddingLeft: 18, color: "#CBD5E1", fontSize: 13, lineHeight: 1.6 }}>
+              <ul style={{ margin: 0, paddingLeft: 18, color: "var(--c-text-2)", fontSize: 13, lineHeight: 1.6 }}>
                 {outstanding.map((item, i) => (
                   <li key={i}>{item}</li>
                 ))}
@@ -193,7 +195,7 @@ export default function CardPaymentsSection({ companyId }: Props) {
           {error}{" "}
           <button
             onClick={load}
-            style={{ background: "none", border: "none", color: "#E2E8F0", textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0 }}
+            style={{ background: "none", border: "none", color: "var(--c-text)", textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0 }}
           >
             {t("settings.card.retry")}
           </button>

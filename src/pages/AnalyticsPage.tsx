@@ -6,6 +6,7 @@ import {
   AreaChart, Area, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { useTheme } from "../theme/ThemeContext";
 import type { Ride } from "../types";
 import { supabase } from "../lib/supabase";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
@@ -32,6 +33,7 @@ import {
 } from "../lib/labels";
 import { canOfferRefund, isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
+import Icon from "../components/Icon";
 
 // Module-scope wrappers, because half this file's label lookups live in
 // non-component helpers (the CSV builders, the print-HTML builders, the
@@ -274,13 +276,15 @@ const EVENT_LABEL_KEYS: Record<string, string> = {
 };
 const eventLabel = (ev: string) =>
   EVENT_LABEL_KEYS[ev] ? i18next.t(EVENT_LABEL_KEYS[ev]) : ev;
+// Hex, not theme variables: the printed audit log appends an alpha to these.
+// On screen they are only a dot beside plain text.
 const EVENT_COLORS: Record<string, string> = {
   "ride.created": "#1D9E75",
   "ride.cancelled": "#E24B4A",
   "ride.assigned": "#4a9eff",
   "ride.reassigned": "#60A5FA",
-  "ride.scheduled_modified": "#A855F7",
-  "ride.route_modified": "#A855F7",
+  "ride.scheduled_modified": "#4a9eff",
+  "ride.route_modified": "#4a9eff",
   "ride.notes_added": "#6B7280",
   "ride.fare_changed": "#F59E0B",
   "driver.suspended": "#F59E0B",
@@ -290,12 +294,12 @@ const EVENT_COLORS: Record<string, string> = {
   "driver.accessibility_updated": "#60A5FA",
   "invite.created": "#1D9E75",
   "invite.revoked": "#E24B4A",
-  "discount.created": "#E8500A",
+  "discount.created": "#4a9eff",
   "discount.deactivated": "#6B7280",
   "discount.deleted": "#E24B4A",
   "report.reviewed": "#60A5FA",
   "report.dismissed": "#6B7280",
-  "report.printed": "#A855F7",
+  "report.printed": "#4a9eff",
   "announcement.drivers": "#60A5FA",
   "announcement.passengers": "#60A5FA",
   "announcement.edited": "#60A5FA",
@@ -304,7 +308,7 @@ const EVENT_COLORS: Record<string, string> = {
   "escalation.acknowledged": "#F59E0B",
   "export.csv": "#6B7280",
   "export.pdf": "#6B7280",
-  "invoice.printed": "#A855F7",
+  "invoice.printed": "#4a9eff",
   "settings.pricing_updated": "#F59E0B",
   "settings.contact_updated": "#F59E0B",
   "settings.numbering_updated": "#6B7280",
@@ -317,7 +321,7 @@ const EVENT_COLORS: Record<string, string> = {
   "staff.updated": "#60A5FA",
   "staff.deactivated": "#F59E0B",
   "staff.reactivated": "#1D9E75",
-  "dispatch_report.submitted": "#A855F7",
+  "dispatch_report.submitted": "#4a9eff",
   "settlement.resolved": "#1D9E75",
   "driver.number_changed": "#60A5FA",
   "driver.car_number_changed": "#60A5FA",
@@ -576,14 +580,16 @@ const SETTLEMENT_ACTION_HINT_KEYS: Record<string, string> = {
   reversal_failed: "settlementHint.reversalFailed",
   retransfer_failed: "settlementHint.retransferFailed",
 };
+// Theme variables for the status dot (.an-status::before via --dot); the
+// same mapping as DashboardPage. Never append an alpha to these.
 const STATUS_COLORS: Record<string, string> = {
-  pending: "#F59E0B",
-  assigned: "#4a9eff",
-  driver_arriving: "#4a9eff",
-  in_progress: "#E8500A",
-  completed: "#1D9E75",
-  cancelled: "#E24B4A",
-  scheduled: "#A855F7",
+  pending: "var(--c-amber)",
+  assigned: "var(--c-blue)",
+  driver_arriving: "var(--c-blue)",
+  in_progress: "var(--c-green)",
+  completed: "var(--c-text-3)",
+  cancelled: "var(--c-red)",
+  scheduled: "var(--c-purple)",
 };
 
 
@@ -611,19 +617,19 @@ const settlementShort = (route: string | null | undefined) =>
     : (route ?? "—");
 
 const SETTLEMENT_ROUTE_COLORS: Record<string, string> = {
-  driver_transfer: "#1D9E75",
-  company_transfer: "#4a9eff",
-  direct: "#4a9eff",
-  platform_invoiced: "#F59E0B",
-  transfer_reversed: "#A855F7",
-  refund_reversed: "#A855F7",
-  refund_review: "#F59E0B",
-  transfer_failed: "#E24B4A",
-  reversal_failed: "#E24B4A",
-  retransfer_failed: "#E24B4A",
-  unsettled: "#6B7280",
+  driver_transfer: "var(--c-green)",
+  company_transfer: "var(--c-blue)",
+  direct: "var(--c-blue)",
+  platform_invoiced: "var(--c-amber)",
+  transfer_reversed: "var(--c-blue)",
+  refund_reversed: "var(--c-blue)",
+  refund_review: "var(--c-amber)",
+  transfer_failed: "var(--c-red)",
+  reversal_failed: "var(--c-red)",
+  retransfer_failed: "var(--c-red)",
+  unsettled: "var(--c-text-3)",
 };
-const settlementColor = (route: string) => SETTLEMENT_ROUTE_COLORS[route] ?? "#6B7280";
+const settlementColor = (route: string) => SETTLEMENT_ROUTE_COLORS[route] ?? "var(--c-text-3)";
 
 // The dollar amount a needs-attention row actually concerns. For everything that
 // is a driver payout being sent, re-sent, or clawed back (transfer_failed,
@@ -782,6 +788,9 @@ export default function AnalyticsPage({
   isAdmin: boolean;
 }) {
   const { t } = useTranslation();
+  // Real colour values for the charts: recharts writes SVG attributes, where a
+  // CSS variable cannot be relied on.
+  const { colors: tc } = useTheme();
   const [refundTarget, setRefundTarget] = useState<RideRow | null>(null);
   // These two are rendered AND compared against (the receipt's total row gets
   // emphasis, the settlement row gets a warning style). Comparing a rendered
@@ -1717,11 +1726,11 @@ export default function AnalyticsPage({
     const gross = feeBreakdown?.gross_fares || 1;
     const parts = feeBreakdown
       ? [
-          { key: "net", name: "Net to you", color: "#4a9eff", amt: feeBreakdown.net_total },
-          { key: "vellon", name: "Vellon fee", color: "#E8500A", amt: feeBreakdown.vellon_fee },
-          { key: "feeTax", name: i18next.t("rideDetail.vellonFeeTax"), color: "#B45309", amt: feeBreakdown.fee_tax },
-          { key: "stripe", name: "Stripe fee", color: "#8B93A7", amt: feeBreakdown.stripe_fee },
-          { key: "refunded", name: i18next.t("settle.refunded"), color: "#E24B4A", amt: feeBreakdown.refunded },
+          { key: "net", name: "Net to you", color: "var(--c-blue)", amt: feeBreakdown.net_total },
+          { key: "vellon", name: "Vellon fee", color: "var(--c-brand)", amt: feeBreakdown.vellon_fee },
+          { key: "feeTax", name: i18next.t("rideDetail.vellonFeeTax"), color: "var(--c-amber)", amt: feeBreakdown.fee_tax },
+          { key: "stripe", name: "Stripe fee", color: "var(--c-text-3)", amt: feeBreakdown.stripe_fee },
+          { key: "refunded", name: i18next.t("settle.refunded"), color: "var(--c-red)", amt: feeBreakdown.refunded },
         ]
       : [];
     let acc = 0;
@@ -2220,7 +2229,7 @@ export default function AnalyticsPage({
       data.forEach((d, i) => {
         const x = PL + i * slotW + (slotW - barW) / 2;
         const barH = Math.max((d.revenue / yMax) * cH, 0);
-        inner += `<rect x="${x.toFixed(1)}" y="${(yPos(d.revenue)).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="#E8500A" rx="2"/>`;
+        inner += `<rect x="${x.toFixed(1)}" y="${(yPos(d.revenue)).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="#2F5BE0" rx="2"/>`;
       });
       const interval = Math.max(1, Math.floor(n / 8));
       data.forEach((d, i) => {
@@ -2230,7 +2239,7 @@ export default function AnalyticsPage({
       });
     } else {
       if (data.length === 1) {
-        inner += `<circle cx="${(PL + cW / 2).toFixed(1)}" cy="${yPos(data[0].revenue).toFixed(1)}" r="4" fill="#E8500A"/>`;
+        inner += `<circle cx="${(PL + cW / 2).toFixed(1)}" cy="${yPos(data[0].revenue).toFixed(1)}" r="4" fill="#2F5BE0"/>`;
       } else {
         const pts = data.map((d, i) => ({
           x: PL + (i / (data.length - 1)) * cW,
@@ -2242,10 +2251,10 @@ export default function AnalyticsPage({
           ...pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`),
           `${pts[pts.length - 1].x.toFixed(1)},${(PT + cH).toFixed(1)}`,
         ].join(" ");
-        inner += `<polyline fill="rgba(232,80,10,0.12)" stroke="none" points="${areaPts}"/>`;
-        inner += `<polyline fill="none" stroke="#E8500A" stroke-width="1.75" stroke-linejoin="round" points="${linePts}"/>`;
+        inner += `<polyline fill="rgba(47,91,224,0.12)" stroke="none" points="${areaPts}"/>`;
+        inner += `<polyline fill="none" stroke="#2F5BE0" stroke-width="1.75" stroke-linejoin="round" points="${linePts}"/>`;
         pts.forEach((p) => {
-          inner += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="#E8500A"/>`;
+          inner += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="#2F5BE0"/>`;
         });
         const interval = Math.max(1, Math.floor(data.length / 7));
         data.forEach((d, i) => {
@@ -2803,18 +2812,18 @@ export default function AnalyticsPage({
     const d = payload[0].payload;
     return (
       <div style={{
-        background: "#1E2A3A",
-        border: "1px solid rgba(255,255,255,0.12)",
+        background: "var(--c-surface)",
+        border: "1px solid var(--c-border-strong)",
         borderRadius: 8,
         padding: "10px 14px",
         fontSize: 12,
-        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+        boxShadow: "0 4px 20px var(--c-shadow)",
       }}>
-        <div style={{ color: "#9CA3AF", marginBottom: 5 }}>{label}</div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#E8500A" }}>
+        <div style={{ color: "var(--c-text-2)", marginBottom: 5 }}>{label}</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--c-brand)" }}>
           ${payload[0].value.toFixed(2)}
         </div>
-        <div style={{ color: "#6B7280", marginTop: 3 }}>
+        <div style={{ color: "var(--c-text-2)", marginTop: 3 }}>
           {t("analytics.ridesCount", { count: d.rides })}
         </div>
       </div>
@@ -2828,15 +2837,15 @@ export default function AnalyticsPage({
     const count = d.rides;
     return (
       <div style={{
-        background: "#1E2A3A",
-        border: "1px solid rgba(255,255,255,0.12)",
+        background: "var(--c-surface)",
+        border: "1px solid var(--c-border-strong)",
         borderRadius: 8,
         padding: "10px 14px",
         fontSize: 12,
-        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+        boxShadow: "0 4px 20px var(--c-shadow)",
       }}>
-        <div style={{ color: "#9CA3AF", marginBottom: 4 }}>{lbl}</div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "#E8500A" }}>
+        <div style={{ color: "var(--c-text-2)", marginBottom: 4 }}>{lbl}</div>
+        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--c-brand)" }}>
           {t("analytics.ridesCount", { count })}
         </div>
       </div>
@@ -2847,123 +2856,124 @@ export default function AnalyticsPage({
     <>
       <style>{`
         .an-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
-        .an-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .an-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .an-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
-        .an-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
-        .an-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
-        .an-content { flex: 1; overflow-y: auto; padding: 24px; background: #111827; }
+        .an-panel { width: 200px; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
+        .an-panel-title { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .an-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .an-section-btn:hover { background: var(--c-hover); color: var(--c-text-2); }
+        .an-section-btn.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); color: var(--c-brand); }
+        .an-content { flex: 1; overflow-y: auto; padding: 24px; background: var(--c-bg); }
         .an-content::-webkit-scrollbar { width: 4px; }
-        .an-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .an-content::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
         .an-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-        .an-section-title { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+        .an-section-title { font-size: 18px; font-weight: 700; color: var(--c-text); }
         .an-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .an-period-btns { display: flex; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 3px; gap: 2px; }
-        .an-period-btn { background: transparent; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: #6B7280; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
-        .an-period-btn.active { background: #111827; color: #F1F5F9; }
-        .an-download-btn { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.25); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .an-download-btn:hover { background: rgba(29,158,117,0.18); }
-        .an-download-btn-sm { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .an-download-btn-sm:hover { background: rgba(29,158,117,0.15); }
-        .an-csv-btn { background: rgba(74,158,255,0.08); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
-        .an-csv-btn:hover { background: rgba(74,158,255,0.15); }
+        .an-period-btns { display: flex; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 8px; padding: 3px; gap: 2px; }
+        .an-period-btn { background: transparent; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--c-text-2); cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
+        .an-period-btn.active { background: var(--c-surface-alt); color: var(--c-text); font-weight: 600; box-shadow: inset 0 0 0 1px var(--c-border-strong); }
+        .an-download-btn { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
+        .an-download-btn:hover { background: var(--c-surface-alt); }
+        .an-download-btn-sm { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
+        .an-download-btn-sm:hover { background: var(--c-surface-alt); }
+        .an-csv-btn { background: var(--c-surface-alt); color: var(--c-blue); border: 1px solid var(--c-border); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; white-space: nowrap; }
+        .an-csv-btn:hover { background: var(--c-surface-alt); }
         .an-kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
-        .an-kpi-card { background: #1E2A3A; border-radius: 12px; padding: 16px; border: 1px solid rgba(255,255,255,0.05); }
-        .an-kpi-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
-        .an-kpi-value { font-size: 24px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .an-kpi-sub { font-size: 11px; color: #6B7280; margin-top: 4px; }
+        .an-kpi-card { background: var(--c-surface); border-radius: 12px; padding: 16px; border: 1px solid var(--c-border-subtle); }
+        .an-kpi-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+        .an-kpi-value { font-size: 24px; font-weight: 700; color: var(--c-text); line-height: 1; }
+        .an-kpi-sub { font-size: 11px; color: var(--c-text-2); margin-top: 4px; }
         .an-revenue-strip { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
-        .an-revenue-mini { background: #1E2A3A; border-radius: 10px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.05); }
-        .an-revenue-mini-label { font-size: 10px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 5px; }
-        .an-revenue-mini-value { font-size: 18px; font-weight: 700; color: #F1F5F9; }
+        .an-revenue-mini { background: var(--c-surface); border-radius: 10px; padding: 12px 14px; border: 1px solid var(--c-border-subtle); }
+        .an-revenue-mini-label { font-size: 10px; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 5px; }
+        .an-revenue-mini-value { font-size: 18px; font-weight: 700; color: var(--c-text); }
         /* ── Settlements ── */
-        .an-attn-badge { font-size: 11px; font-weight: 700; color: #E24B4A; background: rgba(226,75,74,0.14); border-radius: 999px; padding: 2px 9px; line-height: 1.5; }
-        .an-scope-note { font-size: 11px; color: #6B7280; }
-        .an-settle-clear { display: flex; align-items: center; gap: 10px; background: rgba(29,158,117,0.07); border: 1px solid rgba(29,158,117,0.2); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: #9CA3AF; margin-bottom: 4px; }
+        .an-attn-badge { font-size: 11px; font-weight: 700; color: var(--c-red); background: var(--c-surface-alt); border-radius: 999px; padding: 2px 9px; line-height: 1.5; }
+        .an-scope-note { font-size: 11px; color: var(--c-text-2); }
+        .an-settle-clear { display: flex; align-items: center; gap: 10px; background: var(--c-surface-alt); border: 1px solid var(--c-border); border-radius: 10px; padding: 16px 18px; font-size: 13px; color: var(--c-text-2); margin-bottom: 4px; }
         .an-attn-split { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; margin-bottom: 12px; }
-        .an-attn-tile { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.05); border-radius: 10px; padding: 12px 14px; }
+        .an-attn-tile { background: var(--c-surface); border: 1px solid var(--c-border-subtle); border-radius: 10px; padding: 12px 14px; }
         .an-attn-tile-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
-        .an-attn-tile-value { font-size: 20px; font-weight: 700; color: #F1F5F9; line-height: 1; }
-        .an-attn-tile-sub { font-size: 11px; color: #6B7280; margin-top: 5px; }
-        .an-attn-card { display: flex; gap: 12px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.06); border-left: 3px solid #E24B4A; border-radius: 10px; padding: 13px 15px; align-items: flex-start; justify-content: space-between; }
-        .an-attn-meta { font-size: 12px; color: #9CA3AF; margin-top: 4px; }
-        .an-attn-hint { font-size: 12px; color: #94A3B8; margin-top: 7px; max-width: 620px; line-height: 1.45; }
-        .an-attn-id { font-size: 10px; color: #4B5563; margin-top: 6px; font-family: ui-monospace, monospace; }
-        .an-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.05em; }
-        .an-comp-bar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.04); margin-bottom: 16px; }
+        .an-attn-tile-value { font-size: 20px; font-weight: 700; color: var(--c-text); line-height: 1; }
+        .an-attn-tile-sub { font-size: 11px; color: var(--c-text-2); margin-top: 5px; }
+        .an-attn-card { display: flex; gap: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-left: 3px solid var(--c-red); border-radius: 10px; padding: 13px 15px; align-items: flex-start; justify-content: space-between; }
+        .an-attn-meta { font-size: 12px; color: var(--c-text-2); margin-top: 4px; }
+        .an-attn-hint { font-size: 12px; color: var(--c-text-2); margin-top: 7px; max-width: 620px; line-height: 1.45; }
+        .an-attn-id { font-size: 10px; color: var(--c-text-2); margin-top: 6px; font-family: ui-monospace, monospace; }
+        .an-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700; color: var(--c-text); text-transform: uppercase; letter-spacing: 0.05em; }
+        .an-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--c-text-2)); }
+        .an-comp-bar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: var(--c-hover); margin-bottom: 16px; }
         .an-comp-seg { height: 100%; transition: opacity 0.12s; }
-        .an-share-track { width: 84px; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.06); overflow: hidden; margin-top: 5px; }
+        .an-share-track { width: 84px; height: 5px; border-radius: 999px; background: var(--c-hover); overflow: hidden; margin-top: 5px; }
         .an-share-fill { height: 100%; border-radius: 999px; }
         .an-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex: none; }
         .an-settle-row { cursor: pointer; transition: background 0.12s; }
-        .an-settle-row:hover { background: rgba(255,255,255,0.035) !important; }
-        .an-chip { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 5px 13px; font-size: 12px; color: #9CA3AF; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s, border-color 0.12s; }
-        .an-chip:hover { color: #E2E8F0; }
-        .an-chip.active { background: #111827; color: #F1F5F9; border-color: rgba(255,255,255,0.18); }
-        .an-chip-count { color: #6B7280; margin-left: 6px; font-size: 11px; }
-        .an-chart-card { background: #1E2A3A; border-radius: 12px; padding: 20px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 16px; }
-        .an-chart-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
-        .an-no-data { color: #6B7280; font-size: 13px; text-align: center; padding: 24px 0; }
+        .an-settle-row:hover { background: var(--c-hover) !important; }
+        .an-chip { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 999px; padding: 5px 13px; font-size: 12px; color: var(--c-text-2); cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+        .an-chip:hover { color: var(--c-text); }
+        .an-chip.active { background: var(--c-surface-sel); color: var(--c-text); border-color: var(--c-brand); }
+        .an-chip-count { color: var(--c-text-2); margin-left: 6px; font-size: 11px; }
+        .an-chart-card { background: var(--c-surface); border-radius: 12px; padding: 20px; border: 1px solid var(--c-border-subtle); margin-bottom: 16px; }
+        .an-chart-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+        .an-no-data { color: var(--c-text-2); font-size: 13px; text-align: center; padding: 24px 0; }
         /* ── Settlement rollup hero + charts ── */
         .an-set-hero { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-        .an-hero-card { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 15px 16px; }
-        .an-hero-card.lead { border-color: rgba(29,158,117,0.28); background: linear-gradient(180deg, rgba(29,158,117,0.09), rgba(29,158,117,0.015) 62%, transparent), #1E2A3A; }
-        .an-hero-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
-        .an-hero-value { font-size: 22px; font-weight: 700; color: #F1F5F9; line-height: 1; font-variant-numeric: tabular-nums; }
-        .an-hero-card.lead .an-hero-value { font-size: 28px; color: #2fce9a; }
+        .an-hero-card { background: var(--c-surface); border: 1px solid var(--c-border-subtle); border-radius: 12px; padding: 15px 16px; }
+        .an-hero-card.lead { border-color: var(--c-border); background: var(--c-surface); }
+        .an-hero-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+        .an-hero-value { font-size: 22px; font-weight: 700; color: var(--c-text); line-height: 1; font-variant-numeric: tabular-nums; }
+        .an-hero-card.lead .an-hero-value { font-size: 28px; color: var(--c-green); }
         /* company_settles: the lead tile is "your account" money, so it reads
            blue instead of driver-green. Same layout, just re-accented. */
-        .an-hero-card.lead.paid-company { border-color: rgba(74,158,255,0.28); background: linear-gradient(180deg, rgba(74,158,255,0.09), rgba(74,158,255,0.015) 62%, transparent), #1E2A3A; }
-        .an-hero-card.lead.paid-company .an-hero-value { color: #6cb2ff; }
-        .an-hero-sub { font-size: 11px; color: #6B7280; margin-top: 6px; }
-        .an-hero-sub.up { color: #1D9E75; }
-        .an-hero-sub.down { color: #E24B4A; }
+        .an-hero-card.lead.paid-company { border-color: var(--c-border); background: var(--c-surface); }
+        .an-hero-card.lead.paid-company .an-hero-value { color: var(--c-blue); }
+        .an-hero-sub { font-size: 11px; color: var(--c-text-2); margin-top: 6px; }
+        .an-hero-sub.up { color: var(--c-green); }
+        .an-hero-sub.down { color: var(--c-red); }
         .an-two-up { display: grid; grid-template-columns: 340px 1fr; gap: 12px; margin-bottom: 20px; }
         .an-donut-wrap { display: flex; align-items: center; gap: 18px; }
         .an-donut-legend { display: flex; flex-direction: column; gap: 9px; flex: 1; min-width: 0; }
         .an-leg { display: flex; align-items: center; gap: 8px; font-size: 12px; }
         .an-leg .an-dot { margin-right: 0; }
-        .an-leg-name { color: #CBD5E1; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .an-leg-amt { color: #F1F5F9; font-weight: 600; font-variant-numeric: tabular-nums; }
-        .an-leg-pct { color: #6B7280; width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+        .an-leg-name { color: var(--c-text-2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .an-leg-amt { color: var(--c-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .an-leg-pct { color: var(--c-text-2); width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
         .an-trend-legend { display: flex; gap: 14px; margin-top: 10px; }
-        .an-tl { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #9CA3AF; }
+        .an-tl { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--c-text-2); }
         .an-tl-swatch { width: 10px; height: 3px; border-radius: 2px; }
         /* donut: draw-in + hover morph share one stroke-dasharray transition */
         .an-donut-seg { transition: stroke-dasharray 0.7s cubic-bezier(.4,0,.2,1), stroke-width 0.18s ease, opacity 0.18s ease; cursor: pointer; }
         .an-leg { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 5px; transition: background 0.12s; }
-        .an-leg:hover, .an-leg.hot { background: rgba(255,255,255,0.05); }
+        .an-leg:hover, .an-leg.hot { background: var(--c-hover); }
         .an-spark-dot { animation: an-pulse 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
         @keyframes an-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
         /* daily flow: HTML bars so heights transition smoothly on any data change */
         .an-bars-plot { position: relative; height: 168px; margin: 0 0 0 34px; }
-        .an-grid-line { position: absolute; left: 0; right: 0; height: 1px; background: rgba(255,255,255,0.05); }
-        .an-grid-line.base { background: rgba(255,255,255,0.09); }
-        .an-ylab { position: absolute; left: -34px; width: 30px; text-align: right; font-size: 9px; color: #4B5563; transform: translateY(-50%); font-variant-numeric: tabular-nums; }
+        .an-grid-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--c-hover); }
+        .an-grid-line.base { background: var(--c-hover-strong); }
+        .an-ylab { position: absolute; left: -34px; width: 30px; text-align: right; font-size: 9px; color: var(--c-text-2); transform: translateY(-50%); font-variant-numeric: tabular-nums; }
         .an-bars-row { position: absolute; left: 0; right: 0; bottom: 22px; top: 0; display: flex; align-items: flex-end; }
         .an-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; cursor: default; position: relative; }
         .an-bar-stack { width: 62%; max-width: 34px; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
         .an-bar-seg { width: 100%; border-radius: 2px 2px 0 0; height: 0; transition: height 0.55s cubic-bezier(.4,0,.2,1), filter 0.15s ease; }
-        .an-bar-paid { background: #1D9E75; }
-        .an-bar-held { background: #F59E0B; margin-bottom: 1px; }
+        .an-bar-paid { background: var(--c-green); }
+        .an-bar-held { background: var(--c-amber); margin-bottom: 1px; }
         .an-bar-col:hover .an-bar-seg { filter: brightness(1.22); }
         /* company_settles fee waterfall: gross → −fees → net, spelled out. */
-        .an-fee-waterfall { max-width: 440px; border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 2px 16px; background: #1E2A3A; }
-        .an-fw-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; font-size: 13px; color: #C7CEDB; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .an-fee-waterfall { max-width: 440px; border: 1px solid var(--c-border); border-radius: 12px; padding: 2px 16px; background: var(--c-surface); }
+        .an-fw-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; font-size: 13px; color: var(--c-text); border-bottom: 1px solid var(--c-border-subtle); }
         .an-fw-row:last-child { border-bottom: none; }
-        .an-fw-row.minus { color: #9AA3B2; }
-        .an-fw-row.total { font-weight: 700; font-size: 15px; color: #F1F5F9; }
+        .an-fw-row.minus { color: var(--c-text-2); }
+        .an-fw-row.total { font-weight: 700; font-size: 15px; color: var(--c-text); }
         .an-fw-label { display: flex; align-items: center; gap: 8px; }
         .an-fw-amt { font-variant-numeric: tabular-nums; }
-        .an-fw-row.total .an-fw-amt { color: #6cb2ff; }
-        .an-bar-lab { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-size: 9px; color: #6B7280; white-space: nowrap; }
-        .an-bar-tip { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: 0; background: #0b1119; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 8px 10px; font-size: 11px; z-index: 5; min-width: 132px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); transition: opacity 0.12s; }
+        .an-fw-row.total .an-fw-amt { color: var(--c-blue); }
+        .an-bar-lab { position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--c-text-2); white-space: nowrap; }
+        .an-bar-tip { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; opacity: 0; background: var(--c-surface); color: var(--c-text); border: 1px solid var(--c-border-strong); border-radius: 8px; padding: 8px 10px; font-size: 11px; z-index: 5; min-width: 132px; box-shadow: 0 8px 24px var(--c-shadow); transition: opacity 0.12s; }
         .an-bar-col:hover .an-bar-tip { opacity: 1; }
-        .an-bar-tip .an-tip-day { color: #9CA3AF; font-weight: 600; margin-bottom: 5px; }
+        .an-bar-tip .an-tip-day { color: var(--c-text-2); font-weight: 600; margin-bottom: 5px; }
         .an-tip-row { display: flex; justify-content: space-between; gap: 14px; margin-top: 2px; }
-        .an-tip-row .k { display: flex; align-items: center; gap: 5px; color: #9CA3AF; }
-        .an-tip-row .v { color: #F1F5F9; font-weight: 600; font-variant-numeric: tabular-nums; }
-        .an-tip-row.tot { border-top: 1px solid rgba(255,255,255,0.08); margin-top: 5px; padding-top: 5px; }
+        .an-tip-row .k { display: flex; align-items: center; gap: 5px; color: var(--c-text-2); }
+        .an-tip-row .v { color: var(--c-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .an-tip-row.tot { border-top: 1px solid var(--c-border); margin-top: 5px; padding-top: 5px; }
         @media (prefers-reduced-motion: reduce) {
           .an-donut-seg, .an-bar-seg { transition: none; }
           .an-spark-dot { animation: none; }
@@ -2973,124 +2983,125 @@ export default function AnalyticsPage({
           .an-two-up { grid-template-columns: 1fr; }
         }
         .an-x-labels { display: flex; justify-content: space-between; margin-top: 8px; }
-        .an-x-label { font-size: 10px; color: #6B7280; }
+        .an-x-label { font-size: 10px; color: var(--c-text-2); }
         .an-table { width: 100%; border-collapse: collapse; }
-        .an-th { font-size: 10px; font-weight: 600; color: #6B7280; text-align: left; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); text-transform: uppercase; letter-spacing: 0.06em; }
-        .an-td { font-size: 13px; color: #9CA3AF; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.03); vertical-align: middle; }
-        .an-td.primary { color: #E2E8F0; font-weight: 500; }
-        .an-td.addr { font-size: 11px; color: #6B7280; max-width: 160px; }
-        .an-td.green { color: #1D9E75; font-weight: 600; }
-        .an-td.red { color: #E24B4A; }
-        .an-td.amber { color: #F59E0B; }
+        .an-th { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--c-border-subtle); text-transform: uppercase; letter-spacing: 0.06em; }
+        .an-td { font-size: 13px; color: var(--c-text-2); padding: 10px 12px; border-bottom: 1px solid var(--c-border-subtle); vertical-align: middle; }
+        .an-td.primary { color: var(--c-text); font-weight: 500; }
+        .an-td.addr { font-size: 11px; color: var(--c-text-2); max-width: 160px; }
+        .an-td.green { color: var(--c-green); font-weight: 600; }
+        .an-td.red { color: var(--c-red); }
+        .an-td.amber { color: var(--c-amber-text); }
         /* ── Driver leaderboard ── */
         .an-dl-head, .an-dl-row { display: grid; grid-template-columns: 30px 40px minmax(0,1fr) 196px 96px 74px; gap: 14px; align-items: center; }
-        .an-dl-head { padding: 10px 18px; border-bottom: 1px solid rgba(255,255,255,0.06); }
-        .an-dl-hcell { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; }
-        .an-dl-row { padding: 13px 18px; border-bottom: 1px solid rgba(255,255,255,0.035); transition: background 0.12s; cursor: pointer; }
+        .an-dl-head { padding: 10px 18px; border-bottom: 1px solid var(--c-border); }
+        .an-dl-hcell { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.06em; }
+        .an-dl-row { padding: 13px 18px; border-bottom: 1px solid var(--c-border-subtle); transition: background 0.12s; cursor: pointer; }
         .an-dl-row:last-child { border-bottom: none; }
-        .an-dl-row:hover { background: rgba(255,255,255,0.022); }
-        .an-dl-rank { font-size: 13px; font-weight: 700; color: #4B5563; text-align: center; font-variant-numeric: tabular-nums; }
+        .an-dl-row:hover { background: var(--c-hover); }
+        .an-dl-rank { font-size: 13px; font-weight: 700; color: var(--c-text-2); text-align: center; font-variant-numeric: tabular-nums; }
         .an-dl-rank.medal { font-size: 18px; line-height: 1; }
-        .an-dl-av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #E2E8F0; background: linear-gradient(135deg, #2c3d51, #1f2c3b); border: 1px solid rgba(255,255,255,0.06); overflow: hidden; flex: none; }
+        .an-dl-av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--c-text); background: var(--c-surface-alt); border: 1px solid var(--c-border); overflow: hidden; flex: none; }
         .an-dl-av img { width: 100%; height: 100%; object-fit: cover; }
-        .an-dl-name { font-size: 14px; font-weight: 600; color: #E2E8F0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .an-dl-meta { font-size: 11px; color: #6B7280; margin-top: 2px; font-variant-numeric: tabular-nums; }
-        .an-dl-meta .warn { color: #E24B4A; font-weight: 600; }
-        .an-dl-earn-val { font-size: 14px; font-weight: 700; color: #1D9E75; font-variant-numeric: tabular-nums; text-align: right; margin-bottom: 6px; }
-        .an-dl-earn-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.05); overflow: hidden; }
-        .an-dl-earn-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, #157355, #22c993); transition: width 0.6s cubic-bezier(.4,0,.2,1); }
-        .an-dl-split-track { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: rgba(255,255,255,0.05); }
-        .an-dl-split-cash { background: #F59E0B; }
-        .an-dl-split-card { background: #1D9E75; }
-        .an-dl-split-legend { display: flex; justify-content: space-between; gap: 6px; font-size: 9px; color: #6B7280; margin-top: 5px; font-variant-numeric: tabular-nums; }
+        .an-dl-name { font-size: 14px; font-weight: 600; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .an-dl-meta { font-size: 11px; color: var(--c-text-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+        .an-dl-meta .warn { color: var(--c-red); font-weight: 600; }
+        .an-dl-earn-val { font-size: 14px; font-weight: 700; color: var(--c-green); font-variant-numeric: tabular-nums; text-align: right; margin-bottom: 6px; }
+        .an-dl-earn-track { height: 6px; border-radius: 999px; background: var(--c-hover); overflow: hidden; }
+        .an-dl-earn-fill { height: 100%; border-radius: 999px; background: var(--c-green); transition: width 0.6s cubic-bezier(.4,0,.2,1); }
+        .an-dl-split-track { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: var(--c-hover); }
+        .an-dl-split-cash { background: var(--c-amber); }
+        .an-dl-split-card { background: var(--c-green); }
+        .an-dl-split-legend { display: flex; justify-content: space-between; gap: 6px; font-size: 9px; color: var(--c-text-2); margin-top: 5px; font-variant-numeric: tabular-nums; }
         .an-dl-rating { text-align: right; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-        .an-dl-rating .cnt { display: block; font-size: 10px; color: #6B7280; font-weight: 400; margin-top: 1px; }
-        .an-dl-rating .none { color: #4B5563; font-weight: 400; }
+        .an-dl-rating .cnt { display: block; font-size: 10px; color: var(--c-text-2); font-weight: 400; margin-top: 1px; }
+        .an-dl-rating .none { color: var(--c-text-2); font-weight: 400; }
         /* ── Driver detail modal ── */
         .an-dm-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
-        .an-dm-av { width: 56px; height: 56px; border-radius: 50%; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; color: #E2E8F0; background: linear-gradient(135deg, #2c3d51, #1f2c3b); border: 1px solid rgba(255,255,255,0.08); }
+        .an-dm-av { width: 56px; height: 56px; border-radius: 50%; overflow: hidden; flex: none; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 700; color: var(--c-text); background: var(--c-surface-alt); border: 1px solid var(--c-border); }
         .an-dm-av img { width: 100%; height: 100%; object-fit: cover; }
-        .an-dm-name { font-size: 18px; font-weight: 700; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .an-dm-sub { font-size: 12px; color: #6B7280; margin-top: 3px; }
+        .an-dm-name { font-size: 18px; font-weight: 700; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .an-dm-sub { font-size: 12px; color: var(--c-text-2); margin-top: 3px; }
         .an-dm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
-        .an-dm-stat { background: #18222F; border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 12px 13px; }
-        .an-dm-stat-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
-        .an-dm-stat-value { font-size: 18px; font-weight: 700; color: #F1F5F9; font-variant-numeric: tabular-nums; }
-        .an-dm-stat-sub { font-size: 10px; color: #6B7280; margin-top: 3px; font-variant-numeric: tabular-nums; }
-        .an-dm-section-title { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin: 4px 0 10px; }
-        .an-dm-review { background: #18222F; border: 1px solid rgba(255,255,255,0.04); border-radius: 10px; padding: 11px 13px; margin-bottom: 8px; }
+        .an-dm-stat { background: var(--c-bg); border: 1px solid var(--c-border-subtle); border-radius: 10px; padding: 12px 13px; }
+        .an-dm-stat-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+        .an-dm-stat-value { font-size: 18px; font-weight: 700; color: var(--c-text); font-variant-numeric: tabular-nums; }
+        .an-dm-stat-sub { font-size: 10px; color: var(--c-text-2); margin-top: 3px; font-variant-numeric: tabular-nums; }
+        .an-dm-section-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin: 4px 0 10px; }
+        .an-dm-review { background: var(--c-bg); border: 1px solid var(--c-border-subtle); border-radius: 10px; padding: 11px 13px; margin-bottom: 8px; }
         .an-dm-review-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
         .an-dm-review-stars { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
-        .an-dm-review-date { font-size: 10px; color: #6B7280; }
-        .an-dm-review-text { font-size: 12px; color: #C7CEDB; line-height: 1.45; }
-        .an-status { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+        .an-dm-review-date { font-size: 10px; color: var(--c-text-2); }
+        .an-dm-review-text { font-size: 12px; color: var(--c-text-2); line-height: 1.45; }
+        .an-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--c-text); white-space: nowrap; }
+        .an-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--c-text-2)); }
         .an-filter-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
-        .an-filter-btn { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 5px 12px; font-size: 12px; color: #6B7280; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
-        .an-filter-btn.active { background: #E8500A; color: #fff; border-color: #E8500A; }
-        .an-filter-count { font-size: 11px; color: #6B7280; margin-left: auto; }
-        .an-month-group { margin-bottom: 8px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05); }
-        .an-month-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: #1E2A3A; cursor: pointer; user-select: none; transition: background 0.12s; gap: 12px; }
-        .an-month-header:hover { background: #213040; }
+        .an-filter-btn { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 6px; padding: 5px 12px; font-size: 12px; color: var(--c-text-2); cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, color 0.12s; }
+        .an-filter-btn.active { background: var(--c-brand-fill); color: var(--c-on-brand); border-color: var(--c-brand); }
+        .an-filter-count { font-size: 11px; color: var(--c-text-2); margin-left: auto; }
+        .an-month-group { margin-bottom: 8px; border-radius: 12px; overflow: hidden; border: 1px solid var(--c-border-subtle); }
+        .an-month-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: var(--c-input); cursor: pointer; user-select: none; transition: background 0.12s; gap: 12px; }
+        .an-month-header:hover { background: var(--c-surface); }
         .an-month-header-left { display: flex; align-items: center; gap: 10px; }
-        .an-month-chevron { font-size: 11px; color: #6B7280; transition: transform 0.2s; display: inline-block; }
+        .an-month-chevron { font-size: 11px; color: var(--c-text-2); transition: transform 0.2s; display: inline-block; }
         .an-month-chevron.open { transform: rotate(90deg); }
-        .an-month-name { font-size: 14px; font-weight: 600; color: #E2E8F0; }
-        .an-month-meta { font-size: 12px; color: #6B7280; }
-        .an-month-revenue { font-size: 14px; font-weight: 700; color: #1D9E75; }
-        .an-month-body { background: #18222F; }
+        .an-month-name { font-size: 14px; font-weight: 600; color: var(--c-text); }
+        .an-month-meta { font-size: 12px; color: var(--c-text-2); }
+        .an-month-revenue { font-size: 14px; font-weight: 700; color: var(--c-green); }
+        .an-month-body { background: var(--c-bg); }
         .an-ride-row { cursor: pointer; transition: background 0.1s; }
-        .an-ride-row:hover td { background: rgba(232,80,10,0.04); }
+        .an-ride-row:hover td { background: var(--c-surface-sel); }
         .an-peak-row { display: flex; gap: 16px; }
-        .an-bar-chart-wrap { flex: 1; background: #18222F; border-radius: 10px; padding: 16px; border: 1px solid rgba(255,255,255,0.04); }
-        .an-review-card { background: #1E2A3A; border-radius: 10px; padding: 14px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.05); transition: border-color 0.12s; }
-        .an-review-card.flagged { background: #1A0F0F; border-color: rgba(248,113,113,0.2); }
-        .an-review-card.dispatch-reviewed { border-color: rgba(29,158,117,0.2); }
-        .an-review-flag { font-size: 11px; color: #F87171; background: rgba(248,113,113,0.08); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; display: inline-block; }
-        .an-reviewed-badge { font-size: 11px; color: #1D9E75; background: rgba(29,158,117,0.08); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; display: inline-block; border: 1px solid rgba(29,158,117,0.2); }
-        .an-mark-reviewed-btn { background: rgba(29,158,117,0.08); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; margin-top: 10px; }
-        .an-mark-reviewed-btn:hover { background: rgba(29,158,117,0.15); }
+        .an-bar-chart-wrap { flex: 1; background: var(--c-bg); border-radius: 10px; padding: 16px; border: 1px solid var(--c-border-subtle); }
+        .an-review-card { background: var(--c-surface); border-radius: 10px; padding: 14px; margin-bottom: 8px; border: 1px solid var(--c-border-subtle); transition: border-color 0.12s; }
+        .an-review-card.flagged { border-color: var(--c-red); }
+        .an-review-card.dispatch-reviewed { border-color: var(--c-border); }
+        .an-review-flag { font-size: 11px; color: var(--c-red); background: var(--c-surface-alt); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; display: inline-block; }
+        .an-reviewed-badge { font-size: 11px; color: var(--c-green); background: var(--c-surface-alt); border-radius: 5px; padding: 4px 8px; margin-bottom: 8px; display: inline-block; border: 1px solid var(--c-border); }
+        .an-mark-reviewed-btn { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border); border-radius: 6px; padding: 5px 12px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s; margin-top: 10px; }
+        .an-mark-reviewed-btn:hover { background: var(--c-surface-alt); }
         .an-mark-reviewed-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .an-loading { color: #6B7280; text-align: center; padding: 48px; font-size: 14px; }
-        .an-select { background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 12px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
+        .an-loading { color: var(--c-text-2); text-align: center; padding: 48px; font-size: 14px; }
+        .an-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; padding: 5px 12px; font-size: 12px; color: var(--c-text); cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
         /* Ride detail modal */
-        .an-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-        .an-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 480px; border: 1px solid rgba(255,255,255,0.08); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-        .an-modal-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 16px; }
-        .an-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .an-detail-label { font-size: 12px; color: #9CA3AF; font-weight: 500; }
-        .an-detail-value { font-size: 13px; color: #E2E8F0; font-weight: 500; max-width: 60%; text-align: right; }
-        .an-detail-row-warning { background: rgba(226,75,74,0.1); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
-        .an-detail-value-warning { color: #E24B4A; font-weight: 700; }
-        .an-modal-close { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #6B7280; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; width: 100%; margin-top: 16px; transition: background 0.12s; }
-        .an-modal-close:hover { background: rgba(255,255,255,0.04); }
-        .an-modal-section { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
+        .an-modal-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .an-modal { background: var(--c-surface); border-radius: 14px; padding: 26px; width: 100%; max-width: 480px; border: 1px solid var(--c-border); max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px var(--c-shadow); }
+        .an-modal-title { font-size: 17px; font-weight: 700; color: var(--c-text); margin-bottom: 16px; }
+        .an-detail-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 9px 0; border-bottom: 1px solid var(--c-border-subtle); }
+        .an-detail-label { font-size: 12px; color: var(--c-text-2); font-weight: 500; }
+        .an-detail-value { font-size: 13px; color: var(--c-text); font-weight: 500; max-width: 60%; text-align: right; }
+        .an-detail-row-warning { background: var(--c-surface-alt); border-radius: 6px; padding: 9px 8px; margin: 2px 0; border-bottom: none; }
+        .an-detail-value-warning { color: var(--c-red); font-weight: 700; }
+        .an-modal-close { background: transparent; border: 1px solid var(--c-border); color: var(--c-text-2); border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: system-ui, sans-serif; width: 100%; margin-top: 16px; transition: background 0.12s; }
+        .an-modal-close:hover { background: var(--c-hover); }
+        .an-modal-section { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.08em; margin: 16px 0 8px; }
         /* Activity log */
-        .an-date-input { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
-        .an-date-input:focus { border-color: rgba(232,80,10,0.4); }
+        .an-date-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; padding: 5px 10px; font-size: 12px; color: var(--c-text); font-family: system-ui, sans-serif; outline: none; }
+        .an-date-input:focus { border-color: var(--c-brand); }
         /* Receipts */
         .inv-search-row { margin-bottom: 16px; }
-        .inv-search { width: 100%; max-width: 380px; background: #1E2A3A; border: 1px solid rgba(255,255,255,0.07); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #E2E8F0; font-family: system-ui, sans-serif; outline: none; }
-        .inv-search:focus { border-color: rgba(232,80,10,0.4); }
-        .inv-search::placeholder { color: #6B7280; }
-        .receipt-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: #E8500A; background: rgba(232,80,10,0.08); border: 1px solid rgba(232,80,10,0.2); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
-        .an-type-select { background: #111E2E; border: 1px solid rgba(255,255,255,0.07); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: #E2E8F0; cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
-        .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: #111E2E; border-radius: 10px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
-        .al-toolbar-sep { width: 1px; height: 16px; background: rgba(255,255,255,0.07); margin: 0 2px; }
-        .al-toolbar-label { font-size: 11px; color: #6B7280; white-space: nowrap; }
+        .inv-search { width: 100%; max-width: 380px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 8px 14px; font-size: 13px; color: var(--c-text); font-family: system-ui, sans-serif; outline: none; }
+        .inv-search:focus { border-color: var(--c-brand); }
+        .inv-search::placeholder { color: var(--c-text-2); }
+        .receipt-tag { font-family: monospace; font-size: 11px; font-weight: 700; color: var(--c-brand); background: var(--c-surface-sel); border: 1px solid var(--c-border); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+        .an-type-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; padding: 5px 28px 5px 10px; font-size: 12px; color: var(--c-text); cursor: pointer; font-family: system-ui, sans-serif; outline: none; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234B5563'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
+        .al-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; background: var(--c-bg); border-radius: 10px; border: 1px solid var(--c-border-subtle); margin-bottom: 16px; }
+        .al-toolbar-sep { width: 1px; height: 16px; background: var(--c-hover-strong); margin: 0 2px; }
+        .al-toolbar-label { font-size: 11px; color: var(--c-text-2); white-space: nowrap; }
         .al-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
-        .al-stat { background: #111E2E; border-radius: 10px; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.04); }
-        .al-stat-val { font-size: 28px; font-weight: 700; color: #F1F5F9; line-height: 1; display: block; }
-        .al-stat-lbl { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 5px; display: block; }
+        .al-stat { background: var(--c-bg); border-radius: 10px; padding: 14px 16px; border: 1px solid var(--c-border-subtle); }
+        .al-stat-val { font-size: 28px; font-weight: 700; color: var(--c-text); line-height: 1; display: block; }
+        .al-stat-lbl { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 5px; display: block; }
         .al-table { width: 100%; border-collapse: collapse; }
-        .al-th { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .al-tr { border-bottom: 1px solid rgba(255,255,255,0.035); }
+        .al-th { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--c-border-subtle); }
+        .al-tr { border-bottom: 1px solid var(--c-border-subtle); }
         .al-tr:last-child { border-bottom: none; }
-        .al-tr:hover td { background: rgba(255,255,255,0.015); }
+        .al-tr:hover td { background: var(--c-hover); }
         .al-td { padding: 11px 16px; vertical-align: middle; }
-        .al-td-time { font-size: 12px; color: #9CA3AF; white-space: nowrap; font-variant-numeric: tabular-nums; }
-        .al-td-dispatcher { font-size: 12px; color: #9CA3AF; white-space: nowrap; font-weight: 500; }
+        .al-td-time { font-size: 12px; color: var(--c-text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .al-td-dispatcher { font-size: 12px; color: var(--c-text-2); white-space: nowrap; font-weight: 500; }
         .al-td-event { font-size: 12px; font-weight: 600; white-space: nowrap; }
-        .al-td-detail { font-size: 12px; color: #9CA3AF; }
+        .al-td-detail { font-size: 12px; color: var(--c-text-2); }
       `}</style>
 
       <div className="an-wrap">
@@ -3118,11 +3129,11 @@ export default function AnalyticsPage({
                       marginLeft: "auto",
                       fontSize: 10,
                       fontWeight: 700,
-                      background: "rgba(248,113,113,0.15)",
-                      color: "#F87171",
+                      background: "var(--c-surface-alt)",
+                      color: "var(--c-red)",
                       borderRadius: 8,
                       padding: "1px 6px",
-                      border: "1px solid rgba(248,113,113,0.25)",
+                      border: "1px solid var(--c-border)",
                     }}
                   >
                     {unreviewedLow}
@@ -3177,7 +3188,7 @@ export default function AnalyticsPage({
                       <div
                         className="an-revenue-mini-value"
                         style={{
-                          color: period === "today" ? "#E8500A" : "#F1F5F9",
+                          color: period === "today" ? "var(--c-brand)" : "var(--c-text)",
                         }}
                       >
                         ${totals.revenueToday.toFixed(2)}
@@ -3188,7 +3199,7 @@ export default function AnalyticsPage({
                       <div
                         className="an-revenue-mini-value"
                         style={{
-                          color: period === "week" ? "#E8500A" : "#F1F5F9",
+                          color: period === "week" ? "var(--c-brand)" : "var(--c-text)",
                         }}
                       >
                         ${totals.revenueWeek.toFixed(2)}
@@ -3199,7 +3210,7 @@ export default function AnalyticsPage({
                       <div
                         className="an-revenue-mini-value"
                         style={{
-                          color: period === "month" ? "#1D9E75" : "#F1F5F9",
+                          color: period === "month" ? "var(--c-green)" : "var(--c-text)",
                         }}
                       >
                         ${totals.revenueMonth.toFixed(2)}
@@ -3210,7 +3221,7 @@ export default function AnalyticsPage({
                       <div
                         className="an-revenue-mini-value"
                         style={{
-                          color: period === "year" ? "#E8500A" : "#F1F5F9",
+                          color: period === "year" ? "var(--c-brand)" : "var(--c-text)",
                         }}
                       >
                         ${totals.revenueYear.toFixed(2)}
@@ -3224,7 +3235,7 @@ export default function AnalyticsPage({
                       <div className="an-kpi-label">{t("stats.revenue")}</div>
                       <div
                         className="an-kpi-value"
-                        style={{ color: "#1D9E75" }}
+                        style={{ color: "var(--c-green)" }}
                       >
                         ${totals.revenue.toFixed(2)}
                       </div>
@@ -3248,7 +3259,7 @@ export default function AnalyticsPage({
                       <div
                         className="an-kpi-value"
                         style={{
-                          color: totals.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
+                          color: totals.cancelRate > 20 ? "var(--c-red)" : "var(--c-text)",
                         }}
                       >
                         {totals.cancelRate.toFixed(1)}%
@@ -3270,16 +3281,16 @@ export default function AnalyticsPage({
                     >
                       <div
                         style={{
-                          background: "#18222F",
+                          background: "var(--c-bg)",
                           borderRadius: 10,
                           padding: "14px 16px",
-                          border: "1px solid rgba(255,255,255,0.04)",
+                          border: "1px solid var(--c-border-subtle)",
                         }}
                       >
                         <div
                           style={{
                             fontSize: 10,
-                            color: "#6B7280",
+                            color: "var(--c-text-2)",
                             fontWeight: 600,
                             textTransform: "uppercase",
                             letterSpacing: "0.06em",
@@ -3292,7 +3303,7 @@ export default function AnalyticsPage({
                           style={{
                             fontSize: 22,
                             fontWeight: 700,
-                            color: "#F59E0B",
+                            color: "var(--c-amber-text)",
                           }}
                         >
                           ${totals.cashRevenue.toFixed(2)}
@@ -3300,7 +3311,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#6B7280",
+                            color: "var(--c-text-2)",
                             marginTop: 4,
                           }}
                         >
@@ -3310,27 +3321,27 @@ export default function AnalyticsPage({
                           <div
                             style={{
                               fontSize: 11,
-                              color: "#F59E0B",
+                              color: "var(--c-amber-text)",
                               marginTop: 6,
                               fontWeight: 600,
                             }}
                           >
-                            ⚠ {t("analytics.collectFromDrivers")}
+                            <Icon name="alert" /> {t("analytics.collectFromDrivers")}
                           </div>
                         )}
                       </div>
                       <div
                         style={{
-                          background: "#18222F",
+                          background: "var(--c-bg)",
                           borderRadius: 10,
                           padding: "14px 16px",
-                          border: "1px solid rgba(255,255,255,0.04)",
+                          border: "1px solid var(--c-border-subtle)",
                         }}
                       >
                         <div
                           style={{
                             fontSize: 10,
-                            color: "#6B7280",
+                            color: "var(--c-text-2)",
                             fontWeight: 600,
                             textTransform: "uppercase",
                             letterSpacing: "0.06em",
@@ -3343,7 +3354,7 @@ export default function AnalyticsPage({
                           style={{
                             fontSize: 22,
                             fontWeight: 700,
-                            color: "#1D9E75",
+                            color: "var(--c-green)",
                           }}
                         >
                           ${totals.cardRevenue.toFixed(2)}
@@ -3351,7 +3362,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#6B7280",
+                            color: "var(--c-text-2)",
                             marginTop: 4,
                           }}
                         >
@@ -3360,7 +3371,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#1D9E75",
+                            color: "var(--c-green)",
                             marginTop: 6,
                           }}
                         >
@@ -3382,23 +3393,23 @@ export default function AnalyticsPage({
                     ) : period === "today" ? (
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={hourlyData} margin={{ top: 4, right: 4, left: 8, bottom: 0 }}>
-                          <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <CartesianGrid vertical={false} stroke={tc.borderSubtle} />
                           <XAxis
                             dataKey="label"
-                            tick={{ fill: "#6B7280", fontSize: 10 }}
+                            tick={{ fill: tc.text2, fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             interval={2}
                           />
                           <YAxis
-                            tick={{ fill: "#6B7280", fontSize: 10 }}
+                            tick={{ fill: tc.text2, fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             tickFormatter={(v) => `$${v}`}
                             width={40}
                           />
-                          <Tooltip content={<RevenueTooltip />} cursor={{ fill: "rgba(232,80,10,0.06)" }} />
-                          <Bar dataKey="revenue" fill="#E8500A" radius={[3, 3, 0, 0]} maxBarSize={32} />
+                          <Tooltip content={<RevenueTooltip />} cursor={{ fill: "var(--c-surface-sel)" }} />
+                          <Bar dataKey="revenue" fill={tc.brandFill} radius={[3, 3, 0, 0]} maxBarSize={32} />
                         </BarChart>
                       </ResponsiveContainer>
                     ) : (
@@ -3406,20 +3417,20 @@ export default function AnalyticsPage({
                         <AreaChart data={dailyData} margin={{ top: 4, right: 4, left: 8, bottom: 0 }}>
                           <defs>
                             <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#E8500A" stopOpacity={0.22} />
-                              <stop offset="100%" stopColor="#E8500A" stopOpacity={0} />
+                              <stop offset="0%" stopColor={tc.brandFill} stopOpacity={0.22} />
+                              <stop offset="100%" stopColor={tc.brandFill} stopOpacity={0} />
                             </linearGradient>
                           </defs>
-                          <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
+                          <CartesianGrid vertical={false} stroke={tc.borderSubtle} />
                           <XAxis
                             dataKey="day"
-                            tick={{ fill: "#6B7280", fontSize: 10 }}
+                            tick={{ fill: tc.text2, fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             interval="preserveStartEnd"
                           />
                           <YAxis
-                            tick={{ fill: "#6B7280", fontSize: 10 }}
+                            tick={{ fill: tc.text2, fontSize: 10 }}
                             axisLine={false}
                             tickLine={false}
                             tickFormatter={(v) => `$${v}`}
@@ -3429,11 +3440,11 @@ export default function AnalyticsPage({
                           <Area
                             type="monotone"
                             dataKey="revenue"
-                            stroke="#E8500A"
+                            stroke={tc.brandFill}
                             strokeWidth={2}
                             fill="url(#revenueGrad)"
-                            dot={{ fill: "#E8500A", strokeWidth: 0, r: 3 }}
-                            activeDot={{ r: 5, fill: "#E8500A", stroke: "#1E2A3A", strokeWidth: 2 }}
+                            dot={{ fill: "var(--c-brand-fill)", strokeWidth: 0, r: 3 }}
+                            activeDot={{ r: 5, fill: "var(--c-brand-fill)", stroke: "var(--c-border)", strokeWidth: 2 }}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
@@ -3474,7 +3485,7 @@ export default function AnalyticsPage({
                                 background:
                                   i % 2 === 0
                                     ? "transparent"
-                                    : "rgba(255,255,255,0.015)",
+                                    : "var(--c-hover)",
                               }}
                             >
                               <td className="an-td primary">{d.name}</td>
@@ -3487,7 +3498,7 @@ export default function AnalyticsPage({
                               </td>
                               <td
                                 className="an-td"
-                                style={{ color: "#1D9E75" }}
+                                style={{ color: "var(--c-green)" }}
                               >
                                 ${d.cardEarnings.toFixed(2)}
                               </td>
@@ -3515,10 +3526,10 @@ export default function AnalyticsPage({
                       <div className="an-peak-row">
                         {/* By hour */}
                         <div className="an-bar-chart-wrap" style={{ flex: 2 }}>
-                          <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
+                          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginBottom: 4, fontWeight: 500 }}>
                             {t("analytics.byHourOfDay")}
                             {peakHour && peakHour.rides > 0 && (
-                              <span style={{ color: "#E8500A", marginLeft: 8 }}>
+                              <span style={{ color: "var(--c-brand)", marginLeft: 8 }}>
                                 {t("analytics.peakAt", {
                           when: fmtHour(peakHour.hour),
                           rides: t("analytics.ridesCount", { count: peakHour.rides }),
@@ -3528,21 +3539,21 @@ export default function AnalyticsPage({
                           </div>
                           <ResponsiveContainer width="100%" height={130}>
                             <BarChart data={hourStats} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} barCategoryGap="20%">
-                              <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <CartesianGrid vertical={false} stroke={tc.borderSubtle} />
                               <XAxis
                                 dataKey="label"
-                                tick={{ fill: "#6B7280", fontSize: 9 }}
+                                tick={{ fill: tc.text2, fontSize: 9 }}
                                 axisLine={false}
                                 tickLine={false}
                                 interval={2}
                               />
                               <YAxis hide />
-                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "rgba(232,80,10,0.06)" }} />
+                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "var(--c-surface-sel)" }} />
                               <Bar dataKey="rides" radius={[3, 3, 0, 0]} maxBarSize={18}>
                                 {hourStats.map((h) => (
                                   <Cell
                                     key={h.hour}
-                                    fill={peakHour && h.hour === peakHour.hour ? "#E8500A" : "#1E3A5F"}
+                                    fill={peakHour && h.hour === peakHour.hour ? tc.brandFill : tc.text3}
                                   />
                                 ))}
                               </Bar>
@@ -3551,10 +3562,10 @@ export default function AnalyticsPage({
                         </div>
                         {/* By day */}
                         <div className="an-bar-chart-wrap" style={{ flex: 1 }}>
-                          <div style={{ fontSize: 11, color: "#6B7280", marginBottom: 4, fontWeight: 500 }}>
+                          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginBottom: 4, fontWeight: 500 }}>
                             {t("analytics.byDayOfWeek")}
                             {peakDay && peakDay.rides > 0 && (
-                              <span style={{ color: "#E8500A", marginLeft: 8 }}>
+                              <span style={{ color: "var(--c-brand)", marginLeft: 8 }}>
                                 {t("analytics.busiestOn", {
                           when: peakDay.day,
                           rides: t("analytics.ridesCount", { count: peakDay.rides }),
@@ -3564,20 +3575,20 @@ export default function AnalyticsPage({
                           </div>
                           <ResponsiveContainer width="100%" height={130}>
                             <BarChart data={dayStats} margin={{ top: 4, right: 0, left: -28, bottom: 0 }} barCategoryGap="25%">
-                              <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.04)" />
+                              <CartesianGrid vertical={false} stroke={tc.borderSubtle} />
                               <XAxis
                                 dataKey="day"
-                                tick={{ fill: "#6B7280", fontSize: 10 }}
+                                tick={{ fill: tc.text2, fontSize: 10 }}
                                 axisLine={false}
                                 tickLine={false}
                               />
                               <YAxis hide />
-                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "rgba(232,80,10,0.06)" }} />
+                              <Tooltip content={<PeakTooltip />} cursor={{ fill: "var(--c-surface-sel)" }} />
                               <Bar dataKey="rides" radius={[3, 3, 0, 0]} maxBarSize={28}>
                                 {dayStats.map((d) => (
                                   <Cell
                                     key={d.day}
-                                    fill={peakDay && d.day === peakDay.day ? "#E8500A" : "#1E3A5F"}
+                                    fill={peakDay && d.day === peakDay.day ? tc.brandFill : tc.text3}
                                   />
                                 ))}
                               </Bar>
@@ -3764,7 +3775,7 @@ export default function AnalyticsPage({
                                         background:
                                           i % 2 === 0
                                             ? "transparent"
-                                            : "rgba(255,255,255,0.015)",
+                                            : "var(--c-hover)",
                                       }}
                                       onClick={() => openRideDetail(r)}
                                     >
@@ -3802,7 +3813,7 @@ export default function AnalyticsPage({
                                         className="an-td"
                                         style={{
                                           fontWeight: 600,
-                                          color: "#9CA3AF",
+                                          color: "var(--c-text-2)",
                                         }}
                                       >
                                         {r.fare_final
@@ -3814,12 +3825,7 @@ export default function AnalyticsPage({
                                       <td className="an-td">
                                         <span
                                           className="an-status"
-                                          style={{
-                                            background:
-                                              STATUS_COLORS[r.status] + "18",
-                                            color: STATUS_COLORS[r.status],
-                                            border: `1px solid ${STATUS_COLORS[r.status]}30`,
-                                          }}
+                                          style={{ "--dot": STATUS_COLORS[r.status] } as React.CSSProperties}
                                         >
                                           {rideStatusLabel(r.status)}
                                         </span>
@@ -3834,7 +3840,7 @@ export default function AnalyticsPage({
                                         {r.receipt_number ? (
                                           <span className="receipt-tag">{r.receipt_number}</span>
                                         ) : (
-                                          <span style={{ color: "#6B7280" }}>—</span>
+                                          <span style={{ color: "var(--c-text-2)" }}>—</span>
                                         )}
                                       </td>
                                     </tr>
@@ -3899,7 +3905,7 @@ export default function AnalyticsPage({
                     <div className="an-set-hero">
                       <div className="an-hero-card lead paid-company">
                         <div className="an-hero-label">
-                          <span className="an-dot" style={{ background: "#4a9eff" }} />
+                          <span className="an-dot" style={{ background: "var(--c-blue)" }} />
                           {t("settle.netToYourAccount")}
                         </div>
                         <div className="an-hero-value">${feeBreakdown.net_total.toFixed(2)}</div>
@@ -3916,10 +3922,10 @@ export default function AnalyticsPage({
 
                       <div className="an-hero-card">
                         <div className="an-hero-label">
-                          <span className="an-dot" style={{ background: "#E8500A" }} />
+                          <span className="an-dot" style={{ background: "var(--c-brand-fill)" }} />
                           {t("rideDetail.vellonFee")}
                         </div>
-                        <div className="an-hero-value" style={{ color: "#f0782f" }}>
+                        <div className="an-hero-value" style={{ color: "var(--c-brand)" }}>
                           ${feeBreakdown.vellon_fee.toFixed(2)}
                         </div>
                         <div className="an-hero-sub">
@@ -3935,10 +3941,10 @@ export default function AnalyticsPage({
 
                       <div className="an-hero-card">
                         <div className="an-hero-label">
-                          <span className="an-dot" style={{ background: "#8B93A7" }} />
+                          <span className="an-dot" style={{ background: "var(--c-text-3)" }} />
                           {t("settle.stripeFee")}
                         </div>
-                        <div className="an-hero-value" style={{ color: "#aab2c4" }}>
+                        <div className="an-hero-value" style={{ color: "var(--c-text-2)" }}>
                           ${feeBreakdown.stripe_fee.toFixed(2)}
                         </div>
                         <div className="an-hero-sub">{t("settle.cardProcessing")}</div>
@@ -3957,7 +3963,7 @@ export default function AnalyticsPage({
                             <div className="an-donut-wrap">
                               <svg width="118" height="118" viewBox="0 0 118 118" style={{ flex: "none" }}>
                                 <g transform="rotate(-90 59 59)">
-                                  <circle cx="59" cy="59" r="46" fill="none" stroke="#243244" strokeWidth="15" />
+                                  <circle cx="59" cy="59" r="46" fill="none" style={{ stroke: "var(--c-surface-alt)" }} strokeWidth="15" />
                                   {feeDonut.segs.map((s) => {
                                     const hot = feeHot === s.key;
                                     const dimmed = feeHot != null && !hot;
@@ -3969,7 +3975,7 @@ export default function AnalyticsPage({
                                         cy="59"
                                         r="46"
                                         fill="none"
-                                        stroke={s.color}
+                                        style={{ stroke: s.color }}
                                         strokeWidth={hot ? 18 : 15}
                                         strokeDasharray={
                                           settleChartsReady
@@ -3986,10 +3992,10 @@ export default function AnalyticsPage({
                                 </g>
                                 {center && (
                                   <>
-                                    <text x="59" y="55" textAnchor="middle" fill={feeHot ? center.color : "#F1F5F9"} fontSize="19" fontWeight="700">
+                                    <text x="59" y="55" textAnchor="middle" style={{ fill: feeHot ? center.color : "var(--c-text)" }} fontSize="19" fontWeight="700">
                                       {center.pct.toFixed(1)}%
                                     </text>
-                                    <text x="59" y="71" textAnchor="middle" fill="#6B7280" fontSize="9.5" style={{ letterSpacing: "0.04em" }}>
+                                    <text x="59" y="71" textAnchor="middle" fontSize="9.5" style={{ fill: "var(--c-text-2)", letterSpacing: "0.04em" }}>
                                       {center.name.toUpperCase()}
                                     </text>
                                   </>
@@ -4046,7 +4052,7 @@ export default function AnalyticsPage({
                                         <div className="an-bar-stack">
                                           <div
                                             className="an-bar-seg"
-                                            style={{ height: settleChartsReady ? h : 0, background: "#4a9eff", borderRadius: "3px 3px 0 0" }}
+                                            style={{ height: settleChartsReady ? h : 0, background: "var(--c-blue)", borderRadius: "3px 3px 0 0" }}
                                           />
                                         </div>
                                         {i % labelEvery === 0 && <div className="an-bar-lab">{b.label}</div>}
@@ -4132,7 +4138,7 @@ export default function AnalyticsPage({
 
                       <div className="an-hero-card">
                         <div className="an-hero-label">{t("settle.feeAccruing")}</div>
-                        <div className="an-hero-value" style={{ color: "#F59E0B" }}>
+                        <div className="an-hero-value" style={{ color: "var(--c-amber-text)" }}>
                           ${cashSettlement.cash_fee_owed.toFixed(2)}
                         </div>
                         <div className="an-hero-sub">
@@ -4166,7 +4172,7 @@ export default function AnalyticsPage({
                 <div className="an-loading">{t("common.loading")}</div>
               ) : needsAttention.length === 0 ? (
                 <div className="an-settle-clear">
-                  <span style={{ color: "#1D9E75", fontSize: 16 }}>✓</span>
+                  <span style={{ color: "var(--c-green)", fontSize: 16 }}>✓</span>
                   {t("settle.allClean")}
                 </div>
               ) : (
@@ -4174,8 +4180,8 @@ export default function AnalyticsPage({
                   {/* Split by direction of money on purpose -- a combined
                       "$ outstanding" would net a receivable against a payable. */}
                   <div className="an-attn-split">
-                    <div className="an-attn-tile" style={{ borderLeft: "3px solid #F59E0B" }}>
-                      <div className="an-attn-tile-label" style={{ color: "#F59E0B" }}>
+                    <div className="an-attn-tile" style={{ borderLeft: "3px solid var(--c-amber)" }}>
+                      <div className="an-attn-tile-label" style={{ color: "var(--c-amber-text)" }}>
                         {t("settle.toCollect")}
                       </div>
                       <div className="an-attn-tile-value">
@@ -4185,8 +4191,8 @@ export default function AnalyticsPage({
                         {t("analytics.ridesCount", { count: attentionSplit.collect.count })} · {t("settle.needsCollection")}
                       </div>
                     </div>
-                    <div className="an-attn-tile" style={{ borderLeft: "3px solid #E24B4A" }}>
-                      <div className="an-attn-tile-label" style={{ color: "#E24B4A" }}>
+                    <div className="an-attn-tile" style={{ borderLeft: "3px solid var(--c-red)" }}>
+                      <div className="an-attn-tile-label" style={{ color: "var(--c-red)" }}>
                         {t("settle.toPayOut")}
                       </div>
                       <div className="an-attn-tile-value">
@@ -4201,7 +4207,7 @@ export default function AnalyticsPage({
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {needsAttention.map((row) => {
                       const dir = SETTLEMENT_DIRECTION[row.settlement_route];
-                      const dirColor = dir === "collect" ? "#F59E0B" : "#E24B4A";
+                      const dirColor = dir === "collect" ? "var(--c-amber)" : "var(--c-red)";
                       const when = new Date(row.completed_at ?? row.created_at);
                       const days = Math.floor(
                         (Date.now() - when.getTime()) / 86_400_000,
@@ -4224,23 +4230,23 @@ export default function AnalyticsPage({
                                 flexWrap: "wrap",
                               }}
                             >
-                              <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9" }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--c-text)" }}>
                                 {settlementShort(row.settlement_route)}
                               </span>
                               <span
                                 className="an-pill"
-                                style={{ color: dirColor, background: `${dirColor}1F` }}
+                                style={{ "--dot": dirColor } as React.CSSProperties}
                               >
                                 {dir === "collect" ? t("settle.collect") : t("settle.payOut")}
                               </span>
                               {days >= 1 && (
-                                <span style={{ fontSize: 11, color: "#6B7280" }}>
+                                <span style={{ fontSize: 11, color: "var(--c-text-2)" }}>
                                   {t("settle.waitingDays", { count: days })}
                                 </span>
                               )}
                             </div>
                             <div className="an-attn-meta">
-                              <strong style={{ color: "#E2E8F0", fontWeight: 600 }}>
+                              <strong style={{ color: "var(--c-text)", fontWeight: 600 }}>
                                 ${shownAmt?.toFixed(2) ?? "—"}
                               </strong>{" "}
                               · {row.driver_name} · {fmtDate(when)}
@@ -4358,7 +4364,7 @@ export default function AnalyticsPage({
                             key={row.id}
                             style={{
                               background:
-                                i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                                i % 2 === 0 ? "transparent" : "var(--c-hover)",
                             }}
                           >
                             <td className="an-td" style={{ whiteSpace: "nowrap" }}>
@@ -4372,7 +4378,7 @@ export default function AnalyticsPage({
                               {formatRideRef(row.ride_ref)}
                             </td>
                             <td className="an-td primary">{row.driver_name}</td>
-                            <td className="an-td" style={{ color: "#E2E8F0", fontWeight: 600 }}>
+                            <td className="an-td" style={{ color: "var(--c-text)", fontWeight: 600 }}>
                               {row.fare_final != null ? `$${row.fare_final.toFixed(2)}` : "—"}
                             </td>
                             <td className="an-td">
@@ -4383,21 +4389,21 @@ export default function AnalyticsPage({
                                 </span>
                               </span>
                               {row.stripe_dispute_id && (
-                                <div style={{ fontSize: 10, color: "#6B7280", marginLeft: 16 }}>
+                                <div style={{ fontSize: 10, color: "var(--c-text-2)", marginLeft: 16 }}>
                                   {row.stripe_dispute_id}
                                 </div>
                               )}
                             </td>
                             <td className="an-td">
                               {!isProblem ? (
-                                <span style={{ fontSize: 12, color: "#4B5563" }}>
+                                <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>
                                   {t("settle.noActionNeeded")}
                                 </span>
                               ) : row.settlement_resolved_at ? (
                                 <span
                                   style={{
                                     fontSize: 12,
-                                    color: "#1D9E75",
+                                    color: "var(--c-green)",
                                     fontWeight: 600,
                                     whiteSpace: "nowrap",
                                   }}
@@ -4497,10 +4503,10 @@ export default function AnalyticsPage({
                             style={{
                               color:
                                 selectedDriverAvg >= 4
-                                  ? "#1D9E75"
+                                  ? "var(--c-green)"
                                   : selectedDriverAvg <= 2
-                                    ? "#E24B4A"
-                                    : "#F59E0B",
+                                    ? "var(--c-red)"
+                                    : "var(--c-amber-text)",
                             }}
                           >
                             {selectedDriverAvg.toFixed(1)} ★
@@ -4515,13 +4521,15 @@ export default function AnalyticsPage({
                             style={{
                               color:
                                 selectedDriverFlagged > 0
-                                  ? "#E24B4A"
-                                  : "#F1F5F9",
+                                  ? "var(--c-red)"
+                                  : "var(--c-text)",
                             }}
                           >
-                            {selectedDriverFlagged > 0
-                              ? `⚠ ${selectedDriverFlagged}`
-                              : "—"}
+                            {selectedDriverFlagged > 0 ? (
+                              <><Icon name="alert" size={14} /> {selectedDriverFlagged}</>
+                            ) : (
+                              "—"
+                            )}
                           </div>
                         </div>
                       </div>
@@ -4547,7 +4555,7 @@ export default function AnalyticsPage({
                           }}
                         >
                           {rv.rating <= 2 && (
-                            <span className="an-review-flag">⚠ {t("receipt.lowRating")}</span>
+                            <span className="an-review-flag"><Icon name="alert" /> {t("receipt.lowRating")}</span>
                           )}
                           {rv.reviewed_by_dispatch && (
                             <span className="an-reviewed-badge">
@@ -4566,7 +4574,7 @@ export default function AnalyticsPage({
                           <div>
                             <span
                               style={{
-                                color: "#F59E0B",
+                                color: "var(--c-amber-text)",
                                 fontSize: 14,
                                 letterSpacing: 1,
                               }}
@@ -4577,14 +4585,14 @@ export default function AnalyticsPage({
                             <span
                               style={{
                                 fontSize: 11,
-                                color: "#9CA3AF",
+                                color: "var(--c-text-2)",
                                 marginLeft: 6,
                               }}
                             >
                               {rv.rating}/5
                             </span>
                           </div>
-                          <span style={{ fontSize: 11, color: "#6B7280" }}>
+                          <span style={{ fontSize: 11, color: "var(--c-text-2)" }}>
                             {fmtDate(rv.created_at,
                               {
                                 month: "short",
@@ -4597,12 +4605,12 @@ export default function AnalyticsPage({
                         <div
                           style={{ display: "flex", gap: 20, marginBottom: 6 }}
                         >
-                          <div style={{ fontSize: 12, color: "#9CA3AF" }}>
-                            <span style={{ color: "#6B7280" }}>{t("reports.driver")}: </span>
+                          <div style={{ fontSize: 12, color: "var(--c-text-2)" }}>
+                            <span style={{ color: "var(--c-text-2)" }}>{t("reports.driver")}: </span>
                             {rv.driver_name ?? "—"}
                           </div>
-                          <div style={{ fontSize: 12, color: "#9CA3AF" }}>
-                            <span style={{ color: "#6B7280" }}>
+                          <div style={{ fontSize: 12, color: "var(--c-text-2)" }}>
+                            <span style={{ color: "var(--c-text-2)" }}>
                               {t("rideDetail.passenger")}:{" "}
                             </span>
                             {rv.passenger_name ?? "—"}
@@ -4611,7 +4619,7 @@ export default function AnalyticsPage({
                         <div
                           style={{
                             fontSize: 11,
-                            color: "#9CA3AF",
+                            color: "var(--c-text-2)",
                             marginBottom: rv.comment ? 8 : 0,
                           }}
                         >
@@ -4620,12 +4628,12 @@ export default function AnalyticsPage({
                         {rv.comment && (
                           <div
                             style={{
-                              background: "rgba(255,255,255,0.03)",
+                              background: "var(--c-hover)",
                               borderRadius: 6,
                               padding: "8px 12px",
-                              borderLeft: "2px solid #2D3F52",
+                              borderLeft: "2px solid var(--c-border-strong)",
                               fontSize: 13,
-                              color: "#9CA3AF",
+                              color: "var(--c-text-2)",
                               fontStyle: "italic",
                             }}
                           >
@@ -4685,7 +4693,6 @@ export default function AnalyticsPage({
                   ? rated.reduce((s, d) => s + (d.avgRating ?? 0) * d.ratingCount, 0) /
                     rated.reduce((s, d) => s + d.ratingCount, 0)
                   : null;
-                const medals = ["🥇", "🥈", "🥉"];
                 // Initials of a PERSON'S NAME, not a label — the only thing
                 // being title-cased here is the user's own data.
                 const initials = (name: string) => // i18n-ok
@@ -4696,7 +4703,7 @@ export default function AnalyticsPage({
                     .map((w) => w[0]?.toUpperCase() ?? "")
                     .join("") || "?";
                 const ratingColor = (r: number) =>
-                  r >= 4 ? "#1D9E75" : r <= 2 ? "#E24B4A" : "#F59E0B";
+                  r >= 4 ? "var(--c-green)" : r <= 2 ? "var(--c-red)" : "var(--c-amber-text)";
                 return (
                   <>
                     <div className="an-kpi-grid">
@@ -4714,7 +4721,7 @@ export default function AnalyticsPage({
                       </div>
                       <div className="an-kpi-card">
                         <div className="an-kpi-label">{t("analytics.totalEarnings")}</div>
-                        <div className="an-kpi-value" style={{ color: "#1D9E75" }}>
+                        <div className="an-kpi-value" style={{ color: "var(--c-green)" }}>
                           ${totalEarnings.toFixed(2)}
                         </div>
                         <div className="an-kpi-sub">{t("analytics.faresCollectedByDrivers")}</div>
@@ -4723,7 +4730,7 @@ export default function AnalyticsPage({
                         <div className="an-kpi-label">{t("analytics.fleetRating")}</div>
                         <div
                           className="an-kpi-value"
-                          style={{ color: fleetRating !== null ? ratingColor(fleetRating) : "#6B7280" }}
+                          style={{ color: fleetRating !== null ? ratingColor(fleetRating) : "var(--c-text-2)" }}
                         >
                           {fleetRating !== null ? `${fleetRating.toFixed(1)} ★` : "—"}
                         </div>
@@ -4754,7 +4761,7 @@ export default function AnalyticsPage({
                             onClick={() => setDriverDetail(d)}
                           >
                             <div className={`an-dl-rank${i < 3 ? " medal" : ""}`}>
-                              {i < 3 ? medals[i] : i + 1}
+                              {i + 1}
                             </div>
                             <div className="an-dl-av">
                               {d.avatarUrl ? (
@@ -4801,8 +4808,8 @@ export default function AnalyticsPage({
                                 <div className="an-dl-split-card" style={{ width: `${cardPct}%` }} />
                               </div>
                               <div className="an-dl-split-legend">
-                                <span style={{ color: "#F59E0B" }}>${d.cashEarnings.toFixed(0)}</span>
-                                <span style={{ color: "#1D9E75" }}>${d.cardEarnings.toFixed(0)}</span>
+                                <span style={{ color: "var(--c-amber-text)" }}>${d.cashEarnings.toFixed(0)}</span>
+                                <span style={{ color: "var(--c-green)" }}>${d.cardEarnings.toFixed(0)}</span>
                               </div>
                             </div>
                             <div className="an-dl-rating">
@@ -4858,7 +4865,7 @@ export default function AnalyticsPage({
                               <div style={{ minWidth: 0 }}>
                                 <div className="an-dm-name">{d.name}</div>
                                 <div className="an-dm-sub">
-                                  {rank <= 3 ? `${medals[rank - 1]} ` : ""}
+                                  {rank <= 3 ? `#${rank} ` : ""}
                                   {t("analytics.rankByEarnings", { rank })}
                                   {d.avgRating !== null && (
                                     <>
@@ -4882,7 +4889,7 @@ export default function AnalyticsPage({
                                 <div className="an-dm-stat-label">{t("analytics.totalEarnings")}</div>
                                 <div
                                   className="an-dm-stat-value"
-                                  style={{ color: "#1D9E75" }}
+                                  style={{ color: "var(--c-green)" }}
                                 >
                                   ${d.earnings.toFixed(2)}
                                 </div>
@@ -4904,11 +4911,11 @@ export default function AnalyticsPage({
                                   className="an-dm-stat-value"
                                   style={{ fontSize: 15 }}
                                 >
-                                  <span style={{ color: "#F59E0B" }}>
+                                  <span style={{ color: "var(--c-amber-text)" }}>
                                     ${d.cashEarnings.toFixed(0)}
                                   </span>
-                                  <span style={{ color: "#4B5563" }}> / </span>
-                                  <span style={{ color: "#1D9E75" }}>
+                                  <span style={{ color: "var(--c-text-3)" }}> / </span>
+                                  <span style={{ color: "var(--c-green)" }}>
                                     ${d.cardEarnings.toFixed(0)}
                                   </span>
                                 </div>
@@ -4924,7 +4931,7 @@ export default function AnalyticsPage({
                                 <div
                                   className="an-dm-stat-value"
                                   style={{
-                                    color: d.cancelRate > 20 ? "#E24B4A" : "#F1F5F9",
+                                    color: d.cancelRate > 20 ? "var(--c-red)" : "var(--c-text)",
                                   }}
                                 >
                                   {d.cancelled}
@@ -4950,7 +4957,7 @@ export default function AnalyticsPage({
                                       style={{ color: ratingColor(rv.rating) }}
                                     >
                                       {"★".repeat(rv.rating)}
-                                      <span style={{ color: "#374151" }}>
+                                      <span style={{ color: "var(--c-text-3)" }}>
                                         {"★".repeat(5 - rv.rating)}
                                       </span>
                                     </span>
@@ -4992,7 +4999,7 @@ export default function AnalyticsPage({
                 <div className="an-section-header" style={{ marginBottom: 12 }}>
                   <div>
                     <div className="an-section-title">{t("analytics.sections.activity")}</div>
-                    <div style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 2 }}>
                       {activityDateFrom} → {activityDateTo}
                     </div>
                   </div>
@@ -5102,7 +5109,7 @@ export default function AnalyticsPage({
                     </optgroup>
                   </select>
                   {activityLoading && (
-                    <span style={{ fontSize: 11, color: "#6B7280", marginLeft: 4 }}>{t("common.loading")}</span>
+                    <span style={{ fontSize: 11, color: "var(--c-text-2)", marginLeft: 4 }}>{t("common.loading")}</span>
                   )}
                 </div>
 
@@ -5113,7 +5120,7 @@ export default function AnalyticsPage({
                     <span className="al-stat-lbl">{t("analytics.totalEvents")}</span>
                   </div>
                   <div className="al-stat">
-                    <span className="al-stat-val" style={{ color: cancels > 0 ? "#E24B4A" : "#F1F5F9" }}>{cancels}</span>
+                    <span className="al-stat-val" style={{ color: cancels > 0 ? "var(--c-red)" : "var(--c-text)" }}>{cancels}</span>
                     <span className="al-stat-lbl">{t("analytics.cancellations")}</span>
                   </div>
                   <div className="al-stat">
@@ -5128,7 +5135,7 @@ export default function AnalyticsPage({
 
                 {/* Debug error */}
                 {activityError && (
-                  <div style={{ background: "#2D1515", border: "1px solid #E24B4A44", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "#E24B4A", fontFamily: "monospace" }}>
+                  <div style={{ background: "var(--c-surface-alt)", border: "1px solid var(--c-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "var(--c-red)", fontFamily: "monospace" }}>
                     {activityError}
                   </div>
                 )}
@@ -5151,7 +5158,7 @@ export default function AnalyticsPage({
                       </thead>
                       <tbody>
                         {filtered.map((e) => {
-                          const color = EVENT_COLORS[e.event_type] ?? "#6B7280";
+                          const color = EVENT_COLORS[e.event_type] ?? "#8A8C91";
                           const detail = formatEventDetails(e.event_type, e.details);
                           return (
                             <tr key={e.id} className="al-tr">
@@ -5164,7 +5171,8 @@ export default function AnalyticsPage({
                                 } as any)}
                               </td>
                               <td className="al-td al-td-dispatcher">{e.dispatcher_name ?? "—"}</td>
-                              <td className="al-td al-td-event" style={{ color }}>
+                              <td className="al-td al-td-event">
+                                <span className="an-dot" style={{ background: color }} />
                                 {eventLabel(e.event_type)}
                               </td>
                               <td className="al-td al-td-detail">{detail || "—"}</td>
@@ -5229,7 +5237,7 @@ export default function AnalyticsPage({
                         <tr
                           key={inv.id}
                           className="an-ride-row"
-                          style={{ background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)" }}
+                          style={{ background: i % 2 === 0 ? "transparent" : "var(--c-hover)" }}
                           onClick={() => setSelectedReceipt(inv)}
                         >
                           <td className="an-td">
@@ -5307,12 +5315,12 @@ export default function AnalyticsPage({
                       <div
                         key={lbl}
                         className="an-detail-row"
-                        style={lbl === totalLabel ? { borderTop: "1px solid rgba(255,255,255,0.12)", marginTop: 4, paddingTop: 12 } : {}}
+                        style={lbl === totalLabel ? { borderTop: "1px solid var(--c-border-strong)", marginTop: 4, paddingTop: 12 } : {}}
                       >
                         <span className="an-detail-label">{lbl}</span>
                         <span
                           className="an-detail-value"
-                          style={lbl === totalLabel ? { color: "#1D9E75", fontWeight: 700, fontSize: 16 } : {}}
+                          style={lbl === totalLabel ? { color: "var(--c-green)", fontWeight: 700, fontSize: 16 } : {}}
                         >
                           {val}
                         </span>
@@ -5353,11 +5361,7 @@ export default function AnalyticsPage({
               </div>
               <span
                 className="an-status"
-                style={{
-                  background: STATUS_COLORS[rideDetail.ride.status] + "18",
-                  color: STATUS_COLORS[rideDetail.ride.status],
-                  border: `1px solid ${STATUS_COLORS[rideDetail.ride.status]}30`,
-                }}
+                style={{ "--dot": STATUS_COLORS[rideDetail.ride.status] } as React.CSSProperties}
               >
                 {rideStatusLabel(rideDetail.ride.status)}
               </span>
@@ -5489,10 +5493,10 @@ export default function AnalyticsPage({
                 <div className="an-modal-section">{t("receipt.review")}</div>
                 <div
                   style={{
-                    background: "#18222F",
+                    background: "var(--c-bg)",
                     borderRadius: 10,
                     padding: 14,
-                    border: "1px solid rgba(255,255,255,0.05)",
+                    border: "1px solid var(--c-border-subtle)",
                   }}
                 >
                   {rideDetail.review.rating <= 2 && (
@@ -5500,7 +5504,7 @@ export default function AnalyticsPage({
                       className="an-review-flag"
                       style={{ marginBottom: 10, display: "inline-block" }}
                     >
-                      ⚠ {t("receipt.lowRating")}
+                      <Icon name="alert" /> {t("receipt.lowRating")}
                     </span>
                   )}
                   {rideDetail.review.reviewed_by_dispatch && (
@@ -5525,7 +5529,7 @@ export default function AnalyticsPage({
                   >
                     <span
                       style={{
-                        color: "#F59E0B",
+                        color: "var(--c-amber-text)",
                         fontSize: 15,
                         letterSpacing: 1,
                       }}
@@ -5533,19 +5537,19 @@ export default function AnalyticsPage({
                       {"★".repeat(rideDetail.review.rating)}
                       {"☆".repeat(5 - rideDetail.review.rating)}
                     </span>
-                    <span style={{ fontSize: 12, color: "#6B7280" }}>
+                    <span style={{ fontSize: 12, color: "var(--c-text-2)" }}>
                       {rideDetail.review.rating}/5
                     </span>
                   </div>
                   {rideDetail.review.comment && (
                     <div
                       style={{
-                        background: "rgba(255,255,255,0.03)",
+                        background: "var(--c-hover)",
                         borderRadius: 6,
                         padding: "8px 12px",
-                        borderLeft: "2px solid #2D3F52",
+                        borderLeft: "2px solid var(--c-border-strong)",
                         fontSize: 13,
-                        color: "#6B7280",
+                        color: "var(--c-text-2)",
                         fontStyle: "italic",
                       }}
                     >
@@ -5571,7 +5575,7 @@ export default function AnalyticsPage({
               <div
                 style={{
                   fontSize: 12,
-                  color: "#6B7280",
+                  color: "var(--c-text-2)",
                   textAlign: "center",
                   padding: "12px 0",
                 }}
@@ -5596,7 +5600,7 @@ export default function AnalyticsPage({
             {isAdmin && canOfferRefund(rideDetail.ride) && (
               <button
                 className="an-download-btn"
-                style={{ width: "100%", marginTop: 10, textAlign: "center", color: "#F87171" }}
+                style={{ width: "100%", marginTop: 10, textAlign: "center", color: "var(--c-red)" }}
                 onClick={() => setRefundTarget(rideDetail.ride)}
               >
                 {t("refund.button")}

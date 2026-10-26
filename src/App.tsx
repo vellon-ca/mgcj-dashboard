@@ -30,18 +30,18 @@ export default function App() {
 
   if (loading) return (
     <div style={{
-      minHeight: '100vh', background: '#0A1628',
+      minHeight: '100vh', background: 'var(--c-bg)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      fontFamily: "'Inter', system-ui, sans-serif", color: '#E8500A', fontSize: 16, gap: 14,
+      fontFamily: "'Inter', system-ui, sans-serif", color: 'var(--c-text-2)', fontSize: 16, gap: 14,
     }}>
       <div>{t('common.loading')}</div>
       {stuck && (
         <>
-          <div style={{ color: '#6B7280', fontSize: 13 }}>{t('app.takingLonger')}</div>
+          <div style={{ color: 'var(--c-text-2)', fontSize: 13 }}>{t('app.takingLonger')}</div>
           <button
             onClick={() => window.location.reload()}
             style={{
-              background: '#E8500A', color: '#fff', border: 'none', borderRadius: 8,
+              background: 'var(--c-brand-fill)', color: 'var(--c-on-brand)', border: 'none', borderRadius: 8,
               padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
             }}
           >
@@ -56,18 +56,18 @@ export default function App() {
 
   if (profile.role !== 'admin' && profile.role !== 'dispatcher') return (
     <div style={{
-      minHeight: '100vh', background: '#111827',
+      minHeight: '100vh', background: 'var(--c-bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: 'system-ui, sans-serif',
     }}>
       <div style={{
-        background: '#1E2A3A', borderRadius: 16, padding: '40px 36px',
-        textAlign: 'center', border: '0.5px solid rgba(255,255,255,0.08)',
+        background: 'var(--c-surface)', borderRadius: 16, padding: '40px 36px',
+        textAlign: 'center', border: '1px solid var(--c-border)',
       }}>
-        <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
-        <div style={{ color: '#F87171', marginBottom: 16 }}>{t('app.accessDenied')}</div>
+        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--c-text)', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
+        <div style={{ color: 'var(--c-red)', marginBottom: 16 }}>{t('app.accessDenied')}</div>
         <button
-          style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'transparent', color: 'var(--c-text-2)', border: 'none', cursor: 'pointer' }}
           onClick={() => signOut()}
         >
           {t('common.signOut')}
@@ -78,19 +78,19 @@ export default function App() {
 
   if (!profile.is_active) return (
     <div style={{
-      minHeight: '100vh', background: '#111827',
+      minHeight: '100vh', background: 'var(--c-bg)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontFamily: 'system-ui, sans-serif',
     }}>
       <div style={{
-        background: '#1E2A3A', borderRadius: 16, padding: '40px 36px',
-        textAlign: 'center', border: '0.5px solid rgba(255,255,255,0.08)', maxWidth: 360,
+        background: 'var(--c-surface)', borderRadius: 16, padding: '40px 36px',
+        textAlign: 'center', border: '1px solid var(--c-border)', maxWidth: 360,
       }}>
-        <div style={{ fontSize: 32, fontWeight: 700, color: '#E8500A', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
-        <div style={{ color: '#F87171', marginBottom: 4 }}>{t('app.deactivated')}</div>
-        <div style={{ color: '#6B7280', fontSize: 13, marginBottom: 16 }}>{t('app.deactivatedHelp')}</div>
+        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--c-text)', marginBottom: 8 }}>{companyName ?? 'M&G C&J'}</div>
+        <div style={{ color: 'var(--c-red)', marginBottom: 4 }}>{t('app.deactivated')}</div>
+        <div style={{ color: 'var(--c-text-2)', fontSize: 13, marginBottom: 16 }}>{t('app.deactivatedHelp')}</div>
         <button
-          style={{ background: 'transparent', color: '#6B7280', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'transparent', color: 'var(--c-text-2)', border: 'none', cursor: 'pointer' }}
           onClick={() => signOut()}
         >
           {t('common.signOut')}

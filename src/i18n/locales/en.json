@@ -786,7 +786,9 @@
     "reports": "Reports",
     "rides": "Rides",
     "settings": "Settings",
-    "soon": "Soon"
+    "soon": "Soon",
+    "lightMode": "Light mode",
+    "darkMode": "Dark mode"
   },
   "noShow": {
     "reportedNoArrival": "Reported {{filed}} (arrival time not recorded)",

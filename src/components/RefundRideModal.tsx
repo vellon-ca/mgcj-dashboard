@@ -17,20 +17,20 @@ import { COMPANY_REFUND_REASONS, REFUND_REASON_KEYS } from "../lib/labels";
  */
 // i18n-ok: CSS, not copy.
 const STYLES = `
-  .rf-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.72); display: flex; align-items: center; justify-content: center; z-index: 1100; backdrop-filter: blur(3px); }
-  .rf-modal { background: #1E2A3A; border-radius: 14px; padding: 26px; width: 100%; max-width: 420px; border: 1px solid rgba(255,255,255,0.08); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); font-family: system-ui, -apple-system, sans-serif; }
-  .rf-title { font-size: 17px; font-weight: 700; color: #F1F5F9; margin-bottom: 20px; }
-  .rf-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: #6B7280; letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
-  .rf-label { font-size: 11px; color: #6B7280; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
-  .rf-input { background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: #E2E8F0; outline: none; width: 100%; box-sizing: border-box; font-family: inherit; margin-bottom: 14px; }
-  .rf-input:focus { border-color: rgba(232,80,10,0.4); }
-  .rf-hint { font-size: 11px; line-height: 1.5; color: #6B7280; margin-bottom: 12px; }
-  .rf-error { color: #F87171; font-size: 13px; margin-bottom: 12px; }
+  .rf-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1100; backdrop-filter: blur(3px); }
+  .rf-modal { background: var(--c-surface); color: var(--c-text); border-radius: 14px; padding: 26px; width: 100%; max-width: 420px; border: 1px solid var(--c-border); max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px var(--c-shadow); font-family: system-ui, -apple-system, sans-serif; }
+  .rf-title { font-size: 17px; font-weight: 700; color: var(--c-text); margin-bottom: 20px; }
+  .rf-ref { margin-left: 10px; font-size: 12px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.08em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: all; }
+  .rf-label { font-size: 11px; color: var(--c-text-2); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+  .rf-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; box-sizing: border-box; font-family: inherit; margin-bottom: 14px; }
+  .rf-input:focus { border-color: var(--c-brand); }
+  .rf-hint { font-size: 11px; line-height: 1.5; color: var(--c-text-2); margin-bottom: 12px; }
+  .rf-error { color: var(--c-red); font-size: 13px; margin-bottom: 12px; }
   .rf-actions { display: flex; gap: 10px; }
   .rf-btn { flex: 1; border-radius: 8px; padding: 10px; font-size: 14px; cursor: pointer; font-family: inherit; }
   .rf-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .rf-btn.cancel { background: transparent; color: #6B7280; border: 1px solid rgba(255,255,255,0.08); }
-  .rf-btn.go { background: #E24B4A; color: #fff; border: none; font-weight: 600; }
+  .rf-btn.cancel { background: transparent; color: var(--c-text-2); border: 1px solid var(--c-border); }
+  .rf-btn.go { background: var(--c-red-fill); color: #FFFFFF; border: none; font-weight: 600; }
 `;
 
 export default function RefundRideModal({

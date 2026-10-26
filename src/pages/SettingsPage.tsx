@@ -669,14 +669,14 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
     <>
       <style>{`
         .st-wrap { display: flex; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
-        .st-panel { width: 200px; background: #0F1723; border-right: 1px solid rgba(255,255,255,0.06); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
-        .st-panel-title { font-size: 10px; font-weight: 600; color: #6B7280; letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
-        .st-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: #6B7280; cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
-        .st-section-btn:hover { background: rgba(255,255,255,0.04); color: #9CA3AF; }
-        .st-section-btn.active { border-left-color: #E8500A; background: rgba(232,80,10,0.07); color: #E8500A; }
-        .st-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: #111827; }
+        .st-panel { width: 200px; background: var(--c-surface); border-right: 1px solid var(--c-border); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 0; }
+        .st-panel-title { font-size: 10px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.09em; text-transform: uppercase; padding: 0 16px 10px; }
+        .st-section-btn { display: flex; align-items: center; width: 100%; height: 38px; padding: 0 16px; background: none; border: none; border-left: 2px solid transparent; font-size: 13px; font-weight: 500; color: var(--c-text-2); cursor: pointer; text-align: left; transition: background 0.12s, color 0.12s, border-color 0.12s; font-family: system-ui, sans-serif; }
+        .st-section-btn:hover { background: var(--c-hover); color: var(--c-text-2); }
+        .st-section-btn.active { border-left-color: var(--c-brand); background: var(--c-surface-sel); color: var(--c-brand); }
+        .st-content { flex: 1; overflow-y: auto; padding: 24px 32px; background: var(--c-bg); }
         .st-content::-webkit-scrollbar { width: 4px; }
-        .st-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .st-content::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
 
         /* Service Areas is a map section, not a form: it should fill the pane
            down to the bottom padding rather than sit in a short box with the
@@ -690,21 +690,21 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         }
 
         .st-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
-        .st-title { font-size: 18px; font-weight: 700; color: #F1F5F9; margin-bottom: 4px; }
-        .st-subtitle { font-size: 13px; color: #6B7280; line-height: 1.5; max-width: 480px; }
+        .st-title { font-size: 18px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
+        .st-subtitle { font-size: 13px; color: var(--c-text-2); line-height: 1.5; max-width: 480px; }
 
-        .st-card { background: #1E2A3A; border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.05); max-width: 520px; }
-        .st-card-label { font-size: 11px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
+        .st-card { background: var(--c-surface); border-radius: 12px; padding: 20px; margin-bottom: 16px; border: 1px solid var(--c-border-subtle); max-width: 520px; }
+        .st-card-label { font-size: 11px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 16px; }
 
         .st-field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
         .st-field-row:last-of-type { margin-bottom: 0; }
         .st-field-text { display: flex; flex-direction: column; gap: 2px; }
-        .st-field-label { font-size: 14px; font-weight: 600; color: #E2E8F0; }
-        .st-field-hint { font-size: 12px; color: #6B7280; }
-        .st-input-wrap { display: flex; align-items: center; background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
-        .st-prefix { padding: 0 10px; font-size: 13px; font-weight: 600; color: #6B7280; border-right: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
-        .st-suffix { padding: 0 10px; font-size: 12px; color: #6B7280; border-left: 1px solid rgba(255,255,255,0.08); height: 36px; display: flex; align-items: center; }
-        .st-input { width: 80px; background: none; border: none; outline: none; color: #F1F5F9; font-size: 14px; font-weight: 600; padding: 0 10px; height: 36px; font-family: system-ui, sans-serif; text-align: right; }
+        .st-field-label { font-size: 14px; font-weight: 600; color: var(--c-text); }
+        .st-field-hint { font-size: 12px; color: var(--c-text-2); }
+        .st-input-wrap { display: flex; align-items: center; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
+        .st-prefix { padding: 0 10px; font-size: 13px; font-weight: 600; color: var(--c-text-2); border-right: 1px solid var(--c-border); height: 36px; display: flex; align-items: center; }
+        .st-suffix { padding: 0 10px; font-size: 12px; color: var(--c-text-2); border-left: 1px solid var(--c-border); height: 36px; display: flex; align-items: center; }
+        .st-input { width: 80px; background: none; border: none; outline: none; color: var(--c-text); font-size: 14px; font-weight: 600; padding: 0 10px; height: 36px; font-family: system-ui, sans-serif; text-align: right; }
 
         /* Number spinners OVERLAY the right edge of the field (Firefox draws them
            over the content, not beside it), and these inputs are text-align:right
@@ -731,66 +731,66 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .st-input-wrap--grow { flex: 1 1 280px; min-width: 180px; max-width: 420px; }
         .st-input--text { width: 100%; text-align: left; }
 
-        .st-divider { height: 1px; background: rgba(255,255,255,0.05); margin: 14px 0; }
+        .st-divider { height: 1px; background: var(--c-hover); margin: 14px 0; }
 
-        .st-save-btn { background: #E8500A; color: #fff; border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, opacity 0.12s; white-space: nowrap; }
-        .st-save-btn:hover:not(:disabled) { background: #D6470B; }
+        .st-save-btn { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 9px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; transition: background 0.12s, opacity 0.12s; white-space: nowrap; }
+        .st-save-btn:hover:not(:disabled) { background: var(--c-brand-fill); }
         .st-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .st-save-btn.st-saved { background: rgba(29,158,117,0.12); color: #1D9E75; }
-        .st-error { font-size: 12px; color: #F87171; margin-top: 10px; }
+        .st-save-btn.st-saved { background: var(--c-surface-alt); color: var(--c-green); }
+        .st-error { font-size: 12px; color: var(--c-red); margin-top: 10px; }
 
         .vc-table { width: 100%; max-width: 620px; border-collapse: collapse; }
-        .vc-th { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; padding: 0 12px 8px; text-align: left; }
+        .vc-th { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; padding: 0 12px 8px; text-align: left; }
         .vc-th.right { text-align: right; }
-        .vc-row { background: #1E2A3A; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .vc-row { background: var(--c-surface); border-radius: 10px; border: 1px solid var(--c-border-subtle); }
         .vc-row + .vc-row { margin-top: 6px; }
-        .vc-td { padding: 12px; font-size: 13px; color: #E2E8F0; vertical-align: middle; }
-        .vc-td.muted { color: #6B7280; }
+        .vc-td { padding: 12px; font-size: 13px; color: var(--c-text); vertical-align: middle; }
+        .vc-td.muted { color: var(--c-text-2); }
         .vc-td.right { text-align: right; }
-        .vc-input { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 5px 9px; outline: none; width: 100%; box-sizing: border-box; }
-        .vc-input:focus { border-color: rgba(74,158,255,0.4); }
+        .vc-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 7px; color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; padding: 5px 9px; outline: none; width: 100%; box-sizing: border-box; }
+        .vc-input:focus { border-color: var(--c-border); }
         .vc-input.narrow { width: 64px; }
         /* Fits "\u{1F3CE}\u{FE0F} Luxury / premium" without clipping, and does not grow
            at the name field's expense. */
         .vc-icon-select { width: 150px; flex: 0 0 auto; }
-        .vc-badge-active { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-        .vc-badge-inactive { background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-        .vc-btn { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #6B7280; font-size: 12px; font-weight: 600; padding: 4px 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
-        .vc-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
-        .vc-btn-save { background: #E8500A; color: #fff; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer; font-family: system-ui, sans-serif; white-space: nowrap; }
+        .vc-badge-active { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .vc-badge-inactive { background: var(--c-surface-alt); color: var(--c-text-2); border: 1px solid var(--c-border); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .vc-btn { background: none; border: 1px solid var(--c-border); border-radius: 6px; color: var(--c-text-2); font-size: 12px; font-weight: 600; padding: 4px 11px; cursor: pointer; font-family: system-ui, sans-serif; transition: color 0.12s, border-color 0.12s; white-space: nowrap; }
+        .vc-btn:hover { color: var(--c-text); border-color: var(--c-border-strong); }
+        .vc-btn-save { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 6px; font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer; font-family: system-ui, sans-serif; white-space: nowrap; }
         .vc-btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
-        .vc-rate-preview { font-size: 12px; color: #4a9eff; font-weight: 600; }
-        .vc-add-row { background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.08); border-radius: 10px; padding: 14px; max-width: 620px; margin-top: 8px; }
+        .vc-rate-preview { font-size: 12px; color: var(--c-blue); font-weight: 600; }
+        .vc-add-row { background: var(--c-hover); border: 1px dashed var(--c-border); border-radius: 10px; padding: 14px; max-width: 620px; margin-top: 8px; }
         .vc-add-grid { display: grid; grid-template-columns: 1fr 80px 100px; gap: 10px; align-items: end; margin-bottom: 10px; }
         .vc-add-field { display: flex; flex-direction: column; gap: 4px; }
-        .vc-add-label { font-size: 10px; font-weight: 600; color: #6B7280; text-transform: uppercase; letter-spacing: 0.07em; }
+        .vc-add-label { font-size: 10px; font-weight: 600; color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.07em; }
         .vc-add-actions { display: flex; gap: 8px; justify-content: flex-end; }
-        .vc-add-cancel { background: none; border: 1px solid rgba(255,255,255,0.1); border-radius: 7px; color: #6B7280; font-size: 12px; padding: 6px 12px; cursor: pointer; font-family: system-ui, sans-serif; }
-        .vc-add-save { background: #E8500A; color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer; font-family: system-ui, sans-serif; }
+        .vc-add-cancel { background: none; border: 1px solid var(--c-border); border-radius: 7px; color: var(--c-text-2); font-size: 12px; padding: 6px 12px; cursor: pointer; font-family: system-ui, sans-serif; }
+        .vc-add-save { background: var(--c-brand-fill); color: var(--c-on-brand); border: none; border-radius: 7px; font-size: 12px; font-weight: 600; padding: 6px 14px; cursor: pointer; font-family: system-ui, sans-serif; }
         .vc-add-save:disabled { opacity: 0.5; }
-        .vc-add-class-btn { background: none; border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px; color: #6B7280; font-size: 13px; padding: 9px 16px; cursor: pointer; font-family: system-ui, sans-serif; display: flex; align-items: center; gap: 6px; margin-top: 8px; transition: color 0.12s; max-width: 620px; width: 100%; }
-        .vc-add-class-btn:hover { color: #E2E8F0; border-color: rgba(255,255,255,0.2); }
-        .vc-error { font-size: 12px; color: #F87171; margin-top: 6px; }
-        .vc-fleet-sizes { font-size: 12px; color: #6B7280; margin: 4px 0 12px; }
+        .vc-add-class-btn { background: none; border: 1px dashed var(--c-border); border-radius: 8px; color: var(--c-text-2); font-size: 13px; padding: 9px 16px; cursor: pointer; font-family: system-ui, sans-serif; display: flex; align-items: center; gap: 6px; margin-top: 8px; transition: color 0.12s; max-width: 620px; width: 100%; }
+        .vc-add-class-btn:hover { color: var(--c-text); border-color: var(--c-border-strong); }
+        .vc-error { font-size: 12px; color: var(--c-red); margin-top: 6px; }
+        .vc-fleet-sizes { font-size: 12px; color: var(--c-text-2); margin: 4px 0 12px; }
 
-        .st-select { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 9px 10px; outline: none; width: 100%; box-sizing: border-box; margin-bottom: 14px; }
-        .st-textarea { background: #111827; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #F1F5F9; font-size: 13px; font-family: system-ui, sans-serif; padding: 10px; outline: none; width: 100%; box-sizing: border-box; min-height: 100px; resize: vertical; }
+        .st-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; padding: 9px 10px; outline: none; width: 100%; box-sizing: border-box; margin-bottom: 14px; }
+        .st-textarea { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; color: var(--c-text); font-size: 13px; font-family: system-ui, sans-serif; padding: 10px; outline: none; width: 100%; box-sizing: border-box; min-height: 100px; resize: vertical; }
         .rp-table { width: 100%; max-width: 720px; border-collapse: collapse; margin-top: 8px; }
-        .rp-row { background: #1E2A3A; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .rp-row { background: var(--c-surface); border-radius: 10px; border: 1px solid var(--c-border-subtle); }
         .rp-row + .rp-row { margin-top: 6px; }
-        .rp-td { padding: 12px; font-size: 13px; color: #E2E8F0; vertical-align: top; }
-        .rp-td.muted { color: #6B7280; font-size: 12px; white-space: nowrap; }
-        .rp-cat { font-size: 11px; font-weight: 600; color: #E8500A; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
-        .rp-msg { font-size: 13px; color: #E2E8F0; white-space: pre-wrap; }
-        .rp-badge-open { background: rgba(74,158,255,0.1); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-        .rp-badge-resolved { background: rgba(29,158,117,0.1); color: #1D9E75; border: 1px solid rgba(29,158,117,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .rp-td { padding: 12px; font-size: 13px; color: var(--c-text); vertical-align: top; }
+        .rp-td.muted { color: var(--c-text-2); font-size: 12px; white-space: nowrap; }
+        .rp-cat { font-size: 11px; font-weight: 600; color: var(--c-brand); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
+        .rp-msg { font-size: 13px; color: var(--c-text); white-space: pre-wrap; }
+        .rp-badge-open { background: var(--c-surface-alt); color: var(--c-blue); border: 1px solid var(--c-border); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+        .rp-badge-resolved { background: var(--c-surface-alt); color: var(--c-green); border: 1px solid var(--c-border); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
 
         .tm-table { width: 100%; max-width: 620px; border-collapse: collapse; }
-        .tm-row { background: #1E2A3A; border-radius: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .tm-row { background: var(--c-surface); border-radius: 10px; border: 1px solid var(--c-border-subtle); }
         .tm-row + .tm-row { margin-top: 6px; }
-        .tm-td { padding: 12px; font-size: 13px; color: #E2E8F0; vertical-align: middle; }
-        .tm-td.muted { color: #6B7280; font-size: 12px; }
-        .tm-badge-role { background: rgba(74,158,255,0.1); color: #4a9eff; border: 1px solid rgba(74,158,255,0.2); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
+        .tm-td { padding: 12px; font-size: 13px; color: var(--c-text); vertical-align: middle; }
+        .tm-td.muted { color: var(--c-text-2); font-size: 12px; }
+        .tm-badge-role { background: var(--c-surface-alt); color: var(--c-blue); border: 1px solid var(--c-border); border-radius: 20px; padding: 2px 9px; font-size: 11px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
       `}</style>
 
       <div className="st-wrap">
@@ -818,7 +818,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               </div>
 
               {vcLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <>
                   <table className="vc-table" style={{ marginBottom: 4 }}>
@@ -885,7 +885,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                               {isEditing ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                   <input className="vc-input narrow" type="number" min="0" step="0.5" value={editSurcharge} onChange={e => setEditSurcharge(e.target.value)} />
-                                  <span style={{ color: '#6B7280', fontSize: 12 }}>%</span>
+                                  <span style={{ color: 'var(--c-text-2)', fontSize: 12 }}>%</span>
                                 </div>
                               ) : (
                                 `+${vc.surcharge_percent}%`
@@ -907,7 +907,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                                   <span style={{ fontSize: 12 }}>{t("settings.vcRestricted")}</span>
                                 </label>
                               ) : (
-                                <span style={{ fontSize: 12, color: '#6B7280' }}>
+                                <span style={{ fontSize: 12, color: 'var(--c-text-2)' }}>
                                   {vc.restricted ? t("settings.vcRestricted") : t("settings.vcBySize")}
                                 </span>
                               )}
@@ -977,7 +977,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                           <div className="vc-add-label">{t("settings.vcSurchargePct")}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <input className="vc-input" type="number" min="0" step="0.5" placeholder="0" value={newSurcharge} onChange={e => setNewSurcharge(e.target.value)} />
-                            <span style={{ color: '#6B7280', fontSize: 12, flexShrink: 0 }}>%</span>
+                            <span style={{ color: 'var(--c-text-2)', fontSize: 12, flexShrink: 0 }}>%</span>
                           </div>
                         </div>
                       </div>
@@ -987,10 +987,10 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                           checked={newRestricted}
                           onChange={e => setNewRestricted(e.target.checked)}
                         />
-                        <span style={{ fontSize: 12, color: '#6B7280' }}>{t("settings.vcRestrictedHint")}</span>
+                        <span style={{ fontSize: 12, color: 'var(--c-text-2)' }}>{t("settings.vcRestrictedHint")}</span>
                       </label>
                       {newSurcharge && !isNaN(parseFloat(newSurcharge)) && (
-                        <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, color: 'var(--c-text-2)', marginBottom: 10 }}>
                           {t("settings.vcEffectiveRateInline")} <span className="vc-rate-preview">${((parseFloat(savedRatePerKm) || 0) * (1 + parseFloat(newSurcharge) / 100)).toFixed(2)}{t("common.perKm")}</span>
                         </div>
                       )}
@@ -1018,7 +1018,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   <div className="st-subtitle">
                     <Trans
                       i18nKey="settings.pricingSubtitle"
-                      components={{ s: <strong style={{ color: "#E2E8F0" }} /> }}
+                      components={{ s: <strong style={{ color: "var(--c-text)" }} /> }}
                     />
                   </div>
                 </div>
@@ -1032,7 +1032,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               </div>
 
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <div className="st-card">
                   <p className="st-card-label">{t("settings.fareFormula")}</p>
@@ -1091,7 +1091,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   <div className="st-subtitle">
                     <Trans
                       i18nKey="settings.contactSubtitle"
-                      components={{ s: <strong style={{ color: "#E2E8F0" }} /> }}
+                      components={{ s: <strong style={{ color: "var(--c-text)" }} /> }}
                     />
                   </div>
                 </div>
@@ -1110,7 +1110,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                   app renders no card at all rather than a dead one — so this is
                   worth filling in at onboarding. */}
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <div className="st-card">
                   <p className="st-card-label">{t("settings.shownInApps")}</p>
@@ -1178,12 +1178,12 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               </div>
 
               {loading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <>
                   <div className="st-card">
                     <p className="st-card-label">
-                      {t("settings.carNumbersNext")} <strong style={{ color: "#E2E8F0" }}>
+                      {t("settings.carNumbersNext")} <strong style={{ color: "var(--c-text)" }}>
                         {preview(carPrefix, carPad, parseInt(carStart, 10) || 1)}
                       </strong>
                     </p>
@@ -1245,7 +1245,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
                   <div className="st-card">
                     <p className="st-card-label">
-                      {t("settings.driverNumbersExample")} <strong style={{ color: "#E2E8F0" }}>
+                      {t("settings.driverNumbersExample")} <strong style={{ color: "var(--c-text)" }}>
                         {preview(driverPrefix, driverPad, 7)}
                       </strong>
                     </p>
@@ -1309,7 +1309,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
               </div>
 
               {staffLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : (
                 <table className="tm-table" style={{ marginBottom: 4 }}>
                   <tbody>
@@ -1498,9 +1498,9 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
 
               <p className="st-card-label" style={{ marginTop: 24 }}>{t("settings.companyReports")}</p>
               {reportsLoading ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("common.loading")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("common.loading")}</div>
               ) : reports.length === 0 ? (
-                <div style={{ color: "#6B7280", fontSize: 14 }}>{t("settings.noReports")}</div>
+                <div style={{ color: "var(--c-text-2)", fontSize: 14 }}>{t("settings.noReports")}</div>
               ) : (
                 <table className="rp-table">
                   <tbody>
