@@ -73,15 +73,42 @@ interface Impact {
 // The hardcoded Annapolis Valley centre that used to be here is deleted along
 // with every other copy of it.
 
-// Google Maps needs real hex, so these are not theme variables. The pickup
-// area is the brand blue (it was the old brand orange); the drop-off-only
-// purple is kept until Victor decides what it should be.
+// Google Maps needs real hex, so these are not theme variables. Every active
+// area is the brand blue; a drop-off-only area (a destination, not somewhere a
+// ride can start) is told apart by a DASHED outline and a fainter fill, not by
+// a second colour (Victor 2026-10-26 — it was purple). Inactive areas are grey.
 const AREA_COLOR = "#3D6BF5";
-const AREA_COLOR_DROPOFF = "#A855F7"; // purple: dropoff-only, i.e. a destination
 
-function colorFor(a: Pick<ServiceArea, "allows_pickup" | "allows_dropoff" | "active">) {
-  if (!a.active) return "#8A8C91";
-  return a.allows_pickup ? AREA_COLOR : AREA_COLOR_DROPOFF;
+function colorFor(a: Pick<ServiceArea, "active">) {
+  return a.active ? AREA_COLOR : "#8A8C91";
+}
+
+function isDashed(a: Pick<ServiceArea, "allows_pickup" | "active">) {
+  return a.active && !a.allows_pickup;
+}
+
+function fillOpacityFor(a: Pick<ServiceArea, "allows_pickup" | "active">) {
+  if (!a.active) return 0.08;
+  return a.allows_pickup ? 0.18 : 0.08;
+}
+
+// Neither google.maps.Polygon nor Circle can dash its own stroke. A dashed
+// area hides its stroke and gets a Polyline of dash symbols along each ring.
+function ringsOf(shape: google.maps.Polygon[] | google.maps.Circle): google.maps.LatLng[][] {
+  if (Array.isArray(shape)) {
+    return shape.map(poly => {
+      const pts = poly.getPath().getArray();
+      return pts.length ? [...pts, pts[0]] : [];
+    });
+  }
+  const center = shape.getCenter();
+  if (!center) return [];
+  const r = shape.getRadius();
+  const ring: google.maps.LatLng[] = [];
+  for (let i = 0; i <= 72; i++) {
+    ring.push(google.maps.geometry.spherical.computeOffset(center, r, (i * 360) / 72));
+  }
+  return [ring];
 }
 
 /** GeoJSON MultiPolygon -> the LatLng rings the Maps API draws. */
@@ -145,6 +172,12 @@ export default function ServiceAreasSection({ companyId }: Props) {
   const shapesRef = useRef<
     Map<string, google.maps.Polygon[] | google.maps.Circle>
   >(new Map());
+  // id -> the dashed outline drawn over a drop-off-only area (see ringsOf)
+  const dashesRef = useRef<Map<string, google.maps.Polyline[]>>(new Map());
+  // Edit listeners are created once per draw; this lets them read the
+  // current areas and selection rather than the ones they closed over.
+  const latestRef = useRef<{ areas: ServiceArea[]; selectedId: string | null }>({ areas: [], selectedId: null });
+  latestRef.current = { areas, selectedId };
   const selectedIdRef = useRef<string | null>(null);
   const geometryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -370,6 +403,8 @@ export default function ServiceAreasSection({ companyId }: Props) {
       else shape.setMap(null);
     });
     shapesRef.current.clear();
+    dashesRef.current.forEach(lines => lines.forEach(l => l.setMap(null)));
+    dashesRef.current.clear();
 
     const bounds = new google.maps.LatLngBounds();
     let any = false;
@@ -379,8 +414,9 @@ export default function ServiceAreasSection({ companyId }: Props) {
       const opts = {
         map,
         fillColor: color,
-        fillOpacity: a.active ? 0.18 : 0.08,
+        fillOpacity: fillOpacityFor(a),
         strokeColor: color,
+        strokeOpacity: isDashed(a) ? 0 : 1,
         strokeWeight: a.id === selectedId ? 3 : 2,
         clickable: true,
       };
@@ -395,10 +431,11 @@ export default function ServiceAreasSection({ companyId }: Props) {
         });
         circle.addListener("click", () => setSelectedId(a.id));
         if (a.id === selectedId) {
-          circle.addListener("radius_changed", () => persistCircle(a.id, circle));
-          circle.addListener("center_changed", () => persistCircle(a.id, circle));
+          circle.addListener("radius_changed", () => { persistCircle(a.id, circle); syncDash(a.id); });
+          circle.addListener("center_changed", () => { persistCircle(a.id, circle); syncDash(a.id); });
         }
         shapesRef.current.set(a.id, circle);
+        syncDash(a.id, a);
         const b = circle.getBounds();
         if (b) { bounds.union(b); any = true; }
       } else {
@@ -410,7 +447,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
           });
           poly.addListener("click", () => setSelectedId(a.id));
           if (a.id === selectedId) {
-            const push = () => persistPolygon(a.id, poly);
+            const push = () => { persistPolygon(a.id, poly); syncDash(a.id); };
             poly.getPath().addListener("set_at", push);
             poly.getPath().addListener("insert_at", push);
             poly.getPath().addListener("remove_at", push);
@@ -419,6 +456,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
           return poly;
         });
         shapesRef.current.set(a.id, polys);
+        syncDash(a.id, a);
       }
     }
 
@@ -440,13 +478,39 @@ export default function ServiceAreasSection({ companyId }: Props) {
       const style = {
         fillColor: colorFor(a),
         strokeColor: colorFor(a),
-        fillOpacity: a.active ? 0.18 : 0.08,
+        fillOpacity: fillOpacityFor(a),
+        strokeOpacity: isDashed(a) ? 0 : 1,
         strokeWeight: a.id === selectedId ? 3 : 2,
       };
       if (Array.isArray(shape)) shape.forEach(poly => poly.setOptions(style));
       else shape.setOptions(style);
+      syncDash(a.id, a);
     }
   }, [areas, selectedId]);
+
+  // Redraws (or removes) the dashed outline of one area from its overlay's
+  // CURRENT geometry, so it follows a vertex drag or a radius change live.
+  // `area` is passed when the caller has it; an edit listener looks it up.
+  function syncDash(id: string, area?: ServiceArea) {
+    dashesRef.current.get(id)?.forEach(l => l.setMap(null));
+    dashesRef.current.delete(id);
+    const a = area ?? latestRef.current.areas.find(x => x.id === id);
+    const shape = shapesRef.current.get(id);
+    if (!a || !shape || !isDashed(a) || !mapRef.current) return;
+    const weight = a.id === latestRef.current.selectedId ? 3 : 2;
+    const lines = ringsOf(shape).map(path => new google.maps.Polyline({
+      map: mapRef.current!,
+      path,
+      clickable: false,
+      strokeOpacity: 0,
+      icons: [{
+        icon: { path: "M 0,-1 0,1", strokeOpacity: 1, strokeColor: AREA_COLOR, scale: weight },
+        offset: "0",
+        repeat: "12px",
+      }],
+    }));
+    dashesRef.current.set(id, lines);
+  }
 
   // ── draft polygon ───────────────────────────────────────────────────────
 

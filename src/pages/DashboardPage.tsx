@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabase";
 import { driverPresence, isRideSilent, lastSeenLabel } from "../lib/presence";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
-import { formatDriverNumber, formatRideRef } from "../lib/numbering";
+import { formatDriverNumber, formatRideRef, normalizeRideRef } from "../lib/numbering";
 import {
   buildTrail,
   formatDuration,
@@ -1821,6 +1821,9 @@ export default function DashboardPage({
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [detailOverlayActive, setDetailOverlayActive] = useState(false);
   const [driverSearch, setDriverSearch] = useState("");
+  const [rideSearch, setRideSearch] = useState("");
+  // A ride the board has not loaded, found by its full reference in the DB.
+  const [refLookup, setRefLookup] = useState<Ride | null>(null);
   // Company display convention for driver numbers (20260775). Formatting only —
   // the stored value is an int, so changing prefix/padding never renumbers.
   const [driverNumFormat, setDriverNumFormat] = useState({ prefix: "", pad: 0 });
@@ -4303,6 +4306,119 @@ export default function DashboardPage({
   const recentRides = rides
     .filter((r) => ["completed", "cancelled"].includes(r.status))
     .slice(0, 30);
+
+  // Ride-list search. Filters what the board already holds (its latest 150
+  // rides), so it costs nothing per keystroke. The one thing that reaches the
+  // database is a complete ride reference the board does not have — the case
+  // of a passenger calling about an older ride and reading it off a receipt.
+  const rideQuery = rideSearch.trim().toLowerCase();
+  const searchingRides = rideQuery.length > 0;
+  function rideMatches(r: Ride): boolean {
+    const ride = r as any;
+    const qDigits = rideQuery.replace(/\D/g, "");
+    const qRef = normalizeRideRef(rideQuery);
+    const phone = (ride.passenger?.phone ?? "").replace(/\D/g, "");
+    const car = (ride.car_number_at_assignment ?? "").toLowerCase();
+    return (ride.passenger?.name ?? "").toLowerCase().includes(rideQuery)
+      || (ride.pickup_address ?? "").toLowerCase().includes(rideQuery)
+      || (ride.dropoff_address ?? "").toLowerCase().includes(rideQuery)
+      || (ride.driver?.profile?.name ?? "").toLowerCase().includes(rideQuery)
+      || (!!car && car.includes(rideQuery))
+      // Digits only, so "902 555" finds "+1 902-555-…". Three digits minimum,
+      // or typing a car number would also match every phone containing it.
+      || (qDigits.length >= 3 && phone.includes(qDigits))
+      || (qRef.length >= 3 && (ride.ride_ref ?? "").includes(qRef));
+  }
+  const shownActiveRides = searchingRides ? activeRides.filter(rideMatches) : activeRides;
+  const shownScheduledRides = searchingRides ? scheduledRides.filter(rideMatches) : scheduledRides;
+  // While searching, every loaded finished ride is searched, not just the 30
+  // the list normally shows.
+  const shownRecentRides = searchingRides
+    ? rides.filter((r) => ["completed", "cancelled"].includes(r.status) && rideMatches(r))
+    : recentRides;
+
+  // Same alphabet as gen_short_ref() (no vowels), so a typed name never
+  // looks like a reference.
+  const refCandidate = normalizeRideRef(rideSearch);
+  const isFullRef = /^[0-9BCDFGHJKMNPQRSTVWXYZ]{6}$/.test(refCandidate);
+  // "On the board" means in one of the three lists, not merely loaded: a
+  // scheduled ride whose time has just passed is loaded but in none of them,
+  // and must still be reachable by its reference.
+  const listedRideIds = new Set(
+    [...activeRides, ...scheduledRides, ...rides.filter((r) => ["completed", "cancelled"].includes(r.status))]
+      .map((r) => r.id),
+  );
+  const refOnBoard = isFullRef && rides.some((r) => (r as any).ride_ref === refCandidate && listedRideIds.has(r.id));
+  useEffect(() => {
+    if (!isFullRef || refOnBoard) {
+      setRefLookup(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("rides")
+        .select("*")
+        .eq("company_id", profile.company_id)
+        .eq("ride_ref", refCandidate)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) console.error("[ride search]", error.message);
+      if (!data) {
+        setRefLookup(null);
+        return;
+      }
+      const profileMap = await batchProfiles([data.passenger_id, data.driver_id].filter(Boolean));
+      if (cancelled) return;
+      setRefLookup({
+        ...data,
+        passenger: profileMap.get(data.passenger_id) ?? null,
+        driver: data.driver_id ? { profile: profileMap.get(data.driver_id) ?? null } : null,
+      } as Ride);
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refCandidate, isFullRef, refOnBoard]);
+
+  // A finished ride's card (Recent), also used for a ride found by reference.
+  const renderPastRideCard = (ride: Ride) => (
+    <div
+      key={ride.id}
+      className="db-ride-card recent"
+      onClick={() => setRideDetail(ride)}
+    >
+      <div className="db-ride-card-top">
+        <span
+          className="db-status-badge"
+          style={statusDot(ride)}
+        >
+          {rideStatusLabel(ride)}
+        </span>
+        <span className="db-ride-time">
+          {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+        </span>
+      </div>
+      <div className="db-ride-name">
+        {(ride as any).passenger?.name ?? t("common.unknown")}
+      </div>
+      <div className="db-ride-route">
+        {ride.pickup_address} → {ride.dropoff_address}
+      </div>
+      <div className="db-ride-foot">
+        <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
+        <span className="db-ride-foot-fare">
+          {ride.fare_final
+            ? `$${ride.fare_final.toFixed(2)}`
+            : ride.fare_estimate
+              ? `$${ride.fare_estimate.toFixed(2)}`
+              : ""}
+        </span>
+      </div>
+    </div>
+  );
   // Away drivers stay in the assign lists on purpose, ranked down and labelled
   // (lib/driverRanking.ts). Dispatch would rather offer a ride to a driver whose
   // phone has gone quiet than tell a passenger nobody is available — a ride
@@ -4540,6 +4656,10 @@ export default function DashboardPage({
         .db-driver-search { width: 100%; box-sizing: border-box; margin-top: 8px; margin-bottom: 10px; background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; color: var(--c-text); font-size: 12px; padding: 6px 10px; outline: none; font-family: system-ui, sans-serif; transition: border-color 0.12s; }
         .db-driver-search::placeholder { color: var(--c-text-3); }
         .db-driver-search:focus { border-color: var(--c-brand); }
+        .db-ride-search-wrap { position: relative; margin-top: 10px; }
+        .db-ride-search { margin: 0; padding-right: 28px; }
+        .db-ride-search-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; border: none; border-radius: 6px; background: transparent; color: var(--c-text-2); font-size: 16px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .db-ride-search-clear:hover { background: var(--c-hover); color: var(--c-text); }
         .db-section-divider { margin: 10px 0 8px; border-top: 1px solid var(--c-border); padding-top: 10px; display: flex; justify-content: space-between; align-items: baseline; }
         .db-section-divider-title { font-size: 11px; font-weight: 600; color: var(--c-text-2); letter-spacing: 0.07em; text-transform: uppercase; padding: 0 2px; }
         .db-section-divider-count { font-size: 13px; font-weight: 700; padding-right: 2px; color: var(--c-text-2); }
@@ -5339,13 +5459,42 @@ export default function DashboardPage({
                 <>
                   <div className="db-panel-header">
                     <div className="db-panel-title">{t("dispatch.activeRides")}</div>
-                    <div className="db-panel-count">{activeRides.length}</div>
+                    <div className="db-panel-count">{shownActiveRides.length}</div>
+                    <div className="db-ride-search-wrap">
+                      <input
+                        className="db-driver-search db-ride-search"
+                        placeholder={t("dispatch.searchPlaceholder")}
+                        value={rideSearch}
+                        onChange={(e) => setRideSearch(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Escape") setRideSearch(""); }}
+                      />
+                      {searchingRides && (
+                        <button
+                          type="button"
+                          className="db-ride-search-clear"
+                          aria-label={t("dispatch.searchClear")}
+                          onClick={() => setRideSearch("")}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="db-panel-scroll">
-                    {activeRides.length === 0 && (
-                      <div className="db-empty">{t("dispatch.noActiveRides")}</div>
+                    {refLookup && (
+                      <>
+                        <div className="db-section-divider" style={{ marginTop: 0, borderTop: "none", paddingTop: 4 }}>
+                          <span className="db-section-divider-title">{t("dispatch.searchFoundByRef")}</span>
+                        </div>
+                        {renderPastRideCard(refLookup)}
+                      </>
                     )}
-                    {activeRides.map((ride) => (
+                    {shownActiveRides.length === 0 && (
+                      <div className="db-empty">
+                        {searchingRides ? t("dispatch.searchNoMatches") : t("dispatch.noActiveRides")}
+                      </div>
+                    )}
+                    {shownActiveRides.map((ride) => (
                       <div
                         key={ride.id}
                         className={`db-ride-card${selectedRide === ride.id ? " selected" : ""}`}
@@ -5444,7 +5593,7 @@ export default function DashboardPage({
                       </div>
                     ))}
 
-                    {scheduledRides.length > 0 && (
+                    {(scheduledRides.length > 0 || searchingRides) && (
                       <>
                         <div className="db-section-divider">
                           <span className="db-section-divider-title">
@@ -5453,10 +5602,12 @@ export default function DashboardPage({
                           <span
                             className="db-section-divider-count"
                           >
-                            {scheduledRides.length}
+                            {shownScheduledRides.length}
                           </span>
                         </div>
-                        {(() => {
+                        {/* The coverage bar summarises the whole schedule, so
+                            it is hidden while the list shows only matches. */}
+                        {!searchingRides && (() => {
                           const soon = scheduledRides.filter((r: any) =>
                             r.scheduled_at && (new Date(r.scheduled_at).getTime() - Date.now()) <= 24 * 60 * 60_000
                           );
@@ -5478,7 +5629,10 @@ export default function DashboardPage({
                             </div>
                           );
                         })()}
-                        {scheduledRides.map((ride) => (
+                        {searchingRides && shownScheduledRides.length === 0 && (
+                          <div className="db-empty">{t("dispatch.searchNoMatches")}</div>
+                        )}
+                        {shownScheduledRides.map((ride) => (
                           <ScheduledRideCard
                             key={ride.id}
                             ride={ride}
@@ -5494,44 +5648,13 @@ export default function DashboardPage({
                         className="db-section-divider-count"
                         style={{ color: "var(--c-text-2)" }}
                       >
-                        {recentRides.length}
+                        {shownRecentRides.length}
                       </span>
                     </div>
-                    {recentRides.map((ride) => (
-                      <div
-                        key={ride.id}
-                        className="db-ride-card recent"
-                        onClick={() => setRideDetail(ride)}
-                      >
-                        <div className="db-ride-card-top">
-                          <span
-                            className="db-status-badge"
-                            style={statusDot(ride)}
-                          >
-                            {rideStatusLabel(ride)}
-                          </span>
-                          <span className="db-ride-time">
-                            {fmtDateTime(ride.created_at, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                          </span>
-                        </div>
-                        <div className="db-ride-name">
-                          {(ride as any).passenger?.name ?? t("common.unknown")}
-                        </div>
-                        <div className="db-ride-route">
-                          {ride.pickup_address} → {ride.dropoff_address}
-                        </div>
-                        <div className="db-ride-foot">
-                          <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
-                          <span className="db-ride-foot-fare">
-                            {ride.fare_final
-                              ? `$${ride.fare_final.toFixed(2)}`
-                              : ride.fare_estimate
-                                ? `$${ride.fare_estimate.toFixed(2)}`
-                                : ""}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                    {searchingRides && shownRecentRides.length === 0 && (
+                      <div className="db-empty">{t("dispatch.searchNoMatches")}</div>
+                    )}
+                    {shownRecentRides.map(renderPastRideCard)}
                   </div>
                 </>
               )}
