@@ -178,6 +178,9 @@ export default function MessagesPage({ companyId, adminId, isActive, onUnreadCha
         .from("profiles")
         .select("id, name, avatar_url")
         .in("id", driverIds)
+        // A deleted driver keeps its drivers row but is anonymised (name NULL),
+        // so without this it lists as a nameless "Driver" nobody can reach.
+        .is("deleted_at", null)
         .order("name");
       const driverList: DriverRow[] = (profileRows ?? []).map((p: any) => ({
         id: p.id,
