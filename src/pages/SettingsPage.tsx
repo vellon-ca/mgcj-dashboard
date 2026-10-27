@@ -19,7 +19,6 @@ type Section =
   | "pricing"
   | "contact"
   | "vehicle_classes"
-  | "service_areas"
   | "numbering"
   | "payments"
   | "language"
@@ -115,7 +114,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         { id: "pricing", label: t("settings.sections.pricing") },
         { id: "contact", label: t("settings.sections.contact") },
         { id: "vehicle_classes", label: t("settings.sections.vehicleClasses") },
-        { id: "service_areas", label: t("settings.sections.serviceAreas") },
         { id: "numbering", label: t("settings.sections.numbering") },
         { id: "payments", label: t("settings.sections.payments") },
         { id: "language", label: t("language.title") },
@@ -678,17 +676,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
         .st-content::-webkit-scrollbar { width: 4px; }
         .st-content::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
 
-        /* Service Areas is a map section, not a form: it should fill the pane
-           down to the bottom padding rather than sit in a short box with the
-           page scrolling underneath it. Flex column here + flex:1 on .sa-root
-           is what gives the map a definite height to stretch into. overflow-y
-           stays auto so a short viewport still scrolls instead of clipping.
-           Only above the point where .sa-grid stops being two columns — below
-           it the map and the list stack and ordinary page scroll is right. */
-        @media (min-width: 901px) {
-          .st-content.st-content-fill { display: flex; flex-direction: column; }
-        }
-
         .st-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 16px; }
         .st-title { font-size: 18px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
         .st-subtitle { font-size: 13px; color: var(--c-text-2); line-height: 1.5; max-width: 480px; }
@@ -807,7 +794,7 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
           ))}
         </div>
 
-        <div className={`st-content${section === "service_areas" ? " st-content-fill" : ""}`}>
+        <div className="st-content">
           {section === "vehicle_classes" && (
             <>
               <div className="st-header">
@@ -1080,6 +1067,13 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
                 </div>
               )}
 
+              {/* Service areas sit under the fare formula since 2026-10-27:
+                  an area can now carry its own price (a fixed airport fare),
+                  so "what does a trip cost" is answered on one page. It is
+                  still also the boundary of where the company operates, which
+                  its own heading says. Saves per change, independently of the
+                  Save button above, which belongs to the fare formula. */}
+              <ServiceAreasSection companyId={companyId} layout="inline" />
             </>
           )}
 
@@ -1155,9 +1149,6 @@ export default function SettingsPage({ companyId, adminId, isAdmin }: Props) {
             </>
           )}
 
-          {section === "service_areas" && (
-            <ServiceAreasSection companyId={companyId} />
-          )}
 
           {section === "payments" && <CardPaymentsSection companyId={companyId} />}
 

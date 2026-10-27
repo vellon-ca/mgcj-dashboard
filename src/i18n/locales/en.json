@@ -1036,8 +1036,20 @@
     "pointsDrawn_one": "{{count}} point — double-click to close",
     "pointsDrawn_other": "{{count}} points — double-click to close",
     "reshapeHint": "Selected areas can be reshaped on the map — drag a vertex, or drag the circle's edge. Changes save as you go.",
-    "subtitle": "Where you pick up and where you'll drive to. Draw your town freehand, and add far destinations — the airport, the next city — by searching for them. Anywhere you haven't drawn is somewhere you don't serve.",
-    "yourCity": "Your city"
+    "subtitle": "Where you pick up, where you'll drive to, and what a trip there costs. Draw your town freehand, and add far destinations — the airport, the next city — by searching for them. Anywhere you haven't drawn is somewhere you don't serve.",
+    "yourCity": "Your city",
+    "priceLabel": "Price",
+    "priceStandard": "Standard fare",
+    "priceFlat": "Fixed price",
+    "pricePercent": "Adjust %",
+    "metaFlat": "Fixed ${{amount}}",
+    "metaPercent": "{{pct}}% fare",
+    "priceEnterValue": "Enter an amount to save.",
+    "priceInvalidFlat": "Enter a fixed price above $0.",
+    "priceInvalidPercent": "Enter a percentage between -99 and 300.",
+    "priceFlatHint": "Charged for any trip to or from this area, the same both ways. Vehicle class surcharges are added on top. A trip with both ends inside the area pays the standard fare.",
+    "pricePercentHint": "Trips to, from or within this area cost this much more. Use a minus sign for a discount.",
+    "priceStandardCompare": "The standard fare from {{city}} is about ${{amount}}."
   },
   "settings": {
     "addDispatcher": "Add dispatcher",

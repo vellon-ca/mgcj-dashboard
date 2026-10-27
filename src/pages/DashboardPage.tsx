@@ -50,6 +50,7 @@ import Icon from "../components/Icon";
 import { driverOptionLabel } from "../lib/driverPickerText";
 import { rankDrivers, type RankedDriver } from "../lib/driverRanking";
 import { mapsScriptUrl } from "../lib/googleMaps";
+import { priceTrip } from "../lib/priceTrip";
 import { useTheme } from "../theme/ThemeContext";
 import { mapStyle } from "../theme/tokens";
 import { fetchCompanyFrame, applyFrame, NEUTRAL_CENTER, NEUTRAL_ZOOM, type CompanyFrame } from "../lib/serviceAreaFraming";
@@ -497,26 +498,6 @@ interface Stats {
 }
 
 // Driver Detail Panel
-// Flat-rate fare formula, mirrored from the mobile app's booking estimate:
-// company base fare + company rate/km, plus the selected vehicle class's
-// surcharge on top. Dispatch-booked fares always round up to the nearest
-// dollar, regardless of payment method, so the estimate matches what will
-// actually be charged.
-function fareForDistance(
-  metres: number,
-  surchargePercent: number,
-  paymentMethod: string,
-  baseFare = 4,
-  ratePerKm = 1.8,
-): number {
-  const raw = (baseFare + (metres / 1000) * ratePerKm) * (1 + surchargePercent / 100);
-  // Cash rounds up to the whole dollar so nobody needs change; card doesn't.
-  // This used to ceil unconditionally with the payment argument unread, which
-  // made every card preview up to a dollar higher than what edit-ride and
-  // create-payment-intent actually charge.
-  return paymentMethod === "cash" ? Math.ceil(raw) : Math.round(raw * 100) / 100;
-}
-
 // compute_discount_for_booking's refusals, as translation keys. Shared by the
 // booking form's live discount line and its submit.
 const DISCOUNT_STATUS_KEYS: Record<string, string> = {
@@ -1869,13 +1850,6 @@ export default function DashboardPage({
     { kind: "ok"; text: string } | { kind: "refused"; text: string } | null
   >(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
-  const [companyBaseFare, setCompanyBaseFare] = useState<number | null>(null);
-  const [companyRatePerKm, setCompanyRatePerKm] = useState<number | null>(null);
-
-  function surchargeFor(vehicleClassId: string): number {
-    if (!vehicleClassId) return 0;
-    return vehicleClasses.find((vc) => vc.id === vehicleClassId)?.surcharge_percent ?? 0;
-  }
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
   const [bookLoading, setBookLoading] = useState(false);
@@ -2437,11 +2411,9 @@ export default function DashboardPage({
     if (!profile?.company_id) return;
     const { data } = await supabase
       .from("companies")
-      .select("base_fare, rate_per_km, driver_number_prefix, driver_number_pad")
+      .select("driver_number_prefix, driver_number_pad")
       .eq("id", profile.company_id)
       .maybeSingle();
-    setCompanyBaseFare(data?.base_fare ?? 4);
-    setCompanyRatePerKm(data?.rate_per_km ?? 1.8);
     setDriverNumFormat({
       prefix: data?.driver_number_prefix ?? "",
       pad: data?.driver_number_pad ?? 0,
@@ -3337,17 +3309,33 @@ export default function DashboardPage({
     // Manual bookings are always cash; round up to the nearest dollar so the
     // displayed estimate matches the fare that gets saved. Re-runs whenever
     // the distance or the selected vehicle class (and its surcharge) changes.
-    if (bookDistanceMetres == null) return;
-    setBookBaseFare(
-      fareForDistance(
-        bookDistanceMetres,
-        surchargeFor(bookVehicleClassId),
-        "cash",
-        companyBaseFare ?? 4,
-        companyRatePerKm ?? 1.8,
-      ),
-    );
-  }, [bookDistanceMetres, bookVehicleClassId, companyBaseFare, companyRatePerKm]);
+    // Priced by price_trip(), the server's own formula (lib/priceTrip.ts).
+    if (bookDistanceMetres == null || !bookPickupCoords || !bookDropoffCoords || !profile.company_id) return;
+    let cancelled = false;
+    setBookFareLoading(true);
+    // A class change re-prices without re-measuring, so the error from an
+    // earlier failed price has to be cleared here too, not only on new coords.
+    setBookFareError(false);
+    priceTrip({
+      companyId: profile.company_id,
+      pickup: bookPickupCoords,
+      dropoff: bookDropoffCoords,
+      metres: bookDistanceMetres,
+      vehicleClassId: bookVehicleClassId || null,
+      paymentMethod: "cash",
+    }).then((fare) => {
+      if (cancelled) return;
+      setBookFareLoading(false);
+      if (fare == null) {
+        setBookFareError(true);
+        return;
+      }
+      setBookBaseFare(fare);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookDistanceMetres, bookVehicleClassId, bookPickupCoords, bookDropoffCoords, profile.company_id]);
 
   useEffect(() => {
     // A recalculated trip price replaces whatever is in the box, as it always
@@ -3438,21 +3426,32 @@ export default function DashboardPage({
     // or explicitly picked a different vehicle class — but not on the
     // initial values populated from the ride when the edit form opens,
     // which would otherwise silently overwrite a manually-set fare.
-    if (editDistanceMetres == null) return;
+    if (editDistanceMetres == null || !editPickupCoords || !editDropoffCoords || !profile.company_id) return;
     if (!editAddressChanged && !editVehicleClassTouched) return;
-    setEditFare(
-      fareForDistance(
-        editDistanceMetres,
-        surchargeFor(editVehicleClassId),
-        editPayment,
-        companyBaseFare ?? 4,
-        companyRatePerKm ?? 1.8,
-      ).toFixed(2),
-    );
-    // This just overwrote whatever was in the box, so it is a preview again —
-    // not a dispatcher's chosen price.
-    setEditFareTouched(false);
-  }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment, companyBaseFare, companyRatePerKm]);
+    // Priced by price_trip(), the server's own formula (lib/priceTrip.ts). On
+    // a failure the box keeps what it had; edit-ride re-prices on save anyway.
+    let cancelled = false;
+    setEditFareLoading(true);
+    priceTrip({
+      companyId: profile.company_id,
+      pickup: editPickupCoords,
+      dropoff: editDropoffCoords,
+      metres: editDistanceMetres,
+      vehicleClassId: editVehicleClassId || null,
+      paymentMethod: editPayment,
+    }).then((fare) => {
+      if (cancelled) return;
+      setEditFareLoading(false);
+      if (fare == null) return;
+      setEditFare(fare.toFixed(2));
+      // This just overwrote whatever was in the box, so it is a preview again —
+      // not a dispatcher's chosen price.
+      setEditFareTouched(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editDistanceMetres, editAddressChanged, editVehicleClassTouched, editVehicleClassId, editPayment, editPickupCoords, editDropoffCoords, profile.company_id]);
 
   // One definition of "close the booking modal", shared by Cancel and Escape.
   // They were a copy of each other for about a minute, which is how a Cancel
@@ -3894,7 +3893,7 @@ export default function DashboardPage({
     setEditDropoff(ride.dropoff_address);
     setEditDropoffCoords({ lat: ride.dropoff_lat, lng: ride.dropoff_lng });
     // Pre-discount, deliberately. The auto-recalc effect below writes a
-    // pre-discount `fareForDistance` value into this same box, and edit-ride
+    // pre-discount `priceTrip` value into this same box, and edit-ride
     // treats `fare_override` as pre-discount and applies the discount itself.
     // Seeding it from the post-discount `fare_estimate` would make the field
     // mean two different things depending on whether an address was touched,
