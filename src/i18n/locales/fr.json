@@ -1036,8 +1036,20 @@
     "pointsDrawn_one": "{{count}} point — double-cliquez pour fermer",
     "pointsDrawn_other": "{{count}} points — double-cliquez pour fermer",
     "reshapeHint": "Les zones sélectionnées peuvent être remodelées sur la carte — déplacez un sommet, ou le bord du cercle. Les modifications sont enregistrées au fur et à mesure.",
-    "subtitle": "Où vous prenez des passagers et où vous acceptez de conduire. Dessinez votre ville à main levée, et ajoutez les destinations éloignées — l'aéroport, la ville voisine — en les recherchant. Tout ce que vous n'avez pas dessiné est un endroit que vous ne desservez pas.",
-    "yourCity": "Votre ville"
+    "subtitle": "Où vous prenez des clients, où vous les conduisez, et combien coûte une course là-bas. Tracez votre ville à main levée et ajoutez les destinations éloignées — l'aéroport, la ville voisine — en les recherchant. Tout endroit non tracé est un endroit que vous ne desservez pas.",
+    "yourCity": "Votre ville",
+    "priceLabel": "Prix",
+    "priceStandard": "Tarif standard",
+    "priceFlat": "Prix fixe",
+    "pricePercent": "Ajuster en %",
+    "metaFlat": "Fixe {{amount}} $",
+    "metaPercent": "Tarif {{pct}} %",
+    "priceEnterValue": "Entrez un montant pour enregistrer.",
+    "priceInvalidFlat": "Entrez un prix fixe supérieur à 0 $.",
+    "priceInvalidPercent": "Entrez un pourcentage entre -99 et 300.",
+    "priceFlatHint": "Facturé pour toute course vers ou depuis cette zone, le même dans les deux sens. Les suppléments de catégorie de véhicule s'ajoutent. Une course dont les deux extrémités sont dans la zone paie le tarif standard.",
+    "pricePercentHint": "Les courses vers, depuis ou dans cette zone coûtent ce pourcentage de plus. Utilisez un signe moins pour une réduction.",
+    "priceStandardCompare": "Le tarif standard depuis {{city}} est d'environ {{amount}} $."
   },
   "settings": {
     "addDispatcher": "Ajouter un répartiteur",

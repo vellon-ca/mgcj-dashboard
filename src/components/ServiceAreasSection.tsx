@@ -1,6 +1,13 @@
-// Settings -> Service Areas: where this company picks up and drops off.
+// Settings -> Pricing -> Service areas: where this company picks up and drops
+// off, and what a trip there costs.
 //
-// Design: mgcj-app/.claude/notes/service-areas-plan.md §5
+// Design: mgcj-app/.claude/notes/service-areas-plan.md §5, and §10 for pricing.
+// Since 2026-10-27 (Keswick asked for a fixed airport price) the section lives
+// at the bottom of Pricing rather than in its own tab, and every area carries a
+// price: the standard fare, a fixed price, or a percentage. What that does to a
+// fare is decided ONLY by price_trip() / trip_pricing_area() in the database;
+// this file never computes a fare. The one number it shows, the "standard fare
+// from your city" beside a fixed price, comes from price_trip too.
 //
 // Two drawing modes, and the second one is the point:
 //   • Polygon  — freehand, for the home territory.
@@ -36,7 +43,13 @@ import { Trans, useTranslation } from "react-i18next";
 
 interface Props {
   companyId: string;
+  // "fill": the section owns the page and the map stretches to the viewport
+  // (the old Service Areas tab). "inline": it sits under other settings (the
+  // bottom of Pricing), so the map and list take a fixed height instead.
+  layout?: "fill" | "inline";
 }
+
+type PricingMode = "inherit" | "flat" | "percent";
 
 type ShapeKind = "polygon" | "circle";
 
@@ -50,6 +63,9 @@ interface ServiceArea {
   center_lat: number | null;
   center_lng: number | null;
   radius_m: number | null;
+  pricing_mode: PricingMode;
+  flat_fare: number | null;
+  percent_adjust: number | null;
   area_geojson: {
     type: "MultiPolygon";
     coordinates: number[][][][]; // [polygon][ring][vertex][lng,lat]
@@ -138,7 +154,7 @@ function ringToEwkt(path: google.maps.LatLngLiteral[]): string {
 const toLiterals = (path: google.maps.LatLng[]): google.maps.LatLngLiteral[] =>
   path.map(p => ({ lat: p.lat(), lng: p.lng() }));
 
-export default function ServiceAreasSection({ companyId }: Props) {
+export default function ServiceAreasSection({ companyId, layout = "fill" }: Props) {
   const { t } = useTranslation();
   const { theme } = useTheme();
   // Read at map creation, which waits on Google's script.
@@ -189,7 +205,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
     const { data, error } = await supabase
       .from("service_areas_geo")
       .select(
-        "id, name, allows_pickup, allows_dropoff, active, shape_kind, center_lat, center_lng, radius_m, area_geojson",
+        "id, name, allows_pickup, allows_dropoff, active, shape_kind, center_lat, center_lng, radius_m, pricing_mode, flat_fare, percent_adjust, area_geojson",
       )
       .eq("company_id", companyId)
       .order("created_at", { ascending: true });
@@ -664,7 +680,7 @@ export default function ServiceAreasSection({ companyId }: Props) {
   const noDropoffArea = activeAreas.length > 0 && !activeAreas.some(a => a.allows_dropoff);
 
   return (
-    <div className="sa-root">
+    <div className={`sa-root${layout === "inline" ? " sa-inline" : ""}`}>
       <style>{`
         .sa-map { width: 100%; height: 420px; border-radius: 12px; overflow: hidden; border: 1px solid var(--c-border); background: var(--c-bg); }
         .sa-city { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
@@ -702,13 +718,28 @@ export default function ServiceAreasSection({ companyId }: Props) {
            min-height:0 on every link in the chain, or flex children refuse to
            shrink below their content and the whole column overflows instead. */
         @media (min-width: 901px) {
-          .sa-root { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-          .sa-grid { flex: 1; min-height: 0; align-items: stretch; }
-          .sa-map { height: 100%; min-height: 320px; }
+          .sa-root:not(.sa-inline) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+          .sa-root:not(.sa-inline) .sa-grid { flex: 1; min-height: 0; align-items: stretch; }
+          .sa-root:not(.sa-inline) .sa-map { height: 100%; min-height: 320px; }
           .sa-list { overflow-y: auto; min-height: 0; padding-right: 4px; }
           .sa-list::-webkit-scrollbar { width: 4px; }
           .sa-list::-webkit-scrollbar-thumb { background: var(--c-hover-strong); border-radius: 2px; }
+          /* Inline (bottom of Pricing): a fixed band, the list scrolling inside
+             it, so the page scrolls normally around it. */
+          .sa-inline .sa-grid { align-items: stretch; }
+          .sa-inline .sa-map { height: 520px; }
+          .sa-inline .sa-list { max-height: 520px; }
         }
+        .sa-inline { margin-top: 28px; }
+        .sa-price { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-border-subtle); }
+        .sa-price-row { display: flex; gap: 6px; align-items: center; }
+        .sa-price-label { font-size: 12px; color: var(--c-text-2); font-weight: 600; margin-right: auto; }
+        .sa-select { height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 12px; font-family: system-ui, sans-serif; }
+        .sa-amount { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+        .sa-amount input { width: 90px; height: 28px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--c-border); background: var(--c-input); color: var(--c-text); font-size: 12px; font-family: system-ui, sans-serif; }
+        .sa-amount span { font-size: 12px; color: var(--c-text-2); }
+        .sa-hint { font-size: 11px; color: var(--c-text-2); margin-top: 6px; line-height: 1.45; }
+        .sa-hint.err { color: var(--c-red); }
       `}</style>
 
       <div className="st-header">
@@ -844,6 +875,10 @@ export default function ServiceAreasSection({ companyId }: Props) {
                       km: (Number(a.radius_m ?? 0) / 1000).toFixed(1),
                     })
                   : t("serviceAreas.drawnArea")}
+                {a.pricing_mode === "flat" && a.flat_fare != null &&
+                  ` · ${t("serviceAreas.metaFlat", { amount: Number(a.flat_fare).toFixed(2) })}`}
+                {a.pricing_mode === "percent" && a.percent_adjust != null &&
+                  ` · ${t("serviceAreas.metaPercent", { pct: signedPct(Number(a.percent_adjust)) })}`}
                 {!a.active && ` · ${t("common.inactiveLower")}`}
               </div>
 
@@ -872,6 +907,15 @@ export default function ServiceAreasSection({ companyId }: Props) {
                 {t("common.active")}
               </label>
 
+              <AreaPrice
+                key={`${a.pricing_mode}:${a.flat_fare}:${a.percent_adjust}`}
+                area={a}
+                companyId={companyId}
+                city={city}
+                expanded={a.id === selectedId}
+                onSave={fields => patch(a.id, fields)}
+              />
+
               <button
                 className="sa-del"
                 onClick={e => { e.stopPropagation(); removeArea(a.id); }}
@@ -887,6 +931,186 @@ export default function ServiceAreasSection({ companyId }: Props) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Per-area price (plan §10) ─────────────────────────────────────────────
+
+function signedPct(n: number): string {
+  return `${n > 0 ? "+" : ""}${n}`;
+}
+
+/** Roughly the middle of an area: a circle's centre, or the middle of a drawn
+ *  area's bounding box. Only used to show a comparison fare. */
+function areaMiddle(a: ServiceArea): google.maps.LatLngLiteral | null {
+  if (a.shape_kind === "circle" && a.center_lat != null && a.center_lng != null) {
+    return { lat: a.center_lat, lng: a.center_lng };
+  }
+  const pts = geoJsonToPaths(a.area_geojson).flat();
+  if (!pts.length) return null;
+  const lats = pts.map(p => p.lat), lngs = pts.map(p => p.lng);
+  return {
+    lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+    lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+  };
+}
+
+// The standard fare from the company's city to an area, as a sanity check
+// beside a fixed price (a $15 airport fare typed for $150 should look wrong).
+// Priced by price_trip, never by a formula here, with the CITY passed as both
+// ends so no area applies: that is the plain company formula over the real
+// drive. One Distance Matrix element per area per page load, and only for the
+// selected card.
+const standardFareCache = new Map<string, number | null>();
+
+async function standardFareFrom(
+  companyId: string, city: CompanyCity, to: google.maps.LatLngLiteral,
+): Promise<number | null> {
+  const key = `${city.service_city_lat},${city.service_city_lng}>${to.lat},${to.lng}`;
+  if (standardFareCache.has(key)) return standardFareCache.get(key)!;
+  const from = { lat: city.service_city_lat!, lng: city.service_city_lng! };
+  const metres = await new Promise<number | null>(resolve => {
+    new google.maps.DistanceMatrixService().getDistanceMatrix(
+      { origins: [from], destinations: [to], travelMode: google.maps.TravelMode.DRIVING },
+      (res, status) => {
+        const el = res?.rows[0]?.elements[0];
+        resolve(status === "OK" && el?.status === "OK" ? el.distance.value : null);
+      },
+    );
+  });
+  let fare: number | null = null;
+  if (metres != null) {
+    const { data, error } = await supabase.rpc("price_trip", {
+      p_company_id: companyId,
+      p_pickup_lat: from.lat, p_pickup_lng: from.lng,
+      p_dropoff_lat: from.lat, p_dropoff_lng: from.lng,
+      p_metres: metres,
+    });
+    if (!error && data) fare = Number((data as { unclassed_fare: number }).unclassed_fare);
+  }
+  standardFareCache.set(key, fare);
+  return fare;
+}
+
+function AreaPrice({
+  area, companyId, city, expanded, onSave,
+}: {
+  area: ServiceArea;
+  companyId: string;
+  city: CompanyCity | null;
+  expanded: boolean;
+  onSave: (fields: Record<string, unknown>) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const saved = area.pricing_mode;
+  const savedValue =
+    saved === "flat" ? area.flat_fare : saved === "percent" ? area.percent_adjust : null;
+
+  // The mode and amount are written together or not at all: the database
+  // refuses a fixed price with no amount. So choosing "Fixed price" only
+  // changes this draft; the row changes when a valid amount is entered.
+  const [mode, setMode] = useState<PricingMode>(saved);
+  const [value, setValue] = useState(savedValue != null ? String(savedValue) : "");
+  const [invalid, setInvalid] = useState(false);
+  const [standard, setStandard] = useState<number | null>(null);
+
+  // No effect syncing the draft back to the saved row: the parent keys this
+  // component on the saved price, so a save (or someone else's) remounts it.
+
+  const showCompare = expanded && mode === "flat" && city?.service_city_lat != null && city.service_city_lng != null;
+  const middle = areaMiddle(area);
+  const middleKey = middle ? `${middle.lat},${middle.lng}` : null;
+  useEffect(() => {
+    if (!showCompare || !middleKey || !city || !(window as { google?: unknown }).google) return;
+    const [lat, lng] = middleKey.split(",").map(Number);
+    let cancelled = false;
+    standardFareFrom(companyId, city, { lat, lng }).then(f => { if (!cancelled) setStandard(f); });
+    return () => { cancelled = true; };
+  }, [showCompare, middleKey, companyId, city]);
+
+  async function commit(nextMode: PricingMode, raw: string) {
+    if (nextMode === "inherit") {
+      if (saved !== "inherit") {
+        await onSave({ pricing_mode: "inherit", flat_fare: null, percent_adjust: null });
+      }
+      return;
+    }
+    if (raw.trim() === "") { setInvalid(false); return; }   // still choosing
+    const n = Number(raw);
+    const ok = nextMode === "flat"
+      ? Number.isFinite(n) && n > 0
+      : Number.isFinite(n) && n > -100 && n <= 300;
+    setInvalid(!ok);
+    if (!ok) return;
+    const rounded = Math.round(n * 100) / 100;
+    if (nextMode === saved && rounded === Number(savedValue)) return;
+    await onSave(nextMode === "flat"
+      ? { pricing_mode: "flat", flat_fare: rounded, percent_adjust: null }
+      : { pricing_mode: "percent", percent_adjust: rounded, flat_fare: null });
+  }
+
+  return (
+    <div className="sa-price" onClick={e => e.stopPropagation()}>
+      <div className="sa-price-row">
+        <span className="sa-price-label">{t("serviceAreas.priceLabel")}</span>
+        <select
+          className="sa-select"
+          value={mode}
+          onChange={e => {
+            const next = e.target.value as PricingMode;
+            setMode(next);
+            setValue(next === saved && savedValue != null ? String(savedValue) : "");
+            setInvalid(false);
+            if (next === "inherit") commit("inherit", "");
+          }}
+        >
+          <option value="inherit">{t("serviceAreas.priceStandard")}</option>
+          <option value="flat">{t("serviceAreas.priceFlat")}</option>
+          <option value="percent">{t("serviceAreas.pricePercent")}</option>
+        </select>
+      </div>
+
+      {mode !== "inherit" && (
+        <>
+          <div className="sa-amount">
+            {mode === "flat" && <span>$</span>}
+            <input
+              type="number"
+              step="any"
+              min={mode === "flat" ? "0" : "-99"}
+              max={mode === "percent" ? "300" : undefined}
+              value={value}
+              placeholder={mode === "flat" ? "0.00" : "0"}
+              onChange={e => { setValue(e.target.value); setInvalid(false); }}
+              onBlur={() => commit(mode, value)}
+              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            />
+            {mode === "percent" && <span>%</span>}
+          </div>
+          {invalid && (
+            <div className="sa-hint err">
+              {mode === "flat" ? t("serviceAreas.priceInvalidFlat") : t("serviceAreas.priceInvalidPercent")}
+            </div>
+          )}
+          {!invalid && mode !== saved && (
+            <div className="sa-hint">{t("serviceAreas.priceEnterValue")}</div>
+          )}
+          {expanded && (
+            <div className="sa-hint">
+              {mode === "flat" ? t("serviceAreas.priceFlatHint") : t("serviceAreas.pricePercentHint")}
+            </div>
+          )}
+          {showCompare && standard != null && (
+            <div className="sa-hint">
+              {t("serviceAreas.priceStandardCompare", {
+                city: city!.service_city ?? "",
+                amount: standard.toFixed(2),
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
