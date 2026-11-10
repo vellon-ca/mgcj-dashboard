@@ -1,28 +1,4 @@
 {
-  "redirects": [
-    {
-      "source": "/",
-      "has": [
-        {
-          "type": "host",
-          "value": "vellon-dispatch.vercel.app"
-        }
-      ],
-      "destination": "https://dispatch.vellon.ca/",
-      "permanent": true
-    },
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "vellon-dispatch.vercel.app"
-        }
-      ],
-      "destination": "https://dispatch.vellon.ca/:path*",
-      "permanent": true
-    }
-  ],
   "rewrites": [
     {
       "source": "/((?!_vercel/).*)",
