@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^2.0.2",
+    "@stripe/connect-js": "3.5.0",
+    "@stripe/react-connect-js": "3.5.0",
     "@supabase/supabase-js": "^2.105.3",
     "@vercel/analytics": "^2.0.1",
     "i18next": "^26.4.2",
