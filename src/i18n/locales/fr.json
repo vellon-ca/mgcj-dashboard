@@ -1058,9 +1058,7 @@
     "baseFareHint": "Montant fixe au début de chaque course",
     "carNumbersNext": "Numéros de voiture · prochain :",
     "card": {
-      "subtitle": "Les courses payées par carte sont versées directement dans votre propre compte Stripe. Remplissez le formulaire de Stripe une fois; vous n'aurez plus à ouvrir Stripe ensuite.",
-      "continue": "Continuer la configuration",
-      "update": "Mettre à jour",
+      "subtitle": "Les courses payées par carte sont versées directement dans votre propre compte Stripe. Tout se gère ici, sans avoir à ouvrir Stripe.",
       "opening": "Ouverture…",
       "retry": "Réessayer",
       "notCreatedTitle": "Pas encore configuré",
@@ -1083,8 +1081,18 @@
         "wait": "En examen",
         "todo": "Renseignements requis"
       },
-      "outstanding": "Stripe a encore besoin de",
-      "formNote": "Le formulaire s'ouvre sur Stripe et vous ramène ici une fois terminé."
+      "setupTitle": "Terminer la configuration",
+      "setupHint": "Stripe a besoin de quelques renseignements avant que les passagers puissent payer par carte et avant de pouvoir vous payer.",
+      "formFallback": "Le formulaire ne s'affiche pas?",
+      "openStripeForm": "L'ouvrir plutôt sur Stripe",
+      "businessTitle": "Entreprise et compte bancaire",
+      "businessHint": "Les renseignements sur votre entreprise et le compte bancaire où Stripe vous paie. Stripe vous demande de vous connecter une fois sur cet ordinateur avant de pouvoir les modifier. Le nom qui figure sur le relevé de carte des passagers se trouve ici aussi : utilisez le nom sous lequel ils vous connaissent, sinon ils risquent de contester le paiement.",
+      "balanceTitle": "Solde et calendrier des virements",
+      "balanceHint": "Choisissez des virements quotidiens, hebdomadaires, mensuels ou manuels. Avec les virements manuels, l'argent reste dans votre solde Stripe jusqu'à ce que vous demandiez vous-même un virement.",
+      "payoutsTitle": "Virements à votre banque",
+      "paymentsTitle": "Paiements par carte",
+      "paymentsHint": "Toutes les courses payées par carte et les contestations. Pour rembourser une course, ouvrez la course : le passager en est avisé.",
+      "documentsTitle": "Documents"
     },
     "companyReports": "Signalements de l'entreprise",
     "contactSubtitle": "Comment les passagers et les chauffeurs <s>vous</s> joignent depuis les applis — et non comment vous joignez Vellon, ce qui se trouve sous Assistance",
