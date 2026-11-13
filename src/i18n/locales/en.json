@@ -800,9 +800,11 @@
     "waited_other": "{{arrived}} → {{filed}} ({{count}} min at pickup)"
   },
   "receipt": {
+    "bookingFee": "Booking fee",
     "company": "Company",
     "date": "Date",
     "discount": "Discount",
+    "fare": "Fare",
     "fallbackCompany": "Your Taxi",
     "hst": "HST (15%)",
     "internalSettlement": "Internal — settlement (not shown to passenger)",

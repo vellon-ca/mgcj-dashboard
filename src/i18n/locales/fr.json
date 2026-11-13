@@ -800,9 +800,11 @@
     "waited_other": "{{arrived}} → {{filed}} ({{count}} min au point de départ)"
   },
   "receipt": {
+    "bookingFee": "Frais de réservation",
     "company": "Entreprise",
     "date": "Date",
     "discount": "Rabais",
+    "fare": "Tarif",
     "fallbackCompany": "Votre taxi",
     "hst": "TVH (15 %)",
     "internalSettlement": "Interne — règlement (non visible par le passager)",
