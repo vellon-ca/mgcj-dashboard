@@ -182,7 +182,11 @@
     "totalRides": "Total des courses",
     "viaStripe": "Traité via Stripe",
     "vsFleetAvg": "{{pct}} % vs moyenne de la flotte",
-    "withRidesThisPeriod": "avec des courses cette période"
+    "withRidesThisPeriod": "avec des courses cette période",
+    "howPaid": "Mode de paiement des courses",
+    "accountRides": "Courses sur compte",
+    "billedToBusinesses": "Facturé aux entreprises, payé sur leurs relevés",
+    "accountColumnNote": "Compte : tarifs des courses sur compte effectuées par le chauffeur. Il n'a rien encaissé; c'est ce que vous lui devez en plus des versements par carte."
   },
   "announcements": {
     "new": "Nouvelle annonce",
@@ -1304,7 +1308,14 @@
     "whatPassengersPaid": "ce que les passagers ont payé",
     "whereCardWent": "Où est allé l'argent des cartes",
     "whereEachDollar": "Où va chaque dollar de tarif",
-    "yourCashNet": "Votre argent, net des frais"
+    "yourCashNet": "Votre argent, net des frais",
+    "accountRides": "Courses sur compte",
+    "accountScope": "Courses facturées aux comptes d'entreprise. Les chauffeurs n'ont rien encaissé; les entreprises vous paient sur leurs relevés mensuels.",
+    "billedToBusinesses": "Facturé aux entreprises",
+    "faresPlusBookingFees": "tarifs {{fares}} $ + frais de réservation {{fees}} $",
+    "vellonFeeOnAccount": "Frais Vellon",
+    "owedToVellon": "Dû à Vellon",
+    "owedToVellonSub": "Frais Vellon et taxes, plus frais de réservation de {{fees}} $ (entièrement à Vellon : aucun argent comptant échangé) · facturé mensuellement"
   },
   "settlementHint": {
     "platformInvoiced": "Aucun compte Connect du chauffeur ou de l'entreprise n'était disponible au prélèvement — les fonds sont sur le solde de Vellon. Coordonnez avec Vellon pour récupérer ce montant, puis payez le chauffeur directement.",

@@ -182,7 +182,11 @@
     "totalRides": "Total rides",
     "viaStripe": "Processed via Stripe",
     "vsFleetAvg": "{{pct}}% vs fleet avg",
-    "withRidesThisPeriod": "with rides this period"
+    "withRidesThisPeriod": "with rides this period",
+    "howPaid": "How rides were paid",
+    "accountRides": "Account rides",
+    "billedToBusinesses": "Billed to businesses, paid on their statements",
+    "accountColumnNote": "Account: fares on account rides the driver drove. They collected nothing, so this is what you owe them on top of card payouts."
   },
   "announcements": {
     "new": "New announcement",
@@ -1304,7 +1308,14 @@
     "whatPassengersPaid": "what passengers paid",
     "whereCardWent": "Where card money went",
     "whereEachDollar": "Where each fare dollar goes",
-    "yourCashNet": "Your cash, net of fee"
+    "yourCashNet": "Your cash, net of fee",
+    "accountRides": "Account rides",
+    "accountScope": "Rides billed to business accounts. Drivers collected nothing; the businesses pay you on their monthly statements.",
+    "billedToBusinesses": "Billed to businesses",
+    "faresPlusBookingFees": "fares ${{fares}} + booking fees ${{fees}}",
+    "vellonFeeOnAccount": "Vellon fee",
+    "owedToVellon": "Owed to Vellon",
+    "owedToVellonSub": "Vellon's fee and tax, plus booking fees ${{fees}} (all Vellon's: no cash changed hands) · invoiced monthly"
   },
   "settlementHint": {
     "platformInvoiced": "No driver/company Connect account was available at capture — funds are sitting on Vellon's balance. Coordinate with Vellon to collect this amount, then pay the driver directly.",
