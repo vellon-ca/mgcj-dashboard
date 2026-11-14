@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { segment, navigate, VIEW_PATHS, type View } from "../lib/viewPath";
 import { supabase } from "../lib/supabase";
 import { driverPresence, isRideSilent, lastSeenLabel } from "../lib/presence";
+import { passengerTotal, passengerTotalText } from "../lib/passengerTotal";
 import { invokeFunction } from "../lib/invokeFunction";
 import { logDispatchEvent } from "../lib/logDispatchEvent";
 import { formatDriverNumber, formatRideRef, normalizeRideRef } from "../lib/numbering";
@@ -617,7 +618,7 @@ function DriverDetailPanel({
       supabase
         .from("rides")
         .select(
-          "id, status, cancelled_reason, pickup_address, dropoff_address, fare_final, fare_estimate, created_at, passenger_id",
+          "id, status, cancelled_reason, pickup_address, dropoff_address, fare_final, fare_estimate, booking_fee, payment_method, created_at, passenger_id",
         )
         .eq("driver_id", driver.id)
         .order("created_at", { ascending: false })
@@ -1191,11 +1192,7 @@ function DriverDetailPanel({
                 </div>
               </div>
               <div className="dd-ride-fare">
-                {ride.fare_final
-                  ? `$${ride.fare_final.toFixed(2)}`
-                  : ride.fare_estimate
-                    ? `$${ride.fare_estimate.toFixed(2)}`
-                    : "—"}
+                {passengerTotalText(ride)}
               </div>
             </div>
           ))
@@ -1388,8 +1385,8 @@ function ScheduledRideCard({
             t("rideDetail.unassigned")
           )}
         </span>
-        {ride.fare_estimate && (
-          <span className="db-ride-foot-fare">${ride.fare_estimate.toFixed(2)}</span>
+        {passengerTotal(ride) != null && (
+          <span className="db-ride-foot-fare">{passengerTotalText(ride)}</span>
         )}
       </div>
       {ride.driver_id && !ride.confirmed_by_driver && (
@@ -1849,6 +1846,15 @@ export default function DashboardPage({
   const [bookDiscountLine, setBookDiscountLine] = useState<
     { kind: "ok"; text: string } | { kind: "refused"; text: string } | null
   >(null);
+  // "Change price" (mgcj-app booking-fee-design.md): the server's price is the
+  // default and is not editable; a different one is an explicit exception with
+  // a required reason, recorded on the ride by edit-ride and logged.
+  const [bookCustom, setBookCustom] = useState(false);
+  const [bookCustomReason, setBookCustomReason] = useState("");
+  // The fare after any discount, the booking fee on it, and what the passenger
+  // pays in cash (fare + fee, rounded up). Quoted by booking_quote_many(), the
+  // server's own formula.
+  const [bookQuote, setBookQuote] = useState<{ fare: number; fee: number; pays: number } | null>(null);
   const [vehicleClasses, setVehicleClasses] = useState<VehicleClassOption[]>([]);
   const [bookDriver, setBookDriver] = useState("");
   const [bookScheduled, setBookScheduled] = useState("");
@@ -1897,6 +1903,10 @@ export default function DashboardPage({
   // Whether the dispatcher typed the fare themselves. Only a typed fare is sent
   // as an override; otherwise the box is a preview and the server prices.
   const [editFareTouched, setEditFareTouched] = useState(false);
+  // A typed fare is a custom price (booking-fee-design.md): it needs a reason,
+  // which edit-ride records with who set it and the usual fare.
+  const [editCustomReason, setEditCustomReason] = useState("");
+  const [editUsualFare, setEditUsualFare] = useState<number | null>(null);
   const [editVehicleClassId, setEditVehicleClassId] = useState("");
   const [editWheelchair, setEditWheelchair] = useState(false);
   const [editVehicleClassTouched, setEditVehicleClassTouched] = useState(false);
@@ -3322,7 +3332,8 @@ export default function DashboardPage({
       dropoff: bookDropoffCoords,
       metres: bookDistanceMetres,
       vehicleClassId: bookVehicleClassId || null,
-      paymentMethod: "cash",
+      // Unrounded: cash is rounded once, on fare + booking fee (bookQuote).
+      paymentMethod: "card",
     }).then((fare) => {
       if (cancelled) return;
       setBookFareLoading(false);
@@ -3345,13 +3356,16 @@ export default function DashboardPage({
   }, [bookBaseFare]);
 
   useEffect(() => {
-    // What the passenger will pay: the same call submit makes, on the box's
-    // value, for this passenger (their student discount, their own limits on
-    // the code). A saved app offer never applies to a dispatch booking
-    // (20261025010000); the dispatcher picks the code.
+    // What the passenger will pay: the same discount call submit makes, on the
+    // fare that will be booked (the usual price, or the custom one), for this
+    // passenger (their student discount, their own limits on the code). A
+    // saved app offer never applies to a dispatch booking (20261025010000);
+    // the dispatcher picks the code. Then the booking fee on the result, so
+    // dispatch quotes the caller the full price.
     setBookDiscountLine(null);
-    const fare = parseFloat(bookFare);
-    if (!profile.company_id || !Number.isFinite(fare) || fare <= 0) return;
+    setBookQuote(null);
+    const fare = bookCustom ? parseFloat(bookFare) : (bookBaseFare ?? NaN);
+    if (!profile.company_id || !bookPickupCoords || !Number.isFinite(fare) || fare <= 0) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const { data, error } = await supabase
@@ -3364,20 +3378,30 @@ export default function DashboardPage({
           p_code: bookDiscountCode.trim() || null,
         })
         .maybeSingle();
-      if (cancelled || error || !data) return;
-      const d = data as { discounted_fare: number; discount_amount: number; discount_type: string | null; code_status: string };
-      if (bookDiscountCode.trim() && d.code_status !== "ok") {
+      if (cancelled) return;
+      const d = error ? null : (data as { discounted_fare: number; discount_amount: number; discount_type: string | null; code_status: string } | null);
+      if (d && bookDiscountCode.trim() && d.code_status !== "ok") {
         setBookDiscountLine({ kind: "refused", text: t(DISCOUNT_STATUS_KEYS[d.code_status] ?? "booking.discountFailed") });
         return;
       }
-      if (!(Number(d.discount_amount) > 0)) return;
+      const discounted = d ? Number(d.discounted_fare) : fare;
+      const { data: q } = await supabase.rpc("booking_quote_many", {
+        p_company_id: profile.company_id,
+        p_fares: [discounted],
+        p_pickup_lat: bookPickupCoords.lat,
+        p_pickup_lng: bookPickupCoords.lng,
+      });
+      if (cancelled) return;
+      const quote = Array.isArray(q) ? (q[0] as { booking_fee: number; cash_total: number } | null) : null;
+      const pays = quote ? Number(quote.cash_total) : Math.ceil(discounted);
+      setBookQuote({ fare: discounted, fee: quote ? Number(quote.booking_fee) : 0, pays });
+      if (!d || !(Number(d.discount_amount) > 0)) return;
       setBookDiscountLine({
         kind: "ok",
         text: t("booking.discountLine", {
           what: d.discount_type === "student" ? t("booking.studentDiscount") : bookDiscountCode.trim(),
           amount: Number(d.discount_amount).toFixed(2),
-          // Cash rounds up to the dollar, exactly as submit does.
-          pays: Math.ceil(Number(d.discounted_fare)).toFixed(2),
+          pays: pays.toFixed(2),
         }),
       });
     }, 300);
@@ -3385,7 +3409,7 @@ export default function DashboardPage({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [bookFare, bookDiscountCode, bookPassengerId, profile.company_id, t]);
+  }, [bookFare, bookBaseFare, bookCustom, bookDiscountCode, bookPassengerId, bookPickupCoords, profile.company_id, t]);
 
   useEffect(() => {
     // Fetches the distance for the current pickup/dropoff unconditionally
@@ -3527,6 +3551,26 @@ export default function DashboardPage({
         if (!confirm(t("dispatch.confirmMismatch", { reason }))) return;
       }
     }
+    if (bookCustom) {
+      const custom = parseFloat(bookFare);
+      if (!Number.isFinite(custom) || custom <= 0) {
+        setBookError(t("booking.customFareRequired"));
+        return;
+      }
+      if (!bookCustomReason.trim()) {
+        setBookError(t("booking.customReasonRequired"));
+        return;
+      }
+      // A missing decimal point, not a quote: ask once when the custom fare is
+      // more than 50% away from the usual one.
+      if (bookBaseFare != null && Math.abs(custom - bookBaseFare) / bookBaseFare > 0.5 &&
+          !confirm(t("booking.customConfirm", { usual: bookBaseFare.toFixed(2), custom: custom.toFixed(2) }))) {
+        return;
+      }
+    } else if (bookBaseFare == null) {
+      setBookError(t("booking.noPrice"));
+      return;
+    }
     setBookLoading(true);
     setBookError(null);
     try {
@@ -3614,9 +3658,9 @@ export default function DashboardPage({
         }
         passengerProfile = { id: guestResult.id, name: guestResult.name };
       }
-      // The box is the pre-discount fare (auto or typed); the discount is
-      // applied here, once.
-      const baseFare = parseFloat(bookFare) || null;
+      // The pre-discount fare: the server's usual price, or the custom one.
+      // The discount is applied here, once.
+      const baseFare = bookCustom ? parseFloat(bookFare) || null : bookBaseFare;
       let finalFare = baseFare;
       let preDiscountFare: number | null = null;
       let discountAmount: number | null = null;
@@ -3659,9 +3703,11 @@ export default function DashboardPage({
         }
       }
 
-      // Manual bookings are always cash; round up to the nearest dollar so
-      // the fare doesn't require exact change.
-      if (finalFare != null) {
+      // Manual bookings are always cash. With a booking fee, cash is rounded
+      // once, on fare + fee, and the round-up is part of the fee; without one
+      // the fare is rounded up, as before. The server prices a cash ride again
+      // at completion either way (a custom price excepted); this is the quote.
+      if (finalFare != null && !(bookQuote && bookQuote.fee > 0)) {
         finalFare = Math.ceil(finalFare);
       }
 
@@ -3721,6 +3767,22 @@ export default function DashboardPage({
           alert(t("booking.errDriverNotNotified"));
         }
       }
+      // A custom price is recorded by edit-ride (who, why, the usual fare),
+      // which a client write cannot do: the custom-price columns are
+      // server-owned. Interim, until the new-ride form is redesigned: the ride
+      // is created at the usual price and re-priced straight after.
+      if (bookCustom && inserted && baseFare != null) {
+        const { error: customError } = await invokeFunction("edit-ride", {
+          ride_id: inserted.id,
+          action: "relocate",
+          fare_override: baseFare,
+          fare_custom_reason: bookCustomReason.trim(),
+        });
+        if (customError) {
+          console.error("[booking] custom price", customError);
+          alert(t("booking.customNotSaved"));
+        }
+      }
       logDispatchEvent({
         companyId: profile.company_id!,
         dispatcherId: profile.id,
@@ -3743,6 +3805,9 @@ export default function DashboardPage({
       setBookDropoffCoords(null);
       setBookFare("");
       setBookFareError(false);
+      setBookCustom(false);
+      setBookCustomReason("");
+      setBookQuote(null);
       setBookPassengerRegistered(false);
       setBookDiscountCode("");
       setBookVehicleClassId("");
@@ -3900,6 +3965,8 @@ export default function DashboardPage({
     // and would subtract the discount a second time on save.
     const prefillFare = ride.pre_discount_fare ?? ride.fare_estimate;
     setEditFare(prefillFare != null ? String(prefillFare) : "");
+    setEditUsualFare(prefillFare != null ? Number(prefillFare) : null);
+    setEditCustomReason("");
     setEditPayment(ride.payment_method);
     setEditVehicleClassId(ride.vehicle_class_id ?? "");
     setEditVehicleClassTouched(false);
@@ -3977,6 +4044,19 @@ export default function DashboardPage({
     // figure and the server charges driven + remaining.
     const fareOverride =
       editFareTouched && editFare !== "" ? parseFloat(editFare) : null;
+    if (fareOverride != null && !confirmConflict) {
+      if (!editCustomReason.trim()) {
+        setEditError(t("booking.customReasonRequired"));
+        return;
+      }
+      // Same typo check as the booking form: ask once when the typed fare is
+      // more than 50% away from the fare the ride had.
+      if (editUsualFare != null && editUsualFare > 0 &&
+          Math.abs(fareOverride - editUsualFare) / editUsualFare > 0.5 &&
+          !window.confirm(t("booking.customConfirm", { usual: editUsualFare.toFixed(2), custom: fareOverride.toFixed(2) }))) {
+        return;
+      }
+    }
 
     if (
       !pickupMoved && !dropoffMoved && !scheduledMoved &&
@@ -3998,7 +4078,10 @@ export default function DashboardPage({
       if (scheduledMoved) body.scheduled_at = newScheduledISO;
       if (classMoved) body.vehicle_class_id = editVehicleClassId || null;
       if (accessMoved) body.requires_wheelchair = editWheelchair;
-      if (fareOverride != null) body.fare_override = fareOverride;
+      if (fareOverride != null) {
+        body.fare_override = fareOverride;
+        body.fare_custom_reason = editCustomReason.trim();
+      }
       if (confirmConflict) body.confirm_conflict = true;
 
       const { data, error } = await invokeFunction(
@@ -4409,11 +4492,7 @@ export default function DashboardPage({
       <div className="db-ride-foot">
         <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
         <span className="db-ride-foot-fare">
-          {ride.fare_final
-            ? `$${ride.fare_final.toFixed(2)}`
-            : ride.fare_estimate
-              ? `$${ride.fare_estimate.toFixed(2)}`
-              : ""}
+          {passengerTotalText(ride, "")}
         </span>
       </div>
     </div>
@@ -5522,8 +5601,8 @@ export default function DashboardPage({
                         </div>
                         <div className="db-ride-foot">
                           <span className="db-ride-foot-driver">{cardDriverLabel(ride)}</span>
-                          {ride.fare_estimate && (
-                            <span className="db-ride-foot-fare">${ride.fare_estimate.toFixed(2)}</span>
+                          {passengerTotal(ride) != null && (
+                            <span className="db-ride-foot-fare">{passengerTotalText(ride)}</span>
                           )}
                         </div>
                         <AssignmentHold ride={ride} />
@@ -6248,7 +6327,7 @@ export default function DashboardPage({
                     {/* Fare / payment */}
                     <div className="db-live-chips">
                       <span className="db-live-chip">
-                        {rd.fare_estimate ? `$${rd.fare_estimate.toFixed(2)}` : "—"}
+                        {passengerTotalText(rd)}
                       </span>
                       <span className="db-live-chip">
                         {rd.payment_method === "cash" ? t("rideDetail.cash") : t("rideDetail.card")}
@@ -6453,48 +6532,46 @@ export default function DashboardPage({
                 )}
               </div>
               <div>
+                {/* The price block (booking-fee-design.md). The usual price is
+                    the server's and is not typed; "Change price" opens a custom
+                    fare with a required reason. Interim layout until the new-ride
+                    form is redesigned. */}
                 <label className="db-modal-label">
-                  {t("booking.estimatedFare")}
+                  {t("booking.price")}
                   {bookFareLoading && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        color: "var(--c-text-2)",
-                        fontWeight: 400,
-                        marginLeft: 6,
-                      }}
-                    >
+                    <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
                       {t("booking.calculating")}
                     </span>
                   )}
-                  {!bookFareLoading &&
-                    bookFare &&
-                    bookPickupCoords &&
-                    bookDropoffCoords && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--c-green)",
-                          fontWeight: 400,
-                          marginLeft: 6,
-                        }}
-                      >
-                        {t("booking.autoCalc")}
-                      </span>
-                    )}
                 </label>
-                <input
-                  className="db-modal-input"
-                  placeholder="0.00"
-                  type="number"
-                  step="0.01"
-                  value={bookFare}
-                  onChange={(e) => setBookFare(e.target.value)}
-                />
-                {bookFareError && (
-                  <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
-                    {t("booking.autoCalcFailed")}
-                  </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                  <span style={{ color: "var(--c-text-2)" }}>
+                    {bookCustom ? t("booking.usualFare") : t("booking.fare")}
+                  </span>
+                  <span style={bookCustom ? { color: "var(--c-text-2)" } : undefined}>
+                    {bookBaseFare != null ? `$${bookBaseFare.toFixed(2)}` : "—"}
+                  </span>
+                </div>
+                {bookCustom && (
+                  <>
+                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customFare")}</label>
+                    <input
+                      className="db-modal-input"
+                      placeholder="0.00"
+                      type="number"
+                      step="0.01"
+                      value={bookFare}
+                      onChange={(e) => setBookFare(e.target.value)}
+                    />
+                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
+                    <input
+                      className="db-modal-input"
+                      placeholder={t("booking.customReasonPlaceholder")}
+                      maxLength={200}
+                      value={bookCustomReason}
+                      onChange={(e) => setBookCustomReason(e.target.value)}
+                    />
+                  </>
                 )}
                 {bookDiscountLine && (
                   <div
@@ -6507,6 +6584,39 @@ export default function DashboardPage({
                     {bookDiscountLine.text}
                   </div>
                 )}
+                {bookQuote && bookQuote.fee > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                    <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
+                    <span>${bookQuote.fee.toFixed(2)}</span>
+                  </div>
+                )}
+                {bookQuote && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
+                    <span>{t("booking.passengerPays")}</span>
+                    <span>${bookQuote.pays.toFixed(2)}</span>
+                  </div>
+                )}
+                {bookFareError && (
+                  <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
+                    {t("booking.noPrice")}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="db-link-btn"
+                  style={{ marginTop: 4, fontSize: 12, background: "none", border: 0, padding: 0, color: "var(--c-accent)", cursor: "pointer" }}
+                  onClick={() => {
+                    if (bookCustom) {
+                      setBookCustom(false);
+                      setBookCustomReason("");
+                      if (bookBaseFare != null) setBookFare(bookBaseFare.toFixed(2));
+                    } else {
+                      setBookCustom(true);
+                    }
+                  }}
+                >
+                  {bookCustom ? t("booking.useUsualPrice") : t("booking.changePrice")}
+                </button>
               </div>
               {vehicleClasses.length > 1 && (
                 <div>
@@ -6852,6 +6962,18 @@ export default function DashboardPage({
                       {t("rideEdit.fareMidRideHint")}
                     </div>
                   )}
+                  {editFareTouched && (
+                    <>
+                      <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
+                      <input
+                        className="db-modal-input"
+                        placeholder={t("booking.customReasonPlaceholder")}
+                        maxLength={200}
+                        value={editCustomReason}
+                        onChange={(e) => setEditCustomReason(e.target.value)}
+                      />
+                    </>
+                  )}
                 </div>
                 {/* Hidden mid-ride: the passenger is in whatever car turned
                     up, so a class change here would only move the surcharge.
@@ -7012,6 +7134,30 @@ export default function DashboardPage({
                         ? `$${rideDetail.fare_final.toFixed(2)}`
                         : "—",
                     ],
+                    // The booking fee and what the passenger pays (fare + fee;
+                    // cash rounded up, the round-up being part of the fee).
+                    ...(Number(rideDetail.booking_fee ?? 0) > 0
+                      ? ((): [string, string][] => {
+                          const fee = Number(rideDetail.booking_fee);
+                          const fare = Number(rideDetail.fare_final ?? rideDetail.fare_estimate ?? 0);
+                          const pays = rideDetail.status === "completed" || rideDetail.payment_method !== "cash"
+                            ? fare + fee
+                            : Math.ceil(fare + fee);
+                          return [
+                            [t("booking.bookingFee"), `$${fee.toFixed(2)}`],
+                            [t("rideDetail.passengerPays"), `$${pays.toFixed(2)}`],
+                          ];
+                        })()
+                      : []),
+                    ...(rideDetail.fare_custom
+                      ? ([[
+                          t("rideDetail.customPrice"),
+                          t("rideDetail.customPriceValue", {
+                            usual: rideDetail.fare_usual != null ? Number(rideDetail.fare_usual).toFixed(2) : "—",
+                            reason: rideDetail.fare_custom_reason ?? "",
+                          }),
+                        ]] as [string, string][])
+                      : []),
                     [
                       t("rideDetail.payment"),
                       rideDetail.payment_method === "cash"

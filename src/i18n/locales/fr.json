@@ -321,6 +321,21 @@
     "title": "À traiter"
   },
   "booking": {
+    "price": "Prix",
+    "fare": "Tarif",
+    "usualFare": "Tarif habituel",
+    "customFare": "Tarif personnalisé",
+    "customReason": "Raison",
+    "customReasonPlaceholder": "p. ex. Convenu par téléphone, course à l'aéroport",
+    "bookingFee": "Frais de réservation",
+    "passengerPays": "Le passager paie (comptant)",
+    "changePrice": "Modifier le prix",
+    "useUsualPrice": "Utiliser le prix habituel",
+    "customFareRequired": "Saisissez le tarif personnalisé.",
+    "customReasonRequired": "Indiquez la raison du prix personnalisé.",
+    "customConfirm": "Le tarif habituel est de {{usual}} $. Réserver à {{custom}} $?",
+    "customNotSaved": "La course a été réservée au prix habituel : le prix personnalisé n'a pas pu être enregistré. Modifiez la course pour le définir.",
+    "noPrice": "Impossible de calculer le prix de ce trajet. Utilisez Modifier le prix pour en fixer un.",
     "errDriverNotNotified": "La course est réservée, mais le chauffeur n'a pas pu être averti. Réassignez-la depuis la fiche de la course pour qu'il reçoive l'alerte.",
     "errDriverUnavailable": "Ce chauffeur ne peut pas prendre une course immédiate pour le moment — choisissez-en un autre ou laissez-la non assignée.",
     "addressPlaceholder": "Commencez à saisir une adresse…",
@@ -800,9 +815,11 @@
     "waited_other": "{{arrived}} → {{filed}} ({{count}} min au point de départ)"
   },
   "receipt": {
+    "bookingFee": "Frais de réservation",
     "company": "Entreprise",
     "date": "Date",
     "discount": "Rabais",
+    "fare": "Tarif",
     "fallbackCompany": "Votre taxi",
     "hst": "TVH (15 %)",
     "internalSettlement": "Interne — règlement (non visible par le passager)",
@@ -955,6 +972,9 @@
     "driverWaited": "Attente du chauffeur",
     "dropoff": "Dépôt",
     "fareEstimate": "Tarif estimé",
+    "passengerPays": "Le passager paie",
+    "customPrice": "Prix personnalisé",
+    "customPriceValue": "Habituel {{usual}} $ · {{reason}}",
     "fareFinal": "Tarif final",
     "feePending": "En attente",
     "immediate": "Immédiate",
@@ -1008,6 +1028,7 @@
     "scheduled": "Planifiée"
   },
   "serviceAreas": {
+    "metaNoBookingFee": "sans frais de réservation (défini par Vellon)",
     "circleRadius": "Cercle · rayon de {{km}} km",
     "cityFrames": "Cadre vos cartes jusqu'à ce que vous dessiniez une zone.",
     "cityPlaceholder": "Recherchez votre ville — ex. Moncton, NB",
