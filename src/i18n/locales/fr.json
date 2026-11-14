@@ -375,7 +375,21 @@
     "wheelchairRequired": "Véhicule accessible en fauteuil roulant requis",
     "wheelchairHint": "Sans frais supplémentaires",
     "discountLine": "{{what}} : −{{amount}} $ · Le passager paie {{pays}} $",
-    "studentDiscount": "Rabais étudiant"
+    "studentDiscount": "Rabais étudiant",
+    "billTo": "Facturer à",
+    "billedTo": "Facturé à {{name}}",
+    "acctPriceNote": "Prix calculé par le serveur; le passager ne paie rien. Le changement de prix et les rabais sont désactivés pour les courses sur compte.",
+    "acctNoDiscount": "Pas pour les courses sur compte",
+    "createOnAccount": "Réserver · {{amount}} $ sur compte",
+    "acctNotMember": "Ce passager ne fait plus partie de {{name}}. Facturez en argent comptant.",
+    "acctSuspended": "{{name}} est suspendu. Facturez en argent comptant.",
+    "acctNoBilling": "{{name}} n'a pas encore de facturation. Un administrateur la définit dans la page Comptes.",
+    "acctLimitRide": "Dépasse la limite par course de {{name}}. Facturez en argent comptant.",
+    "acctLimitMonthly": "Dépasse la limite mensuelle de {{name}}. Facturez en argent comptant.",
+    "acctSchedulePast": "Cette heure de prise en charge est passée.",
+    "acctScheduleTooFar": "Les courses peuvent être réservées jusqu'à 60 jours à l'avance.",
+    "acctPriceChanged": "Le prix a changé. Vérifiez le nouveau total et réservez à nouveau.",
+    "acctFailed": "Impossible de réserver cette course sur {{name}}. Réessayez."
   },
   "cancelReason": {
     "dispatchCancelled": "Annulée par la répartition",

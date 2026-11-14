@@ -1886,6 +1886,21 @@ export default function DashboardPage({
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
   // The looked-up passenger's business account, for the badge beside "registered".
   const [bookPassengerAccount, setBookPassengerAccount] = useState<string | null>(null);
+  // Business accounts the looked-up passenger is an active member of, and how
+  // this booking is billed: "cash", or an account id. The account is
+  // pre-selected (Victor 2026-11-14): dispatch knows from the call how to bill.
+  // An account ride is booked through book-account-ride, which prices it
+  // itself (no discount, no custom price) and checks the account's limits.
+  const [bookAccounts, setBookAccounts] = useState<{ account_id: string; account_name: string }[]>([]);
+  const [bookBillTo, setBookBillTo] = useState<string>("cash");
+  const [bookAccountQuote, setBookAccountQuote] = useState<{
+    key: string;
+    fare: number;
+    fee: number;
+    total: number;
+    totalCents: number;
+  } | null>(null);
+  const [bookAccountQuoteError, setBookAccountQuoteError] = useState<string | null>(null);
   // The looked-up passenger, so the fare preview can ask the server about
   // THEIR student discount and their own limits on the picked code.
   const [bookPassengerId, setBookPassengerId] = useState<string | null>(null);
@@ -3554,12 +3569,168 @@ export default function DashboardPage({
   // that clears the phone field and an Escape that doesn't get born: the chip
   // would stay on the last country used, and `clear()` resetting it is the
   // whole reason this field's copy differs from the app's.
+  // ── Booking on a business account ──────────────────────────────
+  const bookAccount =
+    bookBillTo !== "cash" ? bookAccounts.find((a) => a.account_id === bookBillTo) ?? null : null;
+  const bookAccountTrip =
+    bookAccount && bookPassengerId && bookPickupCoords && bookDropoffCoords
+      ? {
+          business_account_id: bookAccount.account_id,
+          passenger_id: bookPassengerId,
+          pickup: { lat: bookPickupCoords.lat, lng: bookPickupCoords.lng, address: bookPickup.trim() },
+          dropoff: { lat: bookDropoffCoords.lat, lng: bookDropoffCoords.lng, address: bookDropoff.trim() },
+          vehicle_class_id: bookVehicleClassId || null,
+          requires_wheelchair: bookWheelchair,
+        }
+      : null;
+  const bookAccountKey = bookAccountTrip
+    ? JSON.stringify([
+        bookAccountTrip.business_account_id, bookAccountTrip.passenger_id,
+        bookAccountTrip.pickup.lat, bookAccountTrip.pickup.lng,
+        bookAccountTrip.dropoff.lat, bookAccountTrip.dropoff.lng,
+        bookAccountTrip.vehicle_class_id,
+      ])
+    : null;
+  const shownAccountQuote =
+    bookAccountQuote && bookAccountQuote.key === bookAccountKey ? bookAccountQuote : null;
+
+  useEffect(() => {
+    // The server's price for this trip on the account: what the business is
+    // billed, sent back as expected_total_cents so nobody bills a figure
+    // dispatch did not quote the caller.
+    setBookAccountQuoteError(null);
+    if (!bookingOpen || !bookAccountTrip || !bookAccountKey) return;
+    let cancelled = false;
+    const key = bookAccountKey;
+    const timer = setTimeout(async () => {
+      const { data, error } = await invokeFunction("book-account-ride", { ...bookAccountTrip, quote_only: true });
+      if (cancelled) return;
+      if (error || !data?.ok) {
+        setBookAccountQuoteError(data?.code ?? "error");
+        return;
+      }
+      setBookAccountQuote({
+        key,
+        fare: Number(data.fare),
+        fee: Number(data.booking_fee),
+        total: Number(data.total),
+        totalCents: Number(data.total_cents),
+      });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // bookAccountTrip is rebuilt every render; the key carries what it holds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingOpen, bookAccountKey]);
+
+  /** book-account-ride's refusals (and the trigger's), as one sentence each. */
+  function accountRefusal(code: string | null | undefined, name: string): string {
+    const key: Record<string, string> = {
+      "account.notMember": "booking.acctNotMember",
+      "account.notFound": "booking.acctNotMember",
+      "account.suspended": "booking.acctSuspended",
+      "account.noBilling": "booking.acctNoBilling",
+      "account.cardModeUnavailable": "booking.acctNoBilling",
+      "account.limitRide": "booking.acctLimitRide",
+      "account.limitMonthly": "booking.acctLimitMonthly",
+      "schedule.past": "booking.acctSchedulePast",
+      "schedule.tooFar": "booking.acctScheduleTooFar",
+      "fare.noRoute": "booking.noPrice",
+      "driver.notFound": "booking.errDriverUnavailable",
+      "passenger.notFound": "booking.acctNotMember",
+    };
+    return t(key[code ?? ""] ?? "booking.acctFailed", { name });
+  }
+
+  async function createAccountBooking() {
+    if (!bookAccount || !bookAccountTrip) {
+      setBookError(t("booking.acctNotMember", { name: bookAccount?.account_name ?? "" }));
+      return;
+    }
+    const quote = shownAccountQuote;
+    if (!quote) {
+      setBookError(bookAccountQuoteError
+        ? accountRefusal(bookAccountQuoteError, bookAccount.account_name)
+        : t("booking.noPrice"));
+      return;
+    }
+    setBookLoading(true);
+    setBookError(null);
+    try {
+      const scheduledAt = bookScheduled ? fromDateTimeLocal(bookScheduled).toISOString() : null;
+      const { data, error } = await invokeFunction("book-account-ride", {
+        ...bookAccountTrip,
+        scheduled_at: scheduledAt,
+        driver_id: bookDriver || null,
+        expected_total_cents: quote.totalCents,
+      });
+      if (error) {
+        setBookError(error);
+        return;
+      }
+      if (!data?.ok) {
+        if (data?.code === "fare.changed" && bookAccountKey) {
+          setBookAccountQuote({
+            key: bookAccountKey,
+            fare: Number(data.fare),
+            fee: Number(data.booking_fee),
+            total: Number(data.total),
+            totalCents: Number(data.total_cents),
+          });
+          setBookError(t("booking.acctPriceChanged"));
+          return;
+        }
+        setBookError(accountRefusal(data?.code, bookAccount.account_name));
+        return;
+      }
+      const rideId = data.ride_id as string;
+      // Same as a cash booking with a driver: the ride was inserted already
+      // offered to them, and dispatch-assign-ride pushes them and stamps
+      // offered_at.
+      if (bookDriver) {
+        const { error: notifyError } = await invokeFunction("dispatch-assign-ride", {
+          ride_id: rideId,
+          driver_id: bookDriver,
+          confirm_mismatch: true,
+        });
+        if (notifyError) {
+          console.error("[booking] dispatch-assign-ride", notifyError);
+          alert(t("booking.errDriverNotNotified"));
+        }
+      }
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "ride.created",
+        details: {
+          passenger_name: bookPassengerName,
+          pickup_address: bookPickup,
+          dropoff_address: bookDropoff,
+          fare: Number(data.fare),
+          scheduled: !!bookScheduled,
+          driver_id: bookDriver || null,
+          business_account: bookAccount.account_name,
+        },
+      });
+      resetBookingForm();
+      fetchRides();
+    } finally {
+      setBookLoading(false);
+    }
+  }
+
   const closeBooking = useCallback(() => {
     setBookingOpen(false);
     setBookError(null);
     setBookFareError(false);
     bookField.clear();
     setBookPassengerRegistered(false);
+    setBookPassengerId(null);
+    setBookPassengerAccount(null);
+    setBookAccounts([]);
+    setBookBillTo("cash");
     // `bookField` itself is a fresh object every render; `clear` is the only
     // part of it this touches and it is stable.
   }, [bookField.clear]);
@@ -3592,6 +3763,36 @@ export default function DashboardPage({
     return () => document.removeEventListener("keydown", onKey);
   }, [bookingOpen, rideDetailIsModal, closeBooking]);
 
+  // Everything the booking form holds, back to empty, after a booking.
+  function resetBookingForm() {
+    setBookingOpen(false);
+    bookField.clear();
+    setBookPassengerName("");
+    setBookPickup("");
+    setBookPickupCoords(null);
+    setBookDropoff("");
+    setBookDropoffCoords(null);
+    setBookFare("");
+    setBookFareError(false);
+    setBookCustom(false);
+    setBookCustomReason("");
+    setBookQuote(null);
+    setBookPassengerRegistered(false);
+    setBookDiscountCode("");
+    setBookVehicleClassId("");
+    setBookDistanceMetres(null);
+    setBookBaseFare(null);
+    setBookDiscountLine(null);
+    setBookPassengerId(null);
+    setBookPassengerAccount(null);
+    setBookDriver("");
+    setBookScheduled("");
+    setBookAccounts([]);
+    setBookBillTo("cash");
+    setBookAccountQuote(null);
+    setBookAccountQuoteError(null);
+  }
+
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!bookPickupCoords) {
@@ -3622,6 +3823,10 @@ export default function DashboardPage({
             : t("dispatch.mismatchSeats", { needs: cls?.capacity ?? "?", has: chosen.driver.seats ?? "?" });
         if (!confirm(t("dispatch.confirmMismatch", { reason }))) return;
       }
+    }
+    if (bookBillTo !== "cash") {
+      await createAccountBooking();
+      return;
     }
     if (bookCustom) {
       const custom = parseFloat(bookFare);
@@ -3868,28 +4073,7 @@ export default function DashboardPage({
           driver_id: bookDriver || null,
         },
       });
-      setBookingOpen(false);
-      bookField.clear();
-      setBookPassengerName("");
-      setBookPickup("");
-      setBookPickupCoords(null);
-      setBookDropoff("");
-      setBookDropoffCoords(null);
-      setBookFare("");
-      setBookFareError(false);
-      setBookCustom(false);
-      setBookCustomReason("");
-      setBookQuote(null);
-      setBookPassengerRegistered(false);
-      setBookDiscountCode("");
-      setBookVehicleClassId("");
-      setBookDistanceMetres(null);
-      setBookBaseFare(null);
-      setBookDiscountLine(null);
-      setBookPassengerId(null);
-      setBookPassengerAccount(null);
-      setBookDriver("");
-      setBookScheduled("");
+      resetBookingForm();
       fetchRides();
     } catch (e: any) {
       setBookError(e.message);
@@ -4969,6 +5153,10 @@ export default function DashboardPage({
         .db-modal-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
         .db-modal-input:focus { border-color: var(--c-brand); }
         .db-modal-input::placeholder { color: var(--c-text-3); }
+        .db-billto { display: flex; border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
+        .db-billto button { flex: 1; padding: 8px 6px; background: none; border: none; font-size: 13px; color: var(--c-text-2); cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-billto button + button { border-left: 1px solid var(--c-border); }
+        .db-billto button.on { background: var(--c-surface-sel); box-shadow: inset 0 0 0 1.5px var(--c-brand); color: var(--c-brand); font-weight: 600; }
         .db-modal-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
         .db-modal-select:disabled { opacity: 0.55; cursor: not-allowed; }
         .db-modal-hint { font-size: 11px; color: var(--c-text-2); margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
@@ -6519,10 +6707,18 @@ export default function DashboardPage({
                     };
                     setBookPassengerId(data?.id ?? null);
                     setBookPassengerAccount(null);
+                    setBookAccounts([]);
+                    setBookBillTo("cash");
                     if (data?.id) {
                       const { data: badges } = await supabase.rpc("ba_badges_for", { p_profiles: [data.id] });
-                      const first = (badges ?? [])[0] as { account_name: string } | undefined;
-                      if (first) setBookPassengerAccount(first.account_name);
+                      const list = ((badges ?? []) as { account_id: string; account_name: string }[])
+                        .slice()
+                        .sort((a, b) => a.account_name.localeCompare(b.account_name));
+                      if (list[0]) {
+                        setBookPassengerAccount(list[0].account_name);
+                        setBookAccounts(list);
+                        setBookBillTo(list[0].account_id);
+                      }
                     }
                     if (data?.name) {
                       setBookPassengerName(data.name);
@@ -6538,6 +6734,8 @@ export default function DashboardPage({
                     setBookPassengerRegistered(false);
                     setBookPassengerId(null);
                     setBookPassengerAccount(null);
+                    setBookAccounts([]);
+                    setBookBillTo("cash");
                   }}
                 />
                 <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
@@ -6645,93 +6843,161 @@ export default function DashboardPage({
                   </span>
                 )}
               </div>
-              <div>
-                {/* The price block (booking-fee-design.md). The usual price is
-                    the server's and is not typed; "Change price" opens a custom
-                    fare with a required reason. Interim layout until the new-ride
-                    form is redesigned. */}
-                <label className="db-modal-label">
-                  {t("booking.price")}
-                  {bookFareLoading && (
-                    <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
-                      {t("booking.calculating")}
-                    </span>
-                  )}
-                </label>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
-                  <span style={{ color: "var(--c-text-2)" }}>
-                    {bookCustom ? t("booking.usualFare") : t("booking.fare")}
-                  </span>
-                  <span style={bookCustom ? { color: "var(--c-text-2)" } : undefined}>
-                    {bookBaseFare != null ? `$${bookBaseFare.toFixed(2)}` : "—"}
-                  </span>
+              {/* Bill to: only for a passenger on a business account, the
+                  account first and pre-selected (Victor 2026-11-14). */}
+              {bookPassengerRegistered && bookAccounts.length > 0 && (
+                <div>
+                  <label className="db-modal-label">{t("booking.billTo")}</label>
+                  <div className="db-billto" role="radiogroup" aria-label={t("booking.billTo")}>
+                    {bookAccounts.map((a) => (
+                      <button
+                        key={a.account_id}
+                        type="button"
+                        role="radio"
+                        aria-checked={bookBillTo === a.account_id}
+                        className={bookBillTo === a.account_id ? "on" : ""}
+                        onClick={() => setBookBillTo(a.account_id)}
+                      >
+                        {a.account_name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={bookBillTo === "cash"}
+                      className={bookBillTo === "cash" ? "on" : ""}
+                      onClick={() => setBookBillTo("cash")}
+                    >
+                      {t("rideDetail.cash")}
+                    </button>
+                  </div>
                 </div>
-                {bookCustom && (
-                  <>
-                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customFare")}</label>
-                    <input
-                      className="db-modal-input"
-                      placeholder="0.00"
-                      type="number"
-                      step="0.01"
-                      value={bookFare}
-                      onChange={(e) => setBookFare(e.target.value)}
-                    />
-                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
-                    <input
-                      className="db-modal-input"
-                      placeholder={t("booking.customReasonPlaceholder")}
-                      maxLength={200}
-                      value={bookCustomReason}
-                      onChange={(e) => setBookCustomReason(e.target.value)}
-                    />
-                  </>
-                )}
-                {bookDiscountLine && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      marginTop: 4,
-                      color: bookDiscountLine.kind === "ok" ? "var(--c-green)" : "var(--c-amber-text)",
+              )}
+              {bookAccount ? (
+                <div>
+                  {/* An account ride's price is the server's (book-account-ride):
+                      no custom price and no discount (Victor 2026-11-14). */}
+                  <label className="db-modal-label">
+                    {t("booking.price")}
+                    {bookAccountTrip && !shownAccountQuote && !bookAccountQuoteError && (
+                      <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
+                        {t("booking.calculating")}
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                    <span style={{ color: "var(--c-text-2)" }}>{t("booking.fare")}</span>
+                    <span>{shownAccountQuote ? `$${shownAccountQuote.fare.toFixed(2)}` : "—"}</span>
+                  </div>
+                  {shownAccountQuote && shownAccountQuote.fee > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                      <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
+                      <span>${shownAccountQuote.fee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
+                    <span>{t("booking.billedTo", { name: bookAccount.account_name })}</span>
+                    <span>{shownAccountQuote ? `$${shownAccountQuote.total.toFixed(2)}` : "—"}</span>
+                  </div>
+                  {bookAccountQuoteError ? (
+                    <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
+                      {accountRefusal(bookAccountQuoteError, bookAccount.account_name)}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 4 }}>
+                      {t("booking.acctPriceNote")}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {/* The price block (booking-fee-design.md). The usual price is
+                      the server's and is not typed; "Change price" opens a custom
+                      fare with a required reason. Interim layout until the new-ride
+                      form is redesigned. */}
+                  <label className="db-modal-label">
+                    {t("booking.price")}
+                    {bookFareLoading && (
+                      <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
+                        {t("booking.calculating")}
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                    <span style={{ color: "var(--c-text-2)" }}>
+                      {bookCustom ? t("booking.usualFare") : t("booking.fare")}
+                    </span>
+                    <span style={bookCustom ? { color: "var(--c-text-2)" } : undefined}>
+                      {bookBaseFare != null ? `$${bookBaseFare.toFixed(2)}` : "—"}
+                    </span>
+                  </div>
+                  {bookCustom && (
+                    <>
+                      <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customFare")}</label>
+                      <input
+                        className="db-modal-input"
+                        placeholder="0.00"
+                        type="number"
+                        step="0.01"
+                        value={bookFare}
+                        onChange={(e) => setBookFare(e.target.value)}
+                      />
+                      <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
+                      <input
+                        className="db-modal-input"
+                        placeholder={t("booking.customReasonPlaceholder")}
+                        maxLength={200}
+                        value={bookCustomReason}
+                        onChange={(e) => setBookCustomReason(e.target.value)}
+                      />
+                    </>
+                  )}
+                  {bookDiscountLine && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        marginTop: 4,
+                        color: bookDiscountLine.kind === "ok" ? "var(--c-green)" : "var(--c-amber-text)",
+                      }}
+                    >
+                      {bookDiscountLine.text}
+                    </div>
+                  )}
+                  {bookQuote && bookQuote.fee > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                      <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
+                      <span>${bookQuote.fee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {bookQuote && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
+                      <span>{t("booking.passengerPays")}</span>
+                      <span>${bookQuote.pays.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {bookFareError && (
+                    <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
+                      {t("booking.noPrice")}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="db-link-btn"
+                    style={{ marginTop: 4, fontSize: 12, background: "none", border: 0, padding: 0, color: "var(--c-accent)", cursor: "pointer" }}
+                    onClick={() => {
+                      if (bookCustom) {
+                        setBookCustom(false);
+                        setBookCustomReason("");
+                        if (bookBaseFare != null) setBookFare(bookBaseFare.toFixed(2));
+                      } else {
+                        setBookCustom(true);
+                      }
                     }}
                   >
-                    {bookDiscountLine.text}
-                  </div>
-                )}
-                {bookQuote && bookQuote.fee > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
-                    <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
-                    <span>${bookQuote.fee.toFixed(2)}</span>
-                  </div>
-                )}
-                {bookQuote && (
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
-                    <span>{t("booking.passengerPays")}</span>
-                    <span>${bookQuote.pays.toFixed(2)}</span>
-                  </div>
-                )}
-                {bookFareError && (
-                  <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
-                    {t("booking.noPrice")}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="db-link-btn"
-                  style={{ marginTop: 4, fontSize: 12, background: "none", border: 0, padding: 0, color: "var(--c-accent)", cursor: "pointer" }}
-                  onClick={() => {
-                    if (bookCustom) {
-                      setBookCustom(false);
-                      setBookCustomReason("");
-                      if (bookBaseFare != null) setBookFare(bookBaseFare.toFixed(2));
-                    } else {
-                      setBookCustom(true);
-                    }
-                  }}
-                >
-                  {bookCustom ? t("booking.useUsualPrice") : t("booking.changePrice")}
-                </button>
-              </div>
+                    {bookCustom ? t("booking.useUsualPrice") : t("booking.changePrice")}
+                  </button>
+                </div>
+              )}
               {vehicleClasses.length > 1 && (
                 <div>
                   <label className="db-modal-label">{t("drivers.vehicleClass")}</label>
@@ -6781,10 +7047,11 @@ export default function DashboardPage({
                 </label>
                 <select
                   className="db-modal-select"
-                  value={bookDiscountCode}
+                  value={bookAccount ? "" : bookDiscountCode}
                   onChange={(e) => setBookDiscountCode(e.target.value)}
+                  disabled={!!bookAccount}
                 >
-                  <option value="">{t("booking.noDiscount")}</option>
+                  <option value="">{bookAccount ? t("booking.acctNoDiscount") : t("booking.noDiscount")}</option>
                   {availableDiscountCodes.map((c) => (
                     <option key={c.id} value={c.code}>
                       {c.code}
@@ -6860,7 +7127,11 @@ export default function DashboardPage({
                   type="submit"
                   disabled={bookLoading}
                 >
-                  {bookLoading ? t("drivers.creating") : t("booking.createRide")}
+                  {bookLoading
+                    ? t("drivers.creating")
+                    : bookAccount && shownAccountQuote
+                      ? t("booking.createOnAccount", { amount: shownAccountQuote.total.toFixed(2) })
+                      : t("booking.createRide")}
                 </button>
               </div>
             </form>

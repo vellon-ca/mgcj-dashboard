@@ -375,7 +375,21 @@
     "wheelchairRequired": "Wheelchair-accessible vehicle required",
     "wheelchairHint": "No extra charge",
     "discountLine": "{{what}}: −${{amount}} · Passenger pays ${{pays}}",
-    "studentDiscount": "Student discount"
+    "studentDiscount": "Student discount",
+    "billTo": "Bill to",
+    "billedTo": "Billed to {{name}}",
+    "acctPriceNote": "Priced by the server; the passenger pays nothing. Change price and discounts are off for account rides.",
+    "acctNoDiscount": "Not for account rides",
+    "createOnAccount": "Book · ${{amount}} on account",
+    "acctNotMember": "This passenger isn't on {{name}} any more. Bill to cash instead.",
+    "acctSuspended": "{{name}} is paused. Bill to cash instead.",
+    "acctNoBilling": "{{name}} has no billing set yet. An admin sets it on the Accounts page.",
+    "acctLimitRide": "Over {{name}}'s limit for one ride. Bill to cash instead.",
+    "acctLimitMonthly": "Over {{name}}'s monthly limit. Bill to cash instead.",
+    "acctSchedulePast": "That pickup time has passed.",
+    "acctScheduleTooFar": "Rides can be booked up to 60 days ahead.",
+    "acctPriceChanged": "The price changed. Check the new total and book again.",
+    "acctFailed": "Couldn't book this ride on {{name}}. Try again."
   },
   "cancelReason": {
     "dispatchCancelled": "Cancelled by dispatch",
