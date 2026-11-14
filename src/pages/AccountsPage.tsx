@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { fmtDate } from "../i18n/format";
@@ -19,6 +19,13 @@ interface Account {
   name: string;
   status: "active" | "suspended";
   created_at: string;
+  // Phase 2a (mgcj-app 20261114030000). NULL billing_mode: no ride can be
+  // billed to the account yet (validate_account_ride refuses it).
+  billing_mode: "invoice" | "card" | null;
+  company_monthly_limit_cents: number | null;
+  company_ride_limit_cents: number | null;
+  manager_monthly_limit_cents: number | null;
+  manager_ride_limit_cents: number | null;
 }
 
 interface Member {
@@ -82,7 +89,12 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
     if (!visible) return;
     let alive = true;
     Promise.all([
-      supabase.from("business_accounts").select("id, name, status, created_at").order("name"),
+      supabase
+        .from("business_accounts")
+        .select(
+          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents",
+        )
+        .order("name"),
       supabase.from("account_members").select("account_id").eq("status", "active"),
     ]).then(([a, m]) => {
       if (!alive) return;
@@ -263,6 +275,21 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         .ac-seg button { flex: 1; padding: 7px; background: none; border: none; font-size: 13px; color: var(--c-text-2); cursor: pointer; font-family: system-ui, sans-serif; }
         .ac-seg button.on { background: var(--c-surface-sel); box-shadow: inset 0 0 0 1.5px var(--c-brand); color: var(--c-brand); font-weight: 600; }
         .ac-seg button:disabled { cursor: default; }
+        .ac-opt-list { display: flex; flex-direction: column; gap: 8px; }
+        .ac-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 10px; cursor: default; }
+        .ac-opt.on { box-shadow: inset 0 0 0 1.5px var(--c-brand); background: var(--c-surface-sel); }
+        .ac-opt.off { opacity: 0.55; }
+        .ac-opt input { margin: 2px 0 0; accent-color: var(--c-brand); }
+        .ac-opt > span { display: flex; flex-direction: column; gap: 2px; }
+        .ac-opt-title { font-size: 13px; font-weight: 600; color: var(--c-text); display: flex; align-items: center; gap: 6px; }
+        .ac-limit-row { display: grid; grid-template-columns: 1fr 140px; gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; color: var(--c-text); }
+        .ac-money { display: flex; align-items: center; gap: 4px; border: 1px solid var(--c-border); border-radius: 8px; padding: 6px 10px; background: var(--c-input); }
+        .ac-money span { color: var(--c-text-2); font-size: 13px; }
+        .ac-money input { border: 0; outline: 0; background: transparent; color: var(--c-text); font-size: 13px; width: 100%; font-family: system-ui, sans-serif; }
+        .ac-money:focus-within { border-color: var(--c-brand); }
+        .ac-kv { display: flex; justify-content: space-between; font-size: 13px; color: var(--c-text); padding: 4px 0; }
+        .ac-bar { height: 8px; border-radius: 4px; background: var(--c-surface-alt, var(--c-hover)); overflow: hidden; margin: 8px 0 6px; }
+        .ac-bar div { height: 8px; background: var(--c-brand); }
         .ac-soon { border: 1px dashed var(--c-border-strong); border-radius: 12px; padding: 14px 16px; font-size: 12px; color: var(--c-text-2); line-height: 1.5; }
         .ac-error { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--c-red); }
         .ac-empty { color: var(--c-text-2); font-size: 14px; text-align: center; padding: 60px 0; }
@@ -286,11 +313,16 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
             <span className="ac-acct-sub">
               <span
                 className="ac-dot"
-                style={{ background: a.status === "active" ? "var(--c-green)" : "var(--c-amber)" }}
+                style={{
+                  background:
+                    a.status === "active" && a.billing_mode ? "var(--c-green)" : "var(--c-amber)",
+                }}
               />
-              {a.status === "active"
-                ? t("accounts.activePeople", { count: activeCounts[a.id] ?? 0 })
-                : t("accounts.suspended")}
+              {a.status !== "active"
+                ? t("accounts.suspended")
+                : a.billing_mode
+                  ? t("accounts.activePeople", { count: activeCounts[a.id] ?? 0 })
+                  : t("accounts.activeNoBilling")}
             </span>
           </button>
         ))}
@@ -518,7 +550,12 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
                   <div className="ac-small" style={{ marginTop: 8 }}>{t("accounts.suspendNote")}</div>
                 </div>
 
-                <div className="ac-soon">{t("accounts.billingSoon")}</div>
+                <BillingCard
+                  key={account.id}
+                  account={account}
+                  isAdmin={isAdmin}
+                  onSaved={() => setListVersion((v) => v + 1)}
+                />
               </div>
             </div>
           </>
@@ -671,5 +708,205 @@ function AddOnBehalf({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Billing: the mode and the taxi company's ceiling (phase 2a) ──────────────
+// Admins set it (ba_set_billing); dispatchers see it. The business's managers
+// can set their own limits in the portal, only ever lower: the strictest wins
+// (ba_check_limits). Amounts are entered in dollars and stored in cents, the
+// booking fee included. Corporate card is phase 2b: shown, not selectable.
+
+function centsToField(c: number | null): string {
+  return c == null ? "" : (c / 100).toFixed(2);
+}
+
+/** "" -> null (no limit); a positive amount -> cents; anything else -> undefined. */
+function fieldToCents(v: string): number | null | undefined {
+  const s = v.replace(/[,$\s]/g, "");
+  if (s === "") return null;
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return undefined;
+  const c = Math.round(Number(s) * 100);
+  return c > 0 ? c : undefined;
+}
+
+function BillingCard({
+  account,
+  isAdmin,
+  onSaved,
+}: {
+  account: Account;
+  isAdmin: boolean;
+  onSaved: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const radioName = useId();
+  const monthlyId = useId();
+  const perRideId = useId();
+  const [monthly, setMonthly] = useState(centsToField(account.company_monthly_limit_cents));
+  const [perRide, setPerRide] = useState(centsToField(account.company_ride_limit_cents));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [usage, setUsage] = useState<{
+    month: string;
+    used_cents: number;
+    monthly_limit_cents: number | null;
+    ride_limit_cents: number | null;
+  } | null>(null);
+  const [usageVersion, setUsageVersion] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    supabase.rpc("ba_account_usage", { p_account: account.id }).then(({ data }) => {
+      if (!alive || !data?.ok) return;
+      setUsage(data);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [account.id, usageVersion]);
+
+  const money = (cents: number) =>
+    new Intl.NumberFormat(i18n.language, { style: "currency", currency: "CAD", currencyDisplay: "narrowSymbol" }).format(cents / 100);
+  // account_month is a calendar date: format it as one, never through a zone.
+  const monthName = usage
+    ? new Intl.DateTimeFormat(i18n.language, { month: "long", timeZone: "UTC" }).format(new Date(`${usage.month}T00:00:00Z`))
+    : "";
+
+  async function save() {
+    const m = fieldToCents(monthly);
+    const r = fieldToCents(perRide);
+    if (m === undefined || r === undefined) {
+      setMsg({ ok: false, text: t("accounts.errBadAmount") });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    const { data, error } = await supabase.rpc("ba_set_billing", {
+      p_account: account.id,
+      p_mode: "invoice",
+      p_monthly_cents: m,
+      p_ride_cents: r,
+    });
+    setBusy(false);
+    if (error || !data?.ok) {
+      setMsg({ ok: false, text: data?.reason === "bad_limit" ? t("accounts.errBadAmount") : t("accounts.errGeneric") });
+      return;
+    }
+    setMsg({ ok: true, text: t("accounts.billingSaved") });
+    setUsageVersion((v) => v + 1);
+    onSaved();
+  }
+
+  const managerLower =
+    (account.manager_monthly_limit_cents != null &&
+      (account.company_monthly_limit_cents == null ||
+        account.manager_monthly_limit_cents < account.company_monthly_limit_cents)) ||
+    (account.manager_ride_limit_cents != null &&
+      (account.company_ride_limit_cents == null ||
+        account.manager_ride_limit_cents < account.company_ride_limit_cents));
+  const usedPct =
+    usage?.monthly_limit_cents ? Math.min(100, (usage.used_cents / usage.monthly_limit_cents) * 100) : 0;
+
+  return (
+    <>
+      <div className="ac-card">
+        <div className="ac-card-label">
+          <span>{t("accounts.billingTitle")}</span>
+        </div>
+        <div className="ac-opt-list" role="radiogroup" aria-label={t("accounts.billingTitle")}>
+          <label className={`ac-opt${account.billing_mode === "invoice" || isAdmin ? " on" : ""}`}>
+            <input type="radio" name={radioName} checked readOnly disabled={!isAdmin} />
+            <span>
+              <span className="ac-opt-title">{t("accounts.billingInvoice")}</span>
+              <span className="ac-small">{t("accounts.billingInvoiceNote")}</span>
+            </span>
+          </label>
+          <label className="ac-opt off">
+            <input type="radio" name={radioName} disabled />
+            <span>
+              <span className="ac-opt-title">
+                {t("accounts.billingCard")} <span className="ac-ro">{t("accounts.comingSoon")}</span>
+              </span>
+              <span className="ac-small">{t("accounts.billingCardNote")}</span>
+            </span>
+          </label>
+        </div>
+        {!account.billing_mode && (
+          <div className="ac-small" style={{ color: "var(--c-amber-text)", marginTop: 8 }}>
+            {isAdmin ? t("accounts.noBillingAdmin") : t("accounts.noBillingDispatcher")}
+          </div>
+        )}
+
+        <div className="ac-card-label" style={{ marginTop: 16, marginBottom: 2 }}>
+          <span>{t("accounts.ceilingTitle")}</span>
+        </div>
+        <div className="ac-small">{t("accounts.ceilingNote")}</div>
+        <div className="ac-limit-row">
+          <label htmlFor={monthlyId}>{t("accounts.perMonth")}</label>
+          <div className="ac-money">
+            <span>$</span>
+            <input
+              id={monthlyId}
+              inputMode="decimal"
+              value={monthly}
+              placeholder={t("accounts.noLimit")}
+              disabled={!isAdmin}
+              onChange={(e) => setMonthly(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="ac-limit-row">
+          <label htmlFor={perRideId}>{t("accounts.perRide")}</label>
+          <div className="ac-money">
+            <span>$</span>
+            <input
+              id={perRideId}
+              inputMode="decimal"
+              value={perRide}
+              placeholder={t("accounts.noLimit")}
+              disabled={!isAdmin}
+              onChange={(e) => setPerRide(e.target.value)}
+            />
+          </div>
+        </div>
+        {msg && (
+          <div className="ac-small" style={{ marginTop: 8, color: msg.ok ? "var(--c-green)" : "var(--c-red)" }}>
+            {msg.text}
+          </div>
+        )}
+        {isAdmin && (
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+            <button className="ac-btn ac-btn-primary" disabled={busy} onClick={save}>
+              {t("accounts.saveBilling")}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {usage && (
+        <div className="ac-card">
+          <div className="ac-card-label">
+            <span>{t("accounts.thisMonth", { month: monthName })}</span>
+          </div>
+          <div className="ac-kv">
+            <span>{t("accounts.bookedSoFar")}</span>
+            <b>{money(usage.used_cents)}</b>
+          </div>
+          {usage.monthly_limit_cents != null && (
+            <div className="ac-bar" aria-hidden="true">
+              <div style={{ width: `${usedPct}%` }} />
+            </div>
+          )}
+          <div className="ac-small">
+            {usage.monthly_limit_cents != null
+              ? t("accounts.limitMonthly", { amount: money(usage.monthly_limit_cents) })
+              : t("accounts.noMonthlyLimit")}
+            {usage.ride_limit_cents != null && ` ${t("accounts.limitRide", { amount: money(usage.ride_limit_cents) })}`}
+            {managerLower && ` ${t("accounts.managerLower")}`}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
