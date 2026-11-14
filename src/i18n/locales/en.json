@@ -996,7 +996,9 @@
     "vellonFee": "Vellon fee",
     "vehicleClass": "Vehicle class",
     "accessibility": "Accessibility",
-    "wheelchairRequired": "Wheelchair-accessible vehicle"
+    "wheelchairRequired": "Wheelchair-accessible vehicle",
+    "account": "Account",
+    "accountNamed": "Account: {{name}}"
   },
   "rideEdit": {
     "dropoffAddress": "Drop-off address",

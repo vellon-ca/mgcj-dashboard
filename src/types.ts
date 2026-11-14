@@ -78,6 +78,13 @@ export interface Ride {
   fare_custom_reason?: string | null;
   fare_usual?: number | string | null;
   payment_method: string;
+  // Billed to a business account (payment_method 'account', mgcj-app
+  // 20261114030000): the name and team are frozen at booking (050000).
+  business_account_id?: string | null;
+  account_name?: string | null;
+  account_team_name?: string | null;
+  account_billing?: string | null;
+  booked_by_profile_id?: string | null;
   // The card that paid, frozen by capture-payment (20261023010000). NULL for
   // cash and for rides captured before it.
   card_brand?: string | null;

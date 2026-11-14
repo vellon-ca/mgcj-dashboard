@@ -10,6 +10,8 @@
 
 export type CardFacts = {
   payment_method?: string | null;
+  account_name?: string | null;
+  account_team_name?: string | null;
   card_brand?: string | null;
   card_last4?: string | null;
   card_wallet?: string | null;
@@ -36,12 +38,24 @@ const BRAND_NAMES: Record<string, string> = {
 };
 
 /**
- * `words` are the locale's "Card" and "Cash". Brand and wallet names are
- * trademarks and are not translated. NULL payment_method gives "—".
+ * `words` are the locale's "Card" and "Cash", and the account label ("Account:
+ * {{name}}", its fallback when the name is missing). Brand and wallet names
+ * are trademarks and are not translated. NULL payment_method gives "—".
+ *
+ * A ride billed to a business account (payment_method 'account') must never
+ * fall through to "Card": that is what every `=== 'cash' ? cash : card` check
+ * did before (mgcj-app business-accounts-payment-method-audit.md #32).
  */
-export function paymentLabel(row: CardFacts, words: { card: string; cash: string }): string {
+export function paymentLabel(
+  row: CardFacts,
+  words: { card: string; cash: string; account: (name: string | null) => string },
+): string {
   if (!row.payment_method) return "—";
   if (row.payment_method === "cash") return words.cash;
+  if (row.payment_method === "account") {
+    const name = [row.account_name, row.account_team_name].filter(Boolean).join(" · ");
+    return words.account(name || null);
+  }
   const last4 = row.card_last4 && /^\d{4}$/.test(row.card_last4) ? row.card_last4 : null;
   if (!last4) return words.card;
   const name = (row.card_wallet && WALLET_NAMES[row.card_wallet])

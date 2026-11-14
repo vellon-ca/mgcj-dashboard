@@ -1981,7 +1981,11 @@ export default function AnalyticsPage({
 
   // One name for a payment on every receipt surface: "Visa ••4242", "Cash".
   const payLabel = (row: Parameters<typeof paymentLabel>[0]) =>
-    paymentLabel(row, { card: t("rideDetail.card"), cash: t("rideDetail.cash") });
+    paymentLabel(row, {
+      card: t("rideDetail.card"),
+      cash: t("rideDetail.cash"),
+      account: (name) => (name ? t("rideDetail.accountNamed", { name }) : t("rideDetail.account")),
+    });
 
   function printReceipt(
     inv: ReceiptRow,

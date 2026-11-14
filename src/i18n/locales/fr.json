@@ -996,7 +996,9 @@
     "vellonFee": "Frais Vellon",
     "vehicleClass": "Catégorie de véhicule",
     "accessibility": "Accessibilité",
-    "wheelchairRequired": "Véhicule accessible en fauteuil roulant"
+    "wheelchairRequired": "Véhicule accessible en fauteuil roulant",
+    "account": "Compte",
+    "accountNamed": "Compte : {{name}}"
   },
   "rideEdit": {
     "dropoffAddress": "Adresse de dépôt",

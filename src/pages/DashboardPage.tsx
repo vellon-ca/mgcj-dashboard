@@ -238,6 +238,21 @@ function playAlertChime() {
 /** The long register of the flag reason, for the live dispatch card. Falls
  *  back to the generic "Problem reported" rather than the raw code: this one
  *  renders as a headline on a card a dispatcher reads mid-shift. */
+// How a ride is paid, as a word: "Cash", "Card", or the business account it is
+// billed to. An account ride must never read "Card" (or "Cash": a driver told
+// cash asks the rider for money).
+function payMethodText(r: {
+  payment_method?: string | null;
+  account_name?: string | null;
+  account_team_name?: string | null;
+}): string {
+  if (r.payment_method === "account") {
+    const name = [r.account_name, r.account_team_name].filter(Boolean).join(" · ");
+    return name ? i18next.t("rideDetail.accountNamed", { name }) : i18next.t("rideDetail.account");
+  }
+  return r.payment_method === "cash" ? i18next.t("rideDetail.cash") : i18next.t("rideDetail.card");
+}
+
 function flagLabel(code: string): string {
   const key = FLAG_REASON_KEYS[code];
   return i18next.t(key ?? "flagReason.other");
@@ -6419,7 +6434,7 @@ export default function DashboardPage({
                         {passengerTotalText(rd)}
                       </span>
                       <span className="db-live-chip">
-                        {rd.payment_method === "cash" ? t("rideDetail.cash") : t("rideDetail.card")}
+                        {payMethodText(rd)}
                       </span>
                     </div>
 
@@ -7259,9 +7274,7 @@ export default function DashboardPage({
                       : []),
                     [
                       t("rideDetail.payment"),
-                      rideDetail.payment_method === "cash"
-                        ? t("rideDetail.cash")
-                        : t("rideDetail.card"),
+                      payMethodText(rideDetail),
                     ],
                     ...(rideDetail.payment_method === "card" && settlementRouteOf(rideDetail)
                       ? ([
