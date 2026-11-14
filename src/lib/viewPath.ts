@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 export const VIEW_PATHS = [
   "rides",
   "drivers",
+  "accounts",
   "analytics",
   "reports",
   "discounts",
