@@ -20,6 +20,7 @@ import ReportsPage from "./ReportsPage";
 import DiscountsPage from "./DiscountsPage";
 import SettingsPage from "./SettingsPage";
 import AnnouncementsPage from "./AnnouncementsPage";
+import AccountsPage from "./AccountsPage";
 import MessagesPage from "./MessagesPage";
 import AiPage, { IconAi } from "./AiPage";
 
@@ -324,6 +325,16 @@ function IconDiscounts() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 12V4h8l10 10-8 8z" />
       <circle cx="7.5" cy="7.5" r="1.5" />
+    </svg>
+  );
+}
+// A building: the same mark as the business-account badge in the apps.
+function IconAccounts() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" />
+      <path d="M15 10h4a1 1 0 0 1 1 1v10" />
+      <path d="M3 21h18M8 8h3M8 12h3M8 16h3" />
     </svg>
   );
 }
@@ -1336,11 +1347,29 @@ function coverageDisplay(ride: any): { label: string; color: string } {
 // Scheduled Ride Card
 // Information only: Assign, Edit and Cancel are in the ride's detail window,
 // which a click on the card opens.
+// The business-account badge (mgcj-app business-accounts-design.md §11): an
+// outlined chip with the building mark, never a tinted wash. Shown for a
+// passenger who is an active member of an active account (ba_badges_for).
+function AccountBadge({ name }: { name: string }) {
+  return (
+    <span className="db-acct-badge" title={name}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" />
+        <path d="M15 10h4a1 1 0 0 1 1 1v10" />
+        <path d="M3 21h18" />
+      </svg>
+      <span className="db-acct-badge-name">{name}</span>
+    </span>
+  );
+}
+
 function ScheduledRideCard({
   ride,
+  accountName,
   onCardClick,
 }: {
   ride: any;
+  accountName?: string;
   onCardClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -1371,6 +1400,7 @@ function ScheduledRideCard({
       </div>
       <div className="db-ride-name">
         {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
+        {accountName && <AccountBadge name={accountName} />}
       </div>
       <div className="db-ride-route">
         {ride.pickup_address} → {ride.dropoff_address}
@@ -1528,6 +1558,29 @@ export default function DashboardPage({
   const driverIconCacheRef = useRef<Map<string, google.maps.Icon>>(new Map());
 
   const [rides, setRides] = useState<Ride[]>([]);
+  // passenger profile id -> business account name, for the badge on ride cards.
+  const [accountBadges, setAccountBadges] = useState<Record<string, string>>({});
+  const badgeIdsKey = Array.from(new Set(rides.map((r) => r.passenger_id).filter(Boolean)))
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (!badgeIdsKey) return;
+    let alive = true;
+    supabase
+      .rpc("ba_badges_for", { p_profiles: badgeIdsKey.split(",") })
+      .then(({ data, error }) => {
+        // A failed lookup leaves the cards as they were: a badge is a hint.
+        if (!alive || error) return;
+        const next: Record<string, string> = {};
+        for (const b of (data ?? []) as { profile_id: string; account_name: string }[]) {
+          next[b.profile_id] ??= b.account_name;
+        }
+        setAccountBadges(next);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [badgeIdsKey]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   // Real per-driver verdicts for the ride whose assign picker is open, from
   // check-ride-conflicts. Keyed by driver id. Empty until the call returns —
@@ -1572,6 +1625,7 @@ export default function DashboardPage({
   );
   const [showMessages, setShowMessages] = useState(initialView === "messages");
   const [showAi, setShowAi] = useState(initialView === "ai");
+  const [showAccounts, setShowAccounts] = useState(initialView === "accounts");
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
 
   // ── Driver trail (location history) ─────────────────────────────────────
@@ -1818,6 +1872,8 @@ export default function DashboardPage({
   const bookField = usePhoneField();
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
+  // The looked-up passenger's business account, for the badge beside "registered".
+  const [bookPassengerAccount, setBookPassengerAccount] = useState<string | null>(null);
   // The looked-up passenger, so the fare preview can ask the server about
   // THEIR student discount and their own limits on the picked code.
   const [bookPassengerId, setBookPassengerId] = useState<string | null>(null);
@@ -2049,7 +2105,7 @@ export default function DashboardPage({
       !showSettings &&
       !showAnnouncements &&
       !showMessages &&
-      !showAi &&
+      !showAi && !showAccounts &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -2061,7 +2117,7 @@ export default function DashboardPage({
         applyCompanyFrameRef.current?.();
       }, 50);
     }
-  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, showAi, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, showAi, showAccounts, selectedDriver]);
 
   // --- the dispatcher's own opening view -------------------------------------
   const flashTimerRef = useRef<number | null>(null);
@@ -2141,6 +2197,7 @@ export default function DashboardPage({
     showAnnouncements,
     showMessages,
     showAi,
+    showAccounts,
   ]);
 
   // Browser back/forward: apply whatever view the path now points at.
@@ -3750,6 +3807,7 @@ export default function DashboardPage({
       setBookBaseFare(null);
       setBookDiscountLine(null);
       setBookPassengerId(null);
+      setBookPassengerAccount(null);
       setBookDriver("");
       setBookScheduled("");
       fetchRides();
@@ -4133,7 +4191,7 @@ export default function DashboardPage({
     });
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "ai" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "ai" | "accounts" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
     setShowDiscounts(dest === "discounts");
@@ -4141,6 +4199,7 @@ export default function DashboardPage({
     setShowAnnouncements(dest === "announcements");
     setShowMessages(dest === "messages");
     setShowAi(dest === "ai");
+    setShowAccounts(dest === "accounts");
   }
 
   // Collapse the current tab/overlay state into the single active view. Overlay
@@ -4153,6 +4212,7 @@ export default function DashboardPage({
     if (showAnnouncements) return "announcements";
     if (showMessages) return "messages";
     if (showAi) return "ai";
+    if (showAccounts) return "accounts";
     return tab;
   }
 
@@ -4402,6 +4462,7 @@ export default function DashboardPage({
       </div>
       <div className="db-ride-name">
         {(ride as any).passenger?.name ?? t("common.unknown")}
+        {accountBadges[ride.passenger_id] && <AccountBadge name={accountBadges[ride.passenger_id]} />}
       </div>
       <div className="db-ride-route">
         {ride.pickup_address} → {ride.dropoff_address}
@@ -4512,6 +4573,8 @@ export default function DashboardPage({
               ? t("nav.messages")
               : showAi
                 ? t("nav.ai")
+              : showAccounts
+                ? t("nav.accounts")
               // Was `tab.charAt(0).toUpperCase() + tab.slice(1)` — a label
               // COMPUTED from a code identifier, so the English never appeared
               // as a string anywhere and no scanner of literals could see it.
@@ -4678,6 +4741,9 @@ export default function DashboardPage({
         .db-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--c-text-2)); }
         .db-ride-time { font-size: 11px; color: var(--c-text-2); }
         .db-ride-name { font-size: 13px; font-weight: 600; color: var(--c-text); margin-bottom: 3px; }
+        .db-acct-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: 1px; max-width: 160px; border: 1px solid var(--c-border-strong); border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--c-text-2); text-transform: none; letter-spacing: 0; }
+        .db-acct-badge svg { flex-shrink: 0; }
+        .db-acct-badge-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .db-ride-addr { font-size: 11px; color: var(--c-text-2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .db-ride-addr.dest { color: var(--c-text); }
         .db-ride-fare { font-size: 12px; font-weight: 600; color: var(--c-text-2); margin-top: 4px; }
@@ -5059,7 +5125,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: navTab, labelKey }) => (
               <button
                 key={navTab}
-                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi ? " active" : ""}`}
+                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts ? " active" : ""}`}
                 onClick={() => {
                   setTab(navTab);
                   navigateTo("main");
@@ -5070,6 +5136,18 @@ export default function DashboardPage({
                 {navExpanded && <span className="db-nav-label">{t(labelKey)}</span>}
               </button>
             ))}
+            <button
+              className={`db-nav-item${showAccounts ? " active" : ""}`}
+              onClick={() => {
+                navigateTo("accounts");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconAccounts />
+              </span>
+              {navExpanded && <span className="db-nav-label">{t("nav.accounts")}</span>}
+            </button>
             <button
               className={`db-nav-item${showAnnouncements ? " active" : ""}`}
               onClick={() => {
@@ -5227,7 +5305,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? t("rideDetail.driver"))
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -5261,7 +5339,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts && !selectedDriver ? (
               <>
                 {/* Always present, so "nothing needs me" is a readable state
                     rather than an absence. Turns red only for act_now. */}
@@ -5326,6 +5404,15 @@ export default function DashboardPage({
           >
             {profile.company_id && (
               <SettingsPage companyId={profile.company_id} adminId={profile.id} isAdmin={isAdmin} />
+            )}
+          </div>
+
+          <div
+            className="db-overlay"
+            style={{ display: showAccounts ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <AccountsPage companyId={profile.company_id} isAdmin={isAdmin} visible={showAccounts} />
             )}
           </div>
 
@@ -5445,7 +5532,7 @@ export default function DashboardPage({
             className="db-body"
             style={{
               display:
-                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages || showAi ? "none" : "flex",
+                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages || showAi || showAccounts ? "none" : "flex",
               position: "relative",
             }}
           >
@@ -5516,6 +5603,7 @@ export default function DashboardPage({
                         </div>
                         <div className="db-ride-name">
                           {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
+                          {accountBadges[ride.passenger_id] && <AccountBadge name={accountBadges[ride.passenger_id]} />}
                         </div>
                         <div className="db-ride-route">
                           {ride.pickup_address} → {ride.dropoff_address}
@@ -5635,6 +5723,7 @@ export default function DashboardPage({
                           <ScheduledRideCard
                             key={ride.id}
                             ride={ride}
+                            accountName={accountBadges[ride.passenger_id]}
                             onCardClick={() => setRideDetail(ride)}
                           />
                         ))}
@@ -6335,6 +6424,12 @@ export default function DashboardPage({
                       data: { id: string; name: string | null } | null;
                     };
                     setBookPassengerId(data?.id ?? null);
+                    setBookPassengerAccount(null);
+                    if (data?.id) {
+                      const { data: badges } = await supabase.rpc("ba_badges_for", { p_profiles: [data.id] });
+                      const first = (badges ?? [])[0] as { account_name: string } | undefined;
+                      if (first) setBookPassengerAccount(first.account_name);
+                    }
                     if (data?.name) {
                       setBookPassengerName(data.name);
                       setBookPassengerRegistered(true);
@@ -6348,6 +6443,7 @@ export default function DashboardPage({
                   onEdit={() => {
                     setBookPassengerRegistered(false);
                     setBookPassengerId(null);
+                    setBookPassengerAccount(null);
                   }}
                 />
                 <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
@@ -6381,6 +6477,9 @@ export default function DashboardPage({
                     >
                       {t("booking.ifNotRegistered")}
                     </span>
+                  )}
+                  {bookPassengerRegistered && bookPassengerAccount && (
+                    <AccountBadge name={bookPassengerAccount} />
                   )}
                 </label>
                 <input
