@@ -321,6 +321,21 @@
     "title": "Needs attention"
   },
   "booking": {
+    "price": "Price",
+    "fare": "Fare",
+    "usualFare": "Usual fare",
+    "customFare": "Custom fare",
+    "customReason": "Reason",
+    "customReasonPlaceholder": "e.g. Agreed by phone, airport run",
+    "bookingFee": "Booking fee",
+    "passengerPays": "Passenger pays (cash)",
+    "changePrice": "Change price",
+    "useUsualPrice": "Use usual price",
+    "customFareRequired": "Enter the custom fare.",
+    "customReasonRequired": "Give a reason for the custom price.",
+    "customConfirm": "The usual fare is ${{usual}}. Book at ${{custom}}?",
+    "customNotSaved": "The ride was booked at the usual price: the custom price could not be saved. Edit the ride to set it.",
+    "noPrice": "Could not price this trip. Use Change price to set one.",
     "errDriverNotNotified": "The ride is booked, but the driver could not be notified. Re-assign it from the ride card so they get the alert.",
     "errDriverUnavailable": "That driver can't take an immediate ride right now — pick another or leave it unassigned.",
     "addressPlaceholder": "Start typing an address…",
@@ -801,9 +816,11 @@
     "waited_other": "{{arrived}} → {{filed}} ({{count}} min at pickup)"
   },
   "receipt": {
+    "bookingFee": "Booking fee",
     "company": "Company",
     "date": "Date",
     "discount": "Discount",
+    "fare": "Fare",
     "fallbackCompany": "Your Taxi",
     "hst": "HST (15%)",
     "internalSettlement": "Internal — settlement (not shown to passenger)",
@@ -956,6 +973,9 @@
     "driverWaited": "Driver waited",
     "dropoff": "Drop-off",
     "fareEstimate": "Fare estimate",
+    "passengerPays": "Passenger pays",
+    "customPrice": "Custom price",
+    "customPriceValue": "Usual ${{usual}} · {{reason}}",
     "fareFinal": "Fare final",
     "feePending": "Pending",
     "immediate": "Immediate",
@@ -1009,6 +1029,7 @@
     "scheduled": "Scheduled"
   },
   "serviceAreas": {
+    "metaNoBookingFee": "no booking fee (set by Vellon)",
     "circleRadius": "Circle · {{km}} km radius",
     "cityFrames": "Frames your maps until you draw an area.",
     "cityPlaceholder": "Search your city — e.g. Moncton, NB",
@@ -1059,9 +1080,7 @@
     "baseFareHint": "Flat fee at the start of every ride",
     "carNumbersNext": "Car numbers · next:",
     "card": {
-      "subtitle": "Card fares are paid straight into your own Stripe account. Fill in Stripe's form once; after that you don't need to open Stripe.",
-      "continue": "Continue setup",
-      "update": "Update details",
+      "subtitle": "Card fares are paid straight into your own Stripe account. Everything about it is managed here, so you don't need to open Stripe.",
       "opening": "Opening…",
       "retry": "Try again",
       "notCreatedTitle": "Not set up yet",
@@ -1084,8 +1103,18 @@
         "wait": "In review",
         "todo": "Needs information"
       },
-      "outstanding": "Stripe still needs",
-      "formNote": "The form opens on Stripe and brings you back here when you finish."
+      "setupTitle": "Finish setting up",
+      "setupHint": "Stripe needs a few details before passengers can pay by card and before it can pay you.",
+      "formFallback": "Form not loading?",
+      "openStripeForm": "Open it on Stripe instead",
+      "businessTitle": "Business and bank details",
+      "businessHint": "Your business information and the bank account Stripe pays you into. Stripe asks you to sign in once on this computer before you can change them. The name on passengers' card statements is here too: use the name they know you by, or they may dispute the charge.",
+      "balanceTitle": "Balance and payout schedule",
+      "balanceHint": "Choose daily, weekly, monthly or manual payouts. With manual payouts the money stays in your Stripe balance until you start a payout yourself.",
+      "payoutsTitle": "Payouts to your bank",
+      "paymentsTitle": "Card payments",
+      "paymentsHint": "Every card fare and any disputes. To refund a fare, open the ride: the passenger is told about it there.",
+      "documentsTitle": "Documents"
     },
     "companyReports": "Company reports",
     "contactSubtitle": "How passengers and drivers reach <s>you</s> from the apps — not how you reach Vellon, which is under Support",

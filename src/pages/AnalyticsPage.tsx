@@ -174,6 +174,18 @@ interface ReceiptRow {
   tax_rate_percent: number | string | null;
   tax_amount: number | string | null;
   tax_label: string | null;
+  // The passenger booking fee as printed (20261113030000), tax-included.
+  // NULL = no fee, and every receipt from before 2026-11-13.
+  booking_fee: number | string | null;
+}
+
+/** What the passenger paid: fare + booking fee. The fee as stored, never recomputed. */
+function receiptFee(r: ReceiptRow): number {
+  const fee = r.booking_fee == null || r.booking_fee === "" ? 0 : Number(r.booking_fee);
+  return Number.isFinite(fee) && fee > 0 ? fee : 0;
+}
+function receiptTotal(r: ReceiptRow): number {
+  return Math.round((r.fare + receiptFee(r)) * 100) / 100;
 }
 
 /**
@@ -211,7 +223,8 @@ function receiptTax(r: ReceiptRow) {
   const taxed = rate != null && rate > 0 && amount != null && Number.isFinite(amount);
   return {
     taxed,
-    subtotal: taxed ? r.fare - amount! : null,
+    // tax_amount is the tax in the TOTAL (fare + booking fee).
+    subtotal: taxed ? receiptTotal(r) - amount! : null,
     amount,
     // Matches the function's formatRate: 14.00 prints as "14", 14.50 as "14.5".
     rateText: rate == null ? "" : String(Number(rate.toFixed(2))),
@@ -2006,8 +2019,14 @@ export default function AnalyticsPage({
           <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.discount"))}${inv.discount_label ? ` — ${esc(inv.discount_label)}` : ""}</p>
           <p style="margin: 0 0 12px; font-size: 15px; color: #1D9E75;">-$${inv.discount_amount!.toFixed(2)}</p>
           ` : ""}
-          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.totalFare"))}</p>
-          <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${inv.fare.toFixed(2)}</p>
+          ${receiptFee(inv) > 0 ? `
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.fare"))}</p>
+          <p style="margin: 0 0 8px; font-size: 15px;">$${inv.fare.toFixed(2)}</p>
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t("receipt.bookingFee"))}</p>
+          <p style="margin: 0 0 12px; font-size: 15px;">$${receiptFee(inv).toFixed(2)}</p>
+          ` : ""}
+          <p style="margin: 0 0 4px; font-size: 13px; color: #6B7280;">${esc(t(receiptFee(inv) > 0 ? "receipt.total" : "receipt.totalFare"))}</p>
+          <p style="margin: 0; font-size: 32px; font-weight: 700; color: #1a1a1a;">$${receiptTotal(inv).toFixed(2)}</p>
           <p style="margin: 4px 0 0; font-size: 13px; color: #6B7280;">${esc(
             t("receipt.paidBy", {
               method: payLabel(inv),
@@ -2648,7 +2667,7 @@ export default function AnalyticsPage({
 
   function exportReceiptsPDF() {
     logDispatchEvent({ companyId, dispatcherId, eventType: "export.pdf", details: { section: "receipts", row_count: filteredReceipts.length } });
-    const total = filteredReceipts.reduce((s, inv) => s + inv.fare, 0);
+    const total = filteredReceipts.reduce((s, inv) => s + receiptTotal(inv), 0);
     const tableRows = filteredReceipts.map((inv) => `
       <tr>
         <td style="font-family:monospace;font-size:11px;font-weight:700">${inv.receipt_number}</td>
@@ -2656,7 +2675,7 @@ export default function AnalyticsPage({
         <td>${inv.passenger_name ?? "—"}</td>
         <td>${inv.driver_name ?? "—"}</td>
         <td style="font-size:11px">${inv.pickup_address && inv.dropoff_address ? `${inv.pickup_address} → ${inv.dropoff_address}` : inv.pickup_address ?? "—"}</td>
-        <td style="color:#15803d;font-weight:600">$${inv.fare.toFixed(2)}</td>
+        <td style="color:#15803d;font-weight:600">$${receiptTotal(inv).toFixed(2)}</td>
         <td>${esc(payLabel(inv))}</td>
       </tr>`).join("");
     printReport(t("analytics.receiptsReportTitle", { company: label }), `
@@ -2688,7 +2707,7 @@ export default function AnalyticsPage({
         inv.driver_name ?? "",
         inv.pickup_address ?? "",
         inv.dropoff_address ?? "",
-        `$${inv.fare.toFixed(2)}`,
+        `$${receiptTotal(inv).toFixed(2)}`,
         inv.payment_method ?? "",
         inv.payment_method ? payLabel(inv) : "",
       ]),
@@ -5253,7 +5272,7 @@ export default function AnalyticsPage({
                               ? `${inv.pickup_address} → ${inv.dropoff_address}`
                               : inv.pickup_address ?? "—"}
                           </td>
-                          <td className="an-td green">${inv.fare.toFixed(2)}</td>
+                          <td className="an-td green">${receiptTotal(inv).toFixed(2)}</td>
                           <td className="an-td">{payLabel(inv)}</td>
                         </tr>
                       ))}
@@ -5294,6 +5313,12 @@ export default function AnalyticsPage({
                               [`${t("receipt.discount")}${selectedReceipt.discount_label ? ` — ${selectedReceipt.discount_label}` : ""}`, `-$${selectedReceipt.discount_amount.toFixed(2)}`],
                             ] as [string, string][])
                           : []),
+                        ...(receiptFee(selectedReceipt) > 0
+                          ? ([
+                              [t("receipt.fare"), `$${selectedReceipt.fare.toFixed(2)}`],
+                              [t("receipt.bookingFee"), `$${receiptFee(selectedReceipt).toFixed(2)}`],
+                            ] as [string, string][])
+                          : []),
                         // Same gate and same stored figures as the printed and
                         // emailed copies — see receiptTax(). No tax line at all
                         // when the ride was not taxed.
@@ -5309,7 +5334,7 @@ export default function AnalyticsPage({
                             ],
                           ];
                         })(),
-                        [totalLabel, `$${selectedReceipt.fare.toFixed(2)}`],
+                        [totalLabel, `$${receiptTotal(selectedReceipt).toFixed(2)}`],
                       ] as [string, string][]
                     ).map(([lbl, val]) => (
                       <div

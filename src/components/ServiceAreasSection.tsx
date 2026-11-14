@@ -66,6 +66,9 @@ interface ServiceArea {
   pricing_mode: PricingMode;
   flat_fare: number | null;
   percent_adjust: number | null;
+  // Pickups here pay no passenger booking fee. Set by Vellon only (a guard
+  // refuses a client write); shown, never edited, here.
+  no_booking_fee?: boolean | null;
   area_geojson: {
     type: "MultiPolygon";
     coordinates: number[][][][]; // [polygon][ring][vertex][lng,lat]
@@ -205,7 +208,7 @@ export default function ServiceAreasSection({ companyId, layout = "fill" }: Prop
     const { data, error } = await supabase
       .from("service_areas_geo")
       .select(
-        "id, name, allows_pickup, allows_dropoff, active, shape_kind, center_lat, center_lng, radius_m, pricing_mode, flat_fare, percent_adjust, area_geojson",
+        "id, name, allows_pickup, allows_dropoff, active, shape_kind, center_lat, center_lng, radius_m, pricing_mode, flat_fare, percent_adjust, no_booking_fee, area_geojson",
       )
       .eq("company_id", companyId)
       .order("created_at", { ascending: true });
@@ -879,6 +882,7 @@ export default function ServiceAreasSection({ companyId, layout = "fill" }: Prop
                   ` · ${t("serviceAreas.metaFlat", { amount: Number(a.flat_fare).toFixed(2) })}`}
                 {a.pricing_mode === "percent" && a.percent_adjust != null &&
                   ` · ${t("serviceAreas.metaPercent", { pct: signedPct(Number(a.percent_adjust)) })}`}
+                {a.no_booking_fee && ` · ${t("serviceAreas.metaNoBookingFee")}`}
                 {!a.active && ` · ${t("common.inactiveLower")}`}
               </div>
 

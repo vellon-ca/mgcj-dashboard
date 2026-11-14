@@ -321,6 +321,21 @@
     "title": "À traiter"
   },
   "booking": {
+    "price": "Prix",
+    "fare": "Tarif",
+    "usualFare": "Tarif habituel",
+    "customFare": "Tarif personnalisé",
+    "customReason": "Raison",
+    "customReasonPlaceholder": "p. ex. Convenu par téléphone, course à l'aéroport",
+    "bookingFee": "Frais de réservation",
+    "passengerPays": "Le passager paie (comptant)",
+    "changePrice": "Modifier le prix",
+    "useUsualPrice": "Utiliser le prix habituel",
+    "customFareRequired": "Saisissez le tarif personnalisé.",
+    "customReasonRequired": "Indiquez la raison du prix personnalisé.",
+    "customConfirm": "Le tarif habituel est de {{usual}} $. Réserver à {{custom}} $?",
+    "customNotSaved": "La course a été réservée au prix habituel : le prix personnalisé n'a pas pu être enregistré. Modifiez la course pour le définir.",
+    "noPrice": "Impossible de calculer le prix de ce trajet. Utilisez Modifier le prix pour en fixer un.",
     "errDriverNotNotified": "La course est réservée, mais le chauffeur n'a pas pu être averti. Réassignez-la depuis la fiche de la course pour qu'il reçoive l'alerte.",
     "errDriverUnavailable": "Ce chauffeur ne peut pas prendre une course immédiate pour le moment — choisissez-en un autre ou laissez-la non assignée.",
     "addressPlaceholder": "Commencez à saisir une adresse…",
@@ -801,9 +816,11 @@
     "waited_other": "{{arrived}} → {{filed}} ({{count}} min au point de départ)"
   },
   "receipt": {
+    "bookingFee": "Frais de réservation",
     "company": "Entreprise",
     "date": "Date",
     "discount": "Rabais",
+    "fare": "Tarif",
     "fallbackCompany": "Votre taxi",
     "hst": "TVH (15 %)",
     "internalSettlement": "Interne — règlement (non visible par le passager)",
@@ -956,6 +973,9 @@
     "driverWaited": "Attente du chauffeur",
     "dropoff": "Dépôt",
     "fareEstimate": "Tarif estimé",
+    "passengerPays": "Le passager paie",
+    "customPrice": "Prix personnalisé",
+    "customPriceValue": "Habituel {{usual}} $ · {{reason}}",
     "fareFinal": "Tarif final",
     "feePending": "En attente",
     "immediate": "Immédiate",
@@ -1009,6 +1029,7 @@
     "scheduled": "Planifiée"
   },
   "serviceAreas": {
+    "metaNoBookingFee": "sans frais de réservation (défini par Vellon)",
     "circleRadius": "Cercle · rayon de {{km}} km",
     "cityFrames": "Cadre vos cartes jusqu'à ce que vous dessiniez une zone.",
     "cityPlaceholder": "Recherchez votre ville — ex. Moncton, NB",
@@ -1059,9 +1080,7 @@
     "baseFareHint": "Montant fixe au début de chaque course",
     "carNumbersNext": "Numéros de voiture · prochain :",
     "card": {
-      "subtitle": "Les courses payées par carte sont versées directement dans votre propre compte Stripe. Remplissez le formulaire de Stripe une fois; vous n'aurez plus à ouvrir Stripe ensuite.",
-      "continue": "Continuer la configuration",
-      "update": "Mettre à jour",
+      "subtitle": "Les courses payées par carte sont versées directement dans votre propre compte Stripe. Tout se gère ici, sans avoir à ouvrir Stripe.",
       "opening": "Ouverture…",
       "retry": "Réessayer",
       "notCreatedTitle": "Pas encore configuré",
@@ -1084,8 +1103,18 @@
         "wait": "En examen",
         "todo": "Renseignements requis"
       },
-      "outstanding": "Stripe a encore besoin de",
-      "formNote": "Le formulaire s'ouvre sur Stripe et vous ramène ici une fois terminé."
+      "setupTitle": "Terminer la configuration",
+      "setupHint": "Stripe a besoin de quelques renseignements avant que les passagers puissent payer par carte et avant de pouvoir vous payer.",
+      "formFallback": "Le formulaire ne s'affiche pas?",
+      "openStripeForm": "L'ouvrir plutôt sur Stripe",
+      "businessTitle": "Entreprise et compte bancaire",
+      "businessHint": "Les renseignements sur votre entreprise et le compte bancaire où Stripe vous paie. Stripe vous demande de vous connecter une fois sur cet ordinateur avant de pouvoir les modifier. Le nom qui figure sur le relevé de carte des passagers se trouve ici aussi : utilisez le nom sous lequel ils vous connaissent, sinon ils risquent de contester le paiement.",
+      "balanceTitle": "Solde et calendrier des virements",
+      "balanceHint": "Choisissez des virements quotidiens, hebdomadaires, mensuels ou manuels. Avec les virements manuels, l'argent reste dans votre solde Stripe jusqu'à ce que vous demandiez vous-même un virement.",
+      "payoutsTitle": "Virements à votre banque",
+      "paymentsTitle": "Paiements par carte",
+      "paymentsHint": "Toutes les courses payées par carte et les contestations. Pour rembourser une course, ouvrez la course : le passager en est avisé.",
+      "documentsTitle": "Documents"
     },
     "companyReports": "Signalements de l'entreprise",
     "contactSubtitle": "Comment les passagers et les chauffeurs <s>vous</s> joignent depuis les applis — et non comment vous joignez Vellon, ce qui se trouve sous Assistance",
