@@ -70,6 +70,13 @@ export interface Ride {
   // Pre-discount fare. Written at booking and read back to seed the edit form,
   // which is why the box means the same thing whether or not an address moved.
   pre_discount_fare: number | null;
+  // Passenger booking fee (mgcj-app booking-fee-design.md), tax-included.
+  // Cash, once completed: includes the round-up. NULL = no fee.
+  booking_fee?: number | string | null;
+  // "Change price": set by edit-ride, with the reason and the usual fare.
+  fare_custom?: boolean | null;
+  fare_custom_reason?: string | null;
+  fare_usual?: number | string | null;
   payment_method: string;
   // The card that paid, frozen by capture-payment (20261023010000). NULL for
   // cash and for rides captured before it.
