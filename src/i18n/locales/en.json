@@ -827,7 +827,9 @@
     "soon": "Soon",
     "lightMode": "Light mode",
     "darkMode": "Dark mode",
-    "accounts": "Accounts"
+    "accounts": "Accounts",
+    "applicationsWaiting_one": "{{count}} application waiting",
+    "applicationsWaiting_other": "{{count}} applications waiting"
   },
   "noShow": {
     "reportedNoArrival": "Reported {{filed}} (arrival time not recorded)",

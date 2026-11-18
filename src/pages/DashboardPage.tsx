@@ -1643,6 +1643,9 @@ export default function DashboardPage({
   const [showMessages, setShowMessages] = useState(initialView === "messages");
   const [showAi, setShowAi] = useState(initialView === "ai");
   const [showAccounts, setShowAccounts] = useState(initialView === "accounts");
+  // Business applications waiting for a decision. Dispatch gets no pushes, so
+  // this badge on the Accounts icon is the only signal one has arrived.
+  const [pendingApplications, setPendingApplications] = useState(0);
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
 
   // ── Driver trail (location history) ─────────────────────────────────────
@@ -2261,6 +2264,17 @@ export default function DashboardPage({
   useEffect(() => {
     fetchStaticConfig();
     const i = setInterval(fetchStaticConfig, 300_000);
+    return () => clearInterval(i);
+  }, []);
+
+  useEffect(() => {
+    const load = () =>
+      supabase.rpc("ba_list_applications").then(({ data, error }) => {
+        if (error) return;
+        setPendingApplications(((data ?? []) as { status: string }[]).filter((a) => a.status === "pending").length);
+      });
+    load();
+    const i = setInterval(load, 60_000);
     return () => clearInterval(i);
   }, []);
 
@@ -4953,6 +4967,7 @@ export default function DashboardPage({
         .db-nav-label { font-size: 13px; font-weight: 500; color: var(--c-text-2); transition: color 0.12s; }
         .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: var(--c-text); }
         .db-nav-item.active .db-nav-label { font-weight: 600; }
+        .db-nav-count { position: absolute; top: -6px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--c-brand-fill); color: var(--c-on-brand); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
         .db-nav-bottom { padding: 8px 0; border-top: 1px solid var(--c-border); width: 100%; display: flex; flex-direction: column; }
         .db-nav-profile { display: flex; align-items: center; gap: 11px; width: 100%; height: 48px; padding: 0 19px; margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
         .db-nav-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--c-surface-alt); color: var(--c-text); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
@@ -5425,6 +5440,11 @@ export default function DashboardPage({
             ))}
             <button
               className={`db-nav-item${showAccounts ? " active" : ""}`}
+              aria-label={
+                pendingApplications > 0
+                  ? `${t("nav.accounts")}, ${t("nav.applicationsWaiting", { count: pendingApplications })}`
+                  : undefined
+              }
               onClick={() => {
                 navigateTo("accounts");
                 setSelectedDriver(null);
@@ -5432,6 +5452,11 @@ export default function DashboardPage({
             >
               <span className="db-nav-icon">
                 <IconAccounts />
+                {pendingApplications > 0 && (
+                  <span className="db-nav-count" aria-hidden="true">
+                    {pendingApplications > 9 ? "9+" : pendingApplications}
+                  </span>
+                )}
               </span>
               {navExpanded && <span className="db-nav-label">{t("nav.accounts")}</span>}
             </button>
@@ -5699,7 +5724,7 @@ export default function DashboardPage({
             style={{ display: showAccounts ? "flex" : "none" }}
           >
             {profile.company_id && (
-              <AccountsPage companyId={profile.company_id} isAdmin={isAdmin} visible={showAccounts} />
+              <AccountsPage companyId={profile.company_id} isAdmin={isAdmin} visible={showAccounts} onPendingApplications={setPendingApplications} />
             )}
           </div>
 

@@ -67,6 +67,8 @@ interface Props {
   companyId: string;
   isAdmin: boolean;
   visible: boolean;
+  // Pending applications, for the badge on the nav's Accounts icon.
+  onPendingApplications?: (count: number) => void;
 }
 
 const STATUS_DOT: Record<Member["status"], string> = {
@@ -75,7 +77,7 @@ const STATUS_DOT: Record<Member["status"], string> = {
   invited: "var(--c-blue)",
 };
 
-export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
+export default function AccountsPage({ companyId, isAdmin, visible, onPendingApplications }: Props) {
   const { t, i18n } = useTranslation();
   const fmtMoney = (cents: number) =>
     new Intl.NumberFormat(i18n.language, { style: "currency", currency: "CAD", currencyDisplay: "narrowSymbol" }).format(cents / 100);
@@ -134,7 +136,9 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         owing[r.account_id] = Number(r.owing_cents);
       }
       setAccounts(list);
-      setApplications((ap.data ?? []) as Application[]);
+      const apps = (ap.data ?? []) as Application[];
+      setApplications(apps);
+      onPendingApplications?.(apps.filter((x) => x.status === "pending").length);
       setAppSettings((st.data as ApplicationSettings | null) ?? null);
       setActiveCounts(counts);
       setOwingCents(owing);

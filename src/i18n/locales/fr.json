@@ -827,7 +827,9 @@
     "soon": "Bientôt",
     "lightMode": "Mode clair",
     "darkMode": "Mode sombre",
-    "accounts": "Comptes"
+    "accounts": "Comptes",
+    "applicationsWaiting_one": "{{count}} demande en attente",
+    "applicationsWaiting_other": "{{count}} demandes en attente"
   },
   "noShow": {
     "reportedNoArrival": "Signalé à {{filed}} (heure d'arrivée non enregistrée)",
