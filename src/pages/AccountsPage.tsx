@@ -5,6 +5,7 @@ import { fmtDate } from "../i18n/format";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 import { formatPhoneDisplay } from "../lib/phone";
 import AccountStatements from "../components/AccountStatements";
+import AccountApplication, { ApplicationLinkCard, type Application, type ApplicationSettings } from "../components/AccountApplication";
 
 // Business accounts, as the TAXI COMPANY sees them (mgcj-app
 // .claude/notes/business-accounts-design.md, §2). The business runs its own
@@ -53,6 +54,8 @@ interface Manager {
   last_sign_in_at: string | null;
   /** When the invite email last went out; null for a manager added before invites. */
   invite_sent_at: string | null;
+  /** Manages through the business's own record: not the taxi company's to remove or re-invite. */
+  via_business: boolean;
 }
 
 interface Team {
@@ -95,6 +98,10 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
   // Managers whose invite was just asked for again: "Sent" in place of the link.
   const [resent, setResent] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  // Businesses applying through the company's link, and the link itself.
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [appSettings, setAppSettings] = useState<ApplicationSettings | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
 
   // ── account list
   useEffect(() => {
@@ -109,7 +116,9 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         .order("name"),
       supabase.from("account_members").select("account_id").eq("status", "active"),
       supabase.rpc("ba_account_balances"),
-    ]).then(([a, m, b]) => {
+      supabase.rpc("ba_list_applications"),
+      supabase.rpc("ba_application_settings"),
+    ]).then(([a, m, b, ap, st]) => {
       if (!alive) return;
       if (a.error) {
         setError(t("accounts.errLoad"));
@@ -125,6 +134,8 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         owing[r.account_id] = Number(r.owing_cents);
       }
       setAccounts(list);
+      setApplications((ap.data ?? []) as Application[]);
+      setAppSettings((st.data as ApplicationSettings | null) ?? null);
       setActiveCounts(counts);
       setOwingCents(owing);
       setSelectedId((cur) => (cur && list.some((x) => x.id === cur) ? cur : (list[0]?.id ?? null)));
@@ -158,6 +169,8 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
   }, [visible, selectedId, detailVersion, t]);
 
   const account = accounts?.find((a) => a.id === selectedId) ?? null;
+  const pendingApps = applications.filter((a) => a.status === "pending");
+  const selectedApp = applications.find((a) => a.id === selectedAppId) ?? null;
   const teamName = (id: string | null) => teams.find((x) => x.id === id)?.name ?? "—";
 
   const shown = useMemo(() => {
@@ -337,16 +350,46 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         .ac-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
         .ac-check input { margin-top: 3px; }
         .ac-result { font-size: 13px; margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+        .ac-count { background: var(--c-surface-sel); border-radius: 9px; padding: 0 7px; color: var(--c-text); letter-spacing: 0; margin-left: 4px; }
+        .ac-applink.compact { margin: 0 16px; padding: 12px; border: 1px solid var(--c-border-subtle); border-radius: 10px; }
+        .ac-applink.compact .ac-input { font-size: 11px; }
+        .ac-switch { width: 34px; height: 20px; border-radius: 10px; border: none; background: var(--c-border-strong); position: relative; cursor: pointer; flex-shrink: 0; padding: 0; }
+        .ac-switch::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--c-surface); transition: left 0.15s; }
+        .ac-switch.on { background: var(--c-brand-fill); }
+        .ac-switch.on::after { left: 16px; }
+        .ac-switch:disabled { cursor: default; opacity: 0.7; }
         @media (max-width: 1100px) { .ac-grid { grid-template-columns: minmax(0, 1fr); } }
       `}</style>
 
       <div className="ac-panel">
+        {pendingApps.length > 0 && (
+          <>
+            <div className="ac-panel-title">
+              {t("accounts.app.listTitle")} <span className="ac-count">{pendingApps.length}</span>
+            </div>
+            {pendingApps.map((ap) => (
+              <button
+                key={ap.id}
+                className={`ac-acct${ap.id === selectedAppId ? " on" : ""}`}
+                onClick={() => setSelectedAppId(ap.id)}
+              >
+                <span className="ac-acct-name">{ap.business_name}</span>
+                <span className="ac-acct-sub">
+                  <span className="ac-dot" style={{ background: "var(--c-amber)" }} />
+                  {t("accounts.app.listSub", { date: fmtDate(ap.created_at), name: ap.submitted_by_name ?? ap.submitted_by_email })}
+                </span>
+              </button>
+            ))}
+            <div style={{ height: 14 }} />
+          </>
+        )}
         <div className="ac-panel-title">{t("accounts.title")}</div>
         {(accounts ?? []).map((a) => (
           <button
             key={a.id}
-            className={`ac-acct${a.id === selectedId ? " on" : ""}`}
+            className={`ac-acct${a.id === selectedId && !selectedApp ? " on" : ""}`}
             onClick={() => {
+              setSelectedAppId(null);
               setSelectedId(a.id);
               setRenaming(null);
               setManagerEmail(null);
@@ -403,11 +446,32 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
               </div>
             </form>
           ))}
+        <div style={{ marginTop: "auto", paddingTop: 16, display: selectedApp ? "none" : undefined }}>
+          <ApplicationLinkCard
+            compact
+            settings={appSettings}
+            isAdmin={isAdmin}
+            onChanged={() => setListVersion((v) => v + 1)}
+          />
+        </div>
       </div>
 
       <div className="ac-content">
         {error && <div className="ac-error">{error}</div>}
-        {accounts === null ? (
+        {selectedApp ? (
+          <AccountApplication
+            key={selectedApp.id}
+            app={selectedApp}
+            isAdmin={isAdmin}
+            settings={appSettings}
+            onSettings={() => setListVersion((v) => v + 1)}
+            onDecided={(accountId) => {
+              setSelectedAppId(null);
+              if (accountId) setSelectedId(accountId);
+              setListVersion((v) => v + 1);
+            }}
+          />
+        ) : accounts === null ? (
           <div className="ac-empty">{t("common.loading")}</div>
         ) : !account ? (
           <div className="ac-empty">{isAdmin ? t("accounts.emptyAdmin") : t("accounts.emptyDispatcher")}</div>
@@ -563,13 +627,14 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
                             <b>{m.email}</b>
                           )}
                           <div className="ac-small">
+                            {m.via_business && <>{t("accounts.viaBusiness")} · </>}
                             {m.last_sign_in_at ? (
                               t("accounts.lastSignIn", { date: fmtDate(m.last_sign_in_at) })
                             ) : (
                               <>
                                 {t("accounts.neverSignedIn")}
                                 {m.invite_sent_at && ` · ${t("accounts.inviteSent", { date: fmtDate(m.invite_sent_at) })}`}
-                                {isAdmin && (
+                                {isAdmin && !m.via_business && (
                                   <>
                                     {" · "}
                                     {resent.has(m.id) ? (
@@ -585,7 +650,7 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
                             )}
                           </div>
                         </div>
-                        {isAdmin && (
+                        {isAdmin && !m.via_business && (
                           <button className="ac-linkbtn danger" onClick={() => removeManager(m)}>
                             {t("accounts.remove")}
                           </button>
