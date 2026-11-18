@@ -20,7 +20,10 @@ interface Row {
   issued_at: string;
   ride_count: number;
   total_cents: number;
+  /** Recorded payments + card lines. */
   paid_cents: number;
+  /** Lines already charged to the business's card (2b); never owed. */
+  card_paid_cents?: number;
   last_paid_on: string | null;
   voided_at: string | null;
   void_reason: string | null;
@@ -353,6 +356,8 @@ function StatementDialog({
   }
 
   const s = d?.statement;
+  // Payments staff recorded; card lines alone never stop a void.
+  const recorded = s ? s.paid_cents - (s.card_paid_cents ?? 0) : 0;
   const zoned = (iso: string) =>
     fmtDate(iso, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: s?.time_zone });
 
@@ -452,9 +457,9 @@ function StatementDialog({
                   <span>{t("accounts.voidTitle")}</span>
                 </div>
                 <div className="ac-small" style={{ marginBottom: 8 }}>
-                  {s.paid_cents > 0 ? t("accounts.voidHasPayments") : t("accounts.voidNote")}
+                  {recorded > 0 ? t("accounts.voidHasPayments") : t("accounts.voidNote")}
                 </div>
-                {s.paid_cents === 0 && (
+                {recorded === 0 && (
                   <div style={{ display: "flex", gap: 8 }}>
                     <input
                       id={reasonId}
