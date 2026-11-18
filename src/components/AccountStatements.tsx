@@ -42,6 +42,10 @@ interface Line {
   total_cents: number;
   tax_rate_percent: number | null;
   ride_ref: string | null;
+  /** card = already charged to the business's card (amounts net of any refund at issue). */
+  kind?: "invoice" | "card";
+  refunded_cents?: number;
+  card_last4?: string | null;
 }
 
 interface Detail {
@@ -49,6 +53,15 @@ interface Detail {
   lines: Line[];
   payments: { id: string; amount_cents: number; received_on: string; note: string | null }[];
 }
+
+/** A month that was all card: already paid, by the business's card. */
+const allCard = (r: Row) => r.status === "paid" && (r.card_paid_cents ?? 0) >= r.total_cents;
+/** The status as read: "Paid by card" for an all-card month, and "Owing" while
+    only the card lines are paid (nothing has been paid on the rest yet). */
+const statusKey = (r: Row) =>
+  allCard(r) ? "accounts.stPaidByCard"
+  : r.status === "part_paid" && r.paid_cents <= (r.card_paid_cents ?? 0) ? STATUS.owing.key
+  : STATUS[r.status].key;
 
 const STATUS: Record<Status, { key: string; color: string }> = {
   owing: { key: "accounts.stOwing", color: "var(--c-amber)" },
@@ -174,7 +187,7 @@ export default function AccountStatements({
               {r.status === "paid" && r.last_paid_on
                 ? t("accounts.stPaidOn", { date: dateOnly(r.last_paid_on, { month: "short", day: "numeric" }) })
                 : t("accounts.stLine", {
-                    status: t(STATUS[r.status].key),
+                    status: t(statusKey(r)),
                     date: fmtDate(r.issued_at, { month: "short", day: "numeric" }),
                     count: r.ride_count,
                   })}
@@ -357,7 +370,8 @@ function StatementDialog({
 
   const s = d?.statement;
   // Payments staff recorded; card lines alone never stop a void.
-  const recorded = s ? s.paid_cents - (s.card_paid_cents ?? 0) : 0;
+  const cardPaid = s?.card_paid_cents ?? 0;
+  const recorded = s ? s.paid_cents - cardPaid : 0;
   const zoned = (iso: string) =>
     fmtDate(iso, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: s?.time_zone });
 
@@ -388,7 +402,7 @@ function StatementDialog({
                 <div className="ac-form-title">{money(s.total_cents)}</div>
                 <div className="as-sub" style={{ justifyContent: "flex-end" }}>
                   <span className="ac-dot" style={{ background: STATUS[s.status].color }} />
-                  {t(STATUS[s.status].key)}
+                  {t(statusKey(s))}
                   {(s.status === "owing" || s.status === "part_paid") && ` · ${money(s.total_cents - s.paid_cents)}`}
                 </div>
               </div>
@@ -423,11 +437,32 @@ function StatementDialog({
                       <td>{l.rider_name}</td>
                       <td className="ac-muted">{l.team_name ?? t("accounts.noTeam")}</td>
                       <td className="ac-muted">{l.pickup_address} → {l.dropoff_address}</td>
-                      <td className="num">{money(l.total_cents)}</td>
+                      <td className="num">
+                        {l.kind === "card" && (
+                          <span className="as-chip" style={{ marginLeft: 0, marginRight: 6 }}>
+                            {l.card_last4 ? t("accounts.stCardMark", { last4: l.card_last4 }) : t("accounts.stCardMarkNoDigits")}
+                            {(l.refunded_cents ?? 0) > 0 && " *"}
+                          </span>
+                        )}
+                        {money(l.total_cents)}
+                      </td>
                     </tr>
                   ))}
+                  {cardPaid > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={4}>{t("accounts.stPaidByCard")}</td>
+                        <td className="num">{money(-cardPaid)}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={4}><b>{t("accounts.stToPay")}</b></td>
+                        <td className="num"><b>{money(s.total_cents - cardPaid)}</b></td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
+              {d.lines.some((l) => (l.refunded_cents ?? 0) > 0) && <div className="ac-small" style={{ marginTop: 6 }}>{t("accounts.stRefundedNote")}</div>}
               {d.lines.some((l) => l.ride_month !== s.month) && <div className="ac-small" style={{ marginTop: 6 }}>{t("accounts.lateMonth")}</div>}
             </div>
 
