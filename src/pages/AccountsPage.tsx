@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import { fmtDate } from "../i18n/format";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 import { formatPhoneDisplay } from "../lib/phone";
+import AccountStatements from "../components/AccountStatements";
 
 // Business accounts, as the TAXI COMPANY sees them (mgcj-app
 // .claude/notes/business-accounts-design.md, §2). The business runs its own
@@ -26,6 +27,8 @@ interface Account {
   company_ride_limit_cents: number | null;
   manager_monthly_limit_cents: number | null;
   manager_ride_limit_cents: number | null;
+  // Stage 6 (mgcj-app 20261117000000): free text printed on statements.
+  payment_terms: string | null;
 }
 
 interface Member {
@@ -66,9 +69,12 @@ const STATUS_DOT: Record<Member["status"], string> = {
 };
 
 export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const fmtMoney = (cents: number) =>
+    new Intl.NumberFormat(i18n.language, { style: "currency", currency: "CAD", currencyDisplay: "narrowSymbol" }).format(cents / 100);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [activeCounts, setActiveCounts] = useState<Record<string, number>>({});
+  const [owingCents, setOwingCents] = useState<Record<string, number>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [managers, setManagers] = useState<Manager[]>([]);
@@ -92,11 +98,12 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
       supabase
         .from("business_accounts")
         .select(
-          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents",
+          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents, payment_terms",
         )
         .order("name"),
       supabase.from("account_members").select("account_id").eq("status", "active"),
-    ]).then(([a, m]) => {
+      supabase.rpc("ba_account_balances"),
+    ]).then(([a, m, b]) => {
       if (!alive) return;
       if (a.error) {
         setError(t("accounts.errLoad"));
@@ -107,8 +114,13 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
       for (const r of (m.data ?? []) as { account_id: string }[]) {
         counts[r.account_id] = (counts[r.account_id] ?? 0) + 1;
       }
+      const owing: Record<string, number> = {};
+      for (const r of (b.data ?? []) as { account_id: string; owing_cents: number }[]) {
+        owing[r.account_id] = Number(r.owing_cents);
+      }
       setAccounts(list);
       setActiveCounts(counts);
+      setOwingCents(owing);
       setSelectedId((cur) => (cur && list.some((x) => x.id === cur) ? cur : (list[0]?.id ?? null)));
     });
     return () => {
@@ -293,6 +305,16 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
         .ac-soon { border: 1px dashed var(--c-border-strong); border-radius: 12px; padding: 14px 16px; font-size: 12px; color: var(--c-text-2); line-height: 1.5; }
         .ac-error { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 13px; color: var(--c-red); }
         .ac-empty { color: var(--c-text-2); font-size: 14px; text-align: center; padding: 60px 0; }
+        /* Dialogs: shared by AddOnBehalf and the statement dialogs. */
+        .ac-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+        .ac-form { background: var(--c-surface); border-radius: 14px; padding: 24px; width: 100%; max-width: 420px; border: 1px solid var(--c-border); box-shadow: 0 20px 60px var(--c-shadow); font-family: system-ui, sans-serif; color: var(--c-text); }
+        .ac-form-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+        .ac-form-sub { font-size: 13px; color: var(--c-text-2); line-height: 1.5; margin-bottom: 16px; }
+        .ac-field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+        .ac-label { font-size: 12px; color: var(--c-text-2); font-weight: 500; }
+        .ac-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+        .ac-check input { margin-top: 3px; }
+        .ac-result { font-size: 13px; margin-top: 12px; display: flex; gap: 8px; align-items: center; }
         @media (max-width: 1100px) { .ac-grid { grid-template-columns: minmax(0, 1fr); } }
       `}</style>
 
@@ -315,14 +337,16 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
                 className="ac-dot"
                 style={{
                   background:
-                    a.status === "active" && a.billing_mode ? "var(--c-green)" : "var(--c-amber)",
+                    a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
                 }}
               />
               {a.status !== "active"
                 ? t("accounts.suspended")
-                : a.billing_mode
-                  ? t("accounts.activePeople", { count: activeCounts[a.id] ?? 0 })
-                  : t("accounts.activeNoBilling")}
+                : owingCents[a.id]
+                  ? t("accounts.owingSub", { amount: fmtMoney(owingCents[a.id]) })
+                  : a.billing_mode
+                    ? t("accounts.activePeople", { count: activeCounts[a.id] ?? 0 })
+                    : t("accounts.activeNoBilling")}
             </span>
           </button>
         ))}
@@ -629,17 +653,6 @@ function AddOnBehalf({
 
   return (
     <div className="ac-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <style>{`
-        .ac-overlay { position: fixed; inset: 0; background: var(--c-scrim); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-        .ac-form { background: var(--c-surface); border-radius: 14px; padding: 24px; width: 100%; max-width: 420px; border: 1px solid var(--c-border); box-shadow: 0 20px 60px var(--c-shadow); font-family: system-ui, sans-serif; color: var(--c-text); }
-        .ac-form-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
-        .ac-form-sub { font-size: 13px; color: var(--c-text-2); line-height: 1.5; margin-bottom: 16px; }
-        .ac-field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
-        .ac-label { font-size: 12px; color: var(--c-text-2); font-weight: 500; }
-        .ac-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
-        .ac-check input { margin-top: 3px; }
-        .ac-result { font-size: 13px; margin-top: 12px; display: flex; gap: 8px; align-items: center; }
-      `}</style>
       <div className="ac-form">
         <div className="ac-form-title">{t("accounts.addTitle", { name: accountName })}</div>
         <div className="ac-form-sub">{t("accounts.addSub")}</div>
@@ -743,6 +756,8 @@ function BillingCard({
   const radioName = useId();
   const monthlyId = useId();
   const perRideId = useId();
+  const termsId = useId();
+  const [terms, setTerms] = useState(account.payment_terms ?? "");
   const [monthly, setMonthly] = useState(centsToField(account.company_monthly_limit_cents));
   const [perRide, setPerRide] = useState(centsToField(account.company_ride_limit_cents));
   const [busy, setBusy] = useState(false);
@@ -780,8 +795,20 @@ function BillingCard({
       setMsg({ ok: false, text: t("accounts.errBadAmount") });
       return;
     }
+    if (terms.trim().length > 120) {
+      setMsg({ ok: false, text: t("accounts.errTermsLong") });
+      return;
+    }
     setBusy(true);
     setMsg(null);
+    if (terms.trim() !== (account.payment_terms ?? "")) {
+      const tr = await supabase.rpc("ba_set_payment_terms", { p_account: account.id, p_terms: terms.trim() });
+      if (tr.error || !tr.data?.ok) {
+        setBusy(false);
+        setMsg({ ok: false, text: tr.data?.reason === "too_long" ? t("accounts.errTermsLong") : t("accounts.errGeneric") });
+        return;
+      }
+    }
     const { data, error } = await supabase.rpc("ba_set_billing", {
       p_account: account.id,
       p_mode: "invoice",
@@ -870,6 +897,21 @@ function BillingCard({
             />
           </div>
         </div>
+        <div className="ac-field" style={{ marginTop: 16, marginBottom: 0 }}>
+          <label className="ac-card-label" htmlFor={termsId} style={{ marginBottom: 2 }}>
+            <span>{t("accounts.termsLabel")}</span>
+          </label>
+          <input
+            id={termsId}
+            className="ac-input"
+            maxLength={120}
+            value={terms}
+            placeholder={t("accounts.termsPlaceholder")}
+            disabled={!isAdmin}
+            onChange={(e) => setTerms(e.target.value)}
+          />
+          <div className="ac-small">{t("accounts.termsNote")}</div>
+        </div>
         {msg && (
           <div className="ac-small" style={{ marginTop: 8, color: msg.ok ? "var(--c-green)" : "var(--c-red)" }}>
             {msg.text}
@@ -906,6 +948,10 @@ function BillingCard({
             {managerLower && ` ${t("accounts.managerLower")}`}
           </div>
         </div>
+      )}
+
+      {account.billing_mode === "invoice" && (
+        <AccountStatements accountId={account.id} isAdmin={isAdmin} usage={usage} onChanged={onSaved} />
       )}
     </>
   );
