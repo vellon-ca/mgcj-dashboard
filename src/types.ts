@@ -85,7 +85,7 @@ export interface Ride {
   account_team_name?: string | null;
   account_billing?: string | null;
   // Set while the rider can no longer bill the account (mgcj-app 20261117010000).
-  account_issue?: "not_member" | "suspended" | null;
+  account_issue?: "not_member" | "suspended" | "card_declined" | "no_card" | null;
   booked_by_profile_id?: string | null;
   // The card that paid, frozen by capture-payment (20261023010000). NULL for
   // cash and for rides captured before it.

@@ -75,12 +75,20 @@ export function settlementFigures(r: SettlementFields): {
   return { vellonFee, feeTax, feeReturned: returnedCents > 0, cardFee, net };
 }
 
+/** Paid through Stripe on the company's account: a passenger's card, or a
+ *  business account billed per ride to the business's card (2b). An
+ *  invoice-billed account ride is paid on the statement, never through Stripe. */
+export const paidByCard = (r: { payment_method: string; account_billing?: string | null }): boolean =>
+  r.payment_method === "card" || (r.payment_method === "account" && r.account_billing === "card");
+
 /** Whether the dashboard should offer Refund on this ride. The server decides
  *  for real, from Stripe; this only hides the button where it cannot work. */
 export const canOfferRefund = (
-  r: SettlementFields & { payment_method: string; payment_status: string | null; stripe_dispute_id?: string | null },
+  r: SettlementFields & {
+    payment_method: string; account_billing?: string | null; payment_status: string | null; stripe_dispute_id?: string | null;
+  },
 ): boolean =>
-  r.payment_method === "card" &&
+  paidByCard(r) &&
   isDirectCharge(r) &&
   r.payment_status === "succeeded" &&
   !r.stripe_dispute_id &&

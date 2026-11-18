@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
-import { fmtDate } from "../i18n/format";
+import { fmtDate, fmtTime } from "../i18n/format";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 import { formatPhoneDisplay } from "../lib/phone";
 import AccountStatements from "../components/AccountStatements";
@@ -30,6 +30,26 @@ interface Account {
   manager_ride_limit_cents: number | null;
   // Stage 6 (mgcj-app 20261117000000): free text printed on statements.
   payment_terms: string | null;
+  // 2b (mgcj-app 20261118040000): the business's card, added by a manager in
+  // the portal. NULL card_state = it works (or there is none yet).
+  card_payment_method_id: string | null;
+  card_state: "soft" | "hard" | "auth" | null;
+}
+
+/** ba_card_view (mgcj-app 20261118080000): the card and what is waiting on it. */
+interface CardView {
+  ok: true;
+  billing_mode: string | null;
+  time_zone: string;
+  card?: {
+    brand: string | null; last4: string | null; exp_month: number | null; exp_year: number | null;
+    added_at: string | null; added_by: string | null;
+  } | null;
+  reason?: "no_card" | "soft" | "hard" | "budget" | "auth" | null;
+  decline_code?: string | null;
+  declined_at?: string | null;
+  retry_at?: string | null;
+  rides?: { state: string }[];
 }
 
 interface Member {
@@ -104,6 +124,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
   const [applications, setApplications] = useState<Application[]>([]);
   const [appSettings, setAppSettings] = useState<ApplicationSettings | null>(null);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [cardsActive, setCardsActive] = useState(false);
 
   // ── account list
   useEffect(() => {
@@ -113,20 +134,23 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
       supabase
         .from("business_accounts")
         .select(
-          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents, payment_terms",
+          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents, payment_terms, card_payment_method_id, card_state",
         )
         .order("name"),
       supabase.from("account_members").select("account_id").eq("status", "active"),
       supabase.rpc("ba_account_balances"),
       supabase.rpc("ba_list_applications"),
       supabase.rpc("ba_application_settings"),
-    ]).then(([a, m, b, ap, st]) => {
+      // Card billing needs the company's own Stripe account to take cards.
+      supabase.from("companies").select("stripe_direct_card_status").eq("id", companyId).maybeSingle(),
+    ]).then(([a, m, b, ap, st, co]) => {
       if (!alive) return;
       if (a.error) {
         setError(t("accounts.errLoad"));
         return;
       }
       const list = (a.data ?? []) as Account[];
+      setCardsActive(co.data?.stripe_direct_card_status === "active");
       const counts: Record<string, number> = {};
       for (const r of (m.data ?? []) as { account_id: string }[]) {
         counts[r.account_id] = (counts[r.account_id] ?? 0) + 1;
@@ -329,6 +353,8 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
         .ac-opt-list { display: flex; flex-direction: column; gap: 8px; }
         .ac-opt { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 10px; cursor: default; }
         .ac-opt.on { box-shadow: inset 0 0 0 1.5px var(--c-brand); background: var(--c-surface-sel); }
+        .ac-cof { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--c-surface-alt); margin: 8px 0 6px; }
+        .ac-cof-brand { width: 40px; height: 26px; border-radius: 5px; background: var(--c-surface); border: 1px solid var(--c-border); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
         .ac-opt.off { opacity: 0.55; }
         .ac-opt input { margin: 2px 0 0; accent-color: var(--c-brand); }
         .ac-opt > span { display: flex; flex-direction: column; gap: 2px; }
@@ -406,11 +432,17 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                 className="ac-dot"
                 style={{
                   background:
-                    a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
+                    a.status === "active" && a.billing_mode === "card" && a.card_state ? "var(--c-red)"
+                    : a.status === "active" && a.billing_mode === "card" && !a.card_payment_method_id ? "var(--c-amber)"
+                    : a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
                 }}
               />
               {a.status !== "active"
                 ? t("accounts.suspended")
+                : a.billing_mode === "card" && a.card_state
+                ? t("accounts.cardDeclinedSub", { count: activeCounts[a.id] ?? 0 })
+                : a.billing_mode === "card" && !a.card_payment_method_id
+                ? t("accounts.cardWaiting")
                 : owingCents[a.id]
                   ? t("accounts.owingSub", { amount: fmtMoney(owingCents[a.id]) })
                   : a.billing_mode
@@ -467,6 +499,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
             key={selectedApp.id}
             app={selectedApp}
             isAdmin={isAdmin}
+            cardsActive={cardsActive}
             settings={appSettings}
             onSettings={() => setListVersion((v) => v + 1)}
             onDecided={(accountId) => {
@@ -692,6 +725,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                   key={account.id}
                   account={account}
                   isAdmin={isAdmin}
+                  cardsActive={cardsActive}
                   onSaved={() => setListVersion((v) => v + 1)}
                 />
               </div>
@@ -842,7 +876,9 @@ function AddOnBehalf({
 // Admins set it (ba_set_billing); dispatchers see it. The business's managers
 // can set their own limits in the portal, only ever lower: the strictest wins
 // (ba_check_limits). Amounts are entered in dollars and stored in cents, the
-// booking fee included. Corporate card is phase 2b: shown, not selectable.
+// booking fee included. The business's card (2b) needs the company's own
+// Stripe account to take cards; the card itself is only ever added by a
+// manager in the portal, so here it is read-only.
 
 function centsToField(c: number | null): string {
   return c == null ? "" : (c / 100).toFixed(2);
@@ -860,10 +896,12 @@ function fieldToCents(v: string): number | null | undefined {
 function BillingCard({
   account,
   isAdmin,
+  cardsActive,
   onSaved,
 }: {
   account: Account;
   isAdmin: boolean;
+  cardsActive: boolean;
   onSaved: () => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -872,6 +910,8 @@ function BillingCard({
   const perRideId = useId();
   const termsId = useId();
   const [terms, setTerms] = useState(account.payment_terms ?? "");
+  const [mode, setMode] = useState<"invoice" | "card">(account.billing_mode ?? "invoice");
+  const cardOffered = cardsActive || account.billing_mode === "card";
   const [monthly, setMonthly] = useState(centsToField(account.company_monthly_limit_cents));
   const [perRide, setPerRide] = useState(centsToField(account.company_ride_limit_cents));
   const [busy, setBusy] = useState(false);
@@ -915,7 +955,7 @@ function BillingCard({
     }
     setBusy(true);
     setMsg(null);
-    if (terms.trim() !== (account.payment_terms ?? "")) {
+    if (mode === "invoice" && terms.trim() !== (account.payment_terms ?? "")) {
       const tr = await supabase.rpc("ba_set_payment_terms", { p_account: account.id, p_terms: terms.trim() });
       if (tr.error || !tr.data?.ok) {
         setBusy(false);
@@ -925,13 +965,18 @@ function BillingCard({
     }
     const { data, error } = await supabase.rpc("ba_set_billing", {
       p_account: account.id,
-      p_mode: "invoice",
+      p_mode: mode,
       p_monthly_cents: m,
       p_ride_cents: r,
     });
     setBusy(false);
     if (error || !data?.ok) {
-      setMsg({ ok: false, text: data?.reason === "bad_limit" ? t("accounts.errBadAmount") : t("accounts.errGeneric") });
+      setMsg({
+        ok: false,
+        text: data?.reason === "bad_limit" ? t("accounts.errBadAmount")
+          : data?.reason === "card_mode_unavailable" ? t("accounts.errCardMode")
+          : t("accounts.errGeneric"),
+      });
       return;
     }
     setMsg({ ok: true, text: t("accounts.billingSaved") });
@@ -956,23 +1001,25 @@ function BillingCard({
           <span>{t("accounts.billingTitle")}</span>
         </div>
         <div className="ac-opt-list" role="radiogroup" aria-label={t("accounts.billingTitle")}>
-          <label className={`ac-opt${account.billing_mode === "invoice" || isAdmin ? " on" : ""}`}>
-            <input type="radio" name={radioName} checked readOnly disabled={!isAdmin} />
+          <label className={`ac-opt${mode === "invoice" ? " on" : ""}`}>
+            <input type="radio" name={radioName} checked={mode === "invoice"} disabled={!isAdmin} onChange={() => setMode("invoice")} />
             <span>
               <span className="ac-opt-title">{t("accounts.billingInvoice")}</span>
               <span className="ac-small">{t("accounts.billingInvoiceNote")}</span>
             </span>
           </label>
-          <label className="ac-opt off">
-            <input type="radio" name={radioName} disabled />
+          <label className={`ac-opt${mode === "card" ? " on" : ""}${cardOffered ? "" : " off"}`}>
+            <input type="radio" name={radioName} checked={mode === "card"} disabled={!isAdmin || !cardOffered} onChange={() => setMode("card")} />
             <span>
-              <span className="ac-opt-title">
-                {t("accounts.billingCard")} <span className="ac-ro">{t("accounts.comingSoon")}</span>
-              </span>
-              <span className="ac-small">{t("accounts.billingCardNote")}</span>
+              <span className="ac-opt-title">{t("accounts.billingCard")}</span>
+              <span className="ac-small">{cardOffered ? t("accounts.billingCardNote") : t("accounts.billingCardUnavailable")}</span>
             </span>
           </label>
         </div>
+        {account.billing_mode === "card" && mode === "card" && <CardOnFile accountId={account.id} />}
+        {account.billing_mode && mode !== account.billing_mode && (
+          <div className="ac-small" style={{ marginTop: 8 }}>{t("accounts.billingSwitchNote")}</div>
+        )}
         {!account.billing_mode && (
           <div className="ac-small" style={{ color: "var(--c-amber-text)", marginTop: 8 }}>
             {isAdmin ? t("accounts.noBillingAdmin") : t("accounts.noBillingDispatcher")}
@@ -1011,7 +1058,7 @@ function BillingCard({
             />
           </div>
         </div>
-        <div className="ac-field" style={{ marginTop: 16, marginBottom: 0 }}>
+        {mode === "invoice" && <div className="ac-field" style={{ marginTop: 16, marginBottom: 0 }}>
           <label className="ac-card-label" htmlFor={termsId} style={{ marginBottom: 2 }}>
             <span>{t("accounts.termsLabel")}</span>
           </label>
@@ -1025,7 +1072,7 @@ function BillingCard({
             onChange={(e) => setTerms(e.target.value)}
           />
           <div className="ac-small">{t("accounts.termsNote")}</div>
-        </div>
+        </div>}
         {msg && (
           <div className="ac-small" style={{ marginTop: 8, color: msg.ok ? "var(--c-green)" : "var(--c-red)" }}>
             {msg.text}
@@ -1064,8 +1111,87 @@ function BillingCard({
         </div>
       )}
 
-      {account.billing_mode === "invoice" && (
+      {/* A card-mode month gets a statement too, its lines paid by card (2b). */}
+      {account.billing_mode && (
         <AccountStatements accountId={account.id} isAdmin={isAdmin} usage={usage} onChanged={onSaved} />
+      )}
+    </>
+  );
+}
+
+// The business's card, read-only: only a manager changes it, in the portal.
+const BANK_SAYS: Record<string, string> = {
+  insufficient_funds: "bank_insufficient_funds",
+  card_velocity_exceeded: "bank_over_limit",
+  withdrawal_count_limit_exceeded: "bank_over_limit",
+  expired_card: "bank_expired_card",
+  lost_card: "bank_lost_card",
+  stolen_card: "bank_lost_card",
+};
+// Card networks' own names, the same in every language.
+const BRANDS: Record<string, string> = { visa: "Visa", mastercard: "Mastercard", amex: "American Express", discover: "Discover", interac: "Interac" }; // i18n-ok
+
+function CardOnFile({ accountId }: { accountId: string }) {
+  const { t } = useTranslation();
+  const [v, setV] = useState<CardView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    supabase.rpc("ba_card_view", { p_account: accountId }).then(({ data }) => {
+      if (alive && data?.ok) setV(data as CardView);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [accountId]);
+  if (!v) return null;
+  // fmtDate / fmtTime are on the company's clock already.
+  const day = (iso: string) => fmtDate(iso, { month: "short", day: "numeric" });
+  const time = (iso: string) => fmtTime(iso, { hour: "numeric", minute: "2-digit" });
+  if (!v.card) {
+    return (
+      <div className="ac-small" style={{ marginTop: 8, display: "flex", gap: 6, alignItems: "baseline" }}>
+        <span className="ac-dot" style={{ background: "var(--c-amber)" }} />
+        <span>{t("accounts.cardNone")}</span>
+      </div>
+    );
+  }
+  const c = v.card;
+  const brand = c.brand ? BRANDS[c.brand] ?? c.brand[0].toUpperCase() + c.brand.slice(1) : t("accounts.billingCard"); // i18n-ok: a network name
+  const waiting = (v.rides ?? []).filter((r) => r.state === "card_declined" || r.state === "no_card").length;
+  const bank = v.decline_code && BANK_SAYS[v.decline_code] ? t(`accounts.${BANK_SAYS[v.decline_code]}`) : null;
+  const fix =
+    v.reason === "soft" ? (v.retry_at ? t("accounts.cardFixSoft", { time: time(v.retry_at) }) : t("accounts.cardFixSoftNow"))
+    : v.reason === "hard" ? t("accounts.cardFixHard")
+    : v.reason === "budget" ? t("accounts.cardFixBudget")
+    : v.reason === "auth" ? t("accounts.cardFixAuth")
+    : null;
+  return (
+    <>
+      <div className="ac-cof">
+        <span className="ac-cof-brand">{(c.brand ?? "card").toUpperCase().slice(0, 4)}</span>
+        <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+          <b style={{ fontSize: 13 }}>
+            {t("accounts.cardOnFile", { brand, last4: c.last4 ?? "" })}
+            {c.exp_month && c.exp_year
+              ? ` · ${t("accounts.cardExpires", { date: `${String(c.exp_month).padStart(2, "0")}/${String(c.exp_year).slice(-2)}` })}`
+              : ""}
+          </b>
+          {c.added_at && (
+            <span className="ac-small" style={{ fontSize: 11 }}>
+              {t("accounts.cardAddedBy", { who: c.added_by ?? "", date: day(c.added_at) })}
+            </span>
+          )}
+        </span>
+      </div>
+      {fix && (
+        <div className="ac-small" style={{ fontSize: 11, display: "flex", gap: 6, alignItems: "baseline" }}>
+          <span className="ac-dot" style={{ background: "var(--c-red)", flexShrink: 0 }} />
+          <span>
+            {v.declined_at ? t("accounts.cardDeclinedOn", { date: day(v.declined_at) }) : ""}
+            {waiting > 0 ? ` ${t("accounts.cardDeclinedRides", { count: waiting })}` : ""}
+            {bank ? `: ${bank}` : ""}. {fix}
+          </span>
+        </div>
       )}
     </>
   );

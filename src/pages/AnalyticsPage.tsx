@@ -31,7 +31,7 @@ import {
   rideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { canOfferRefund, isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, isDirectCharge, paidByCard, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
 import Icon from "../components/Icon";
 
@@ -1626,7 +1626,9 @@ export default function AnalyticsPage({
         .from("rides")
         .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, application_fee_returned_cents, stripe_processing_fee_cents, refunded_amount_cents")
         .eq("company_id", companyId)
-        .eq("payment_method", "card")
+        // Every fare paid through Stripe: a passenger's card, or a business's
+        // card (2b), as company_settlement_rollup counts them.
+        .or("payment_method.eq.card,and(payment_method.eq.account,account_billing.eq.card)")
         .eq("status", "completed")
         .gte("completed_at", startDate.toISOString())
         .lt("completed_at", now.toISOString())
@@ -2198,7 +2200,7 @@ export default function AnalyticsPage({
       const settledRoute = settlementRouteOf(ride);
       const figures = settlementFigures(ride);
       const settlementHtml =
-        ride.payment_method === "card" && settledRoute
+        paidByCard(ride) && settledRoute
           ? `
         <div style="margin-bottom: 16px; background: #FFF7ED; border: 1px dashed #FDBA74; border-radius: 10px; padding: 14px;">
           <p style="font-size: 11px; font-weight: 600; color: #9A3412; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">${esc(t("receipt.internalSettlement"))}</p>
@@ -5575,7 +5577,7 @@ export default function AnalyticsPage({
                     : "—",
                 ],
                 [t("analytics.col.payment"), payLabel(rideDetail.ride)],
-                ...(rideDetail.ride.payment_method === "card" && settlementRouteOf(rideDetail.ride)
+                ...(paidByCard(rideDetail.ride) && settlementRouteOf(rideDetail.ride)
                   ? ([
                       [
                         t("rideDetail.vellonFee"),

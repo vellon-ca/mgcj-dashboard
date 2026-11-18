@@ -45,7 +45,7 @@ import {
   rideStatusLabel as sharedRideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, paidByCard, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
 import DriverPicker from "../components/DriverPicker";
 import Icon from "../components/Icon";
@@ -1449,7 +1449,12 @@ function ScheduledRideCard({
           className="db-pending-badge danger"
         >
           <Icon name="alert" />{" "}
-          {ride.account_issue
+          {ride.account_issue === "card_declined" || ride.account_issue === "no_card"
+            ? t(ride.account_issue === "card_declined" ? "dispatch.accountCardDeclined" : "dispatch.accountNoCard", {
+                account: ride.account_name ?? "",
+                time: ride.payment_deadline_at ? shortTime(ride.payment_deadline_at) : "",
+              })
+            : ride.account_issue
             ? t("dispatch.accountIssue", {
                 account: ride.account_name ?? "",
                 time: ride.payment_deadline_at ? shortTime(ride.payment_deadline_at) : "",
@@ -7577,7 +7582,7 @@ export default function DashboardPage({
                       t("rideDetail.payment"),
                       payMethodText(rideDetail),
                     ],
-                    ...(rideDetail.payment_method === "card" && settlementRouteOf(rideDetail)
+                    ...(paidByCard(rideDetail) && settlementRouteOf(rideDetail)
                       ? ([
                           [
                             t("rideDetail.vellonFee"),

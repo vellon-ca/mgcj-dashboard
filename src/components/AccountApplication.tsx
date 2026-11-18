@@ -53,12 +53,15 @@ function toCents(v: string): number | null | undefined {
 export default function AccountApplication({
   app,
   isAdmin,
+  cardsActive,
   settings,
   onDecided,
   onSettings,
 }: {
   app: Application;
   isAdmin: boolean;
+  /** The company's own Stripe account takes cards: card billing is offered. */
+  cardsActive: boolean;
   settings: ApplicationSettings | null;
   onDecided: (accountId: string | null) => void;
   onSettings: () => void;
@@ -67,6 +70,7 @@ export default function AccountApplication({
   const [name, setName] = useState(app.business_name);
   const [ceiling, setCeiling] = useState("");
   const [terms, setTerms] = useState("");
+  const [mode, setMode] = useState<"invoice" | "card">("invoice");
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -81,12 +85,14 @@ export default function AccountApplication({
     setBusy(true);
     setError(null);
     const { data, error: e } = await supabase.rpc("ba_approve_application", {
-      p_application: app.id, p_name: name, p_mode: "invoice",
-      p_monthly_cents: cents, p_ride_cents: null, p_terms: terms,
+      p_application: app.id, p_name: name, p_mode: mode,
+      p_monthly_cents: cents, p_ride_cents: null, p_terms: mode === "invoice" ? terms : "",
     });
     setBusy(false);
     if (e || !data?.ok) {
-      setError(data?.reason === "name_taken" ? t("accounts.errNameTaken") : t("accounts.errGeneric"));
+      setError(data?.reason === "name_taken" ? t("accounts.errNameTaken")
+        : data?.reason === "card_mode_unavailable" ? t("accounts.errCardMode")
+        : t("accounts.errGeneric"));
       return;
     }
     onDecided(data.account_id as string);
@@ -151,18 +157,32 @@ export default function AccountApplication({
               <div className="ac-field">
                 <span className="ac-small">{t("accounts.app.billing")}</span>
                 <div className="ac-seg">
-                  <button className="on" disabled>{t("accounts.app.billingStatement")}</button>
-                  <button disabled title={t("accounts.app.cardLater")}>{t("accounts.app.billingCard")}</button>
+                  <button className={mode === "invoice" ? "on" : ""} disabled={!isAdmin} aria-pressed={mode === "invoice"} onClick={() => setMode("invoice")}>
+                    {t("accounts.app.billingStatement")}
+                  </button>
+                  <button
+                    className={mode === "card" ? "on" : ""}
+                    disabled={!isAdmin || !cardsActive}
+                    aria-pressed={mode === "card"}
+                    title={cardsActive ? undefined : t("accounts.app.cardUnavailable")}
+                    onClick={() => setMode("card")}
+                  >
+                    {t("accounts.app.billingCard")}
+                  </button>
                 </div>
               </div>
               <div className="ac-field">
                 <label className="ac-small" htmlFor="app-ceiling">{t("accounts.app.ceiling")}</label>
                 <input id="app-ceiling" className="ac-input" inputMode="decimal" placeholder="$3,000" value={ceiling} disabled={!isAdmin} onChange={(e) => setCeiling(e.target.value)} />
               </div>
-              <div className="ac-field">
-                <label className="ac-small" htmlFor="app-terms">{t("accounts.app.terms")}</label>
-                <input id="app-terms" className="ac-input" maxLength={120} placeholder={t("accounts.app.termsPlaceholder")} value={terms} disabled={!isAdmin} onChange={(e) => setTerms(e.target.value)} />
-              </div>
+              {mode === "invoice" ? (
+                <div className="ac-field">
+                  <label className="ac-small" htmlFor="app-terms">{t("accounts.app.terms")}</label>
+                  <input id="app-terms" className="ac-input" maxLength={120} placeholder={t("accounts.app.termsPlaceholder")} value={terms} disabled={!isAdmin} onChange={(e) => setTerms(e.target.value)} />
+                </div>
+              ) : (
+                <div className="ac-small" style={{ marginBottom: 12 }}>{t("accounts.billingCardNote")}</div>
+              )}
               {declining && (
                 <div className="ac-field">
                   <label className="ac-small" htmlFor="app-reason">{t("accounts.app.reason")}</label>
