@@ -1449,7 +1449,12 @@ function ScheduledRideCard({
           className="db-pending-badge danger"
         >
           <Icon name="alert" />{" "}
-          {ride.payment_deadline_at
+          {ride.account_issue
+            ? t("dispatch.accountIssue", {
+                account: ride.account_name ?? "",
+                time: ride.payment_deadline_at ? shortTime(ride.payment_deadline_at) : "",
+              })
+            : ride.payment_deadline_at
             ? t("dispatch.paymentIssue", { time: shortTime(ride.payment_deadline_at) })
             : t("dispatch.paymentIssueNoDeadline")}
         </div>

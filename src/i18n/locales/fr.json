@@ -624,7 +624,8 @@
     "mismatchSeats": "cette course exige {{needs}} places et ce véhicule en a {{has}}",
     "confirmMismatch": "Attribuer quand même ?\n\nLe véhicule de ce chauffeur ne convient peut-être pas à la course — {{reason}}.",
     "paymentIssue": "Problème de paiement : passager avisé; annulée à {{time}} si non réglé",
-    "paymentIssueNoDeadline": "Problème de paiement : passager avisé"
+    "paymentIssueNoDeadline": "Problème de paiement : passager avisé",
+    "accountIssue": "Hors de {{account}} : passager invité à payer autrement; annulée à {{time}}"
   },
   "drivers": {
     "activateBody": "{{name}} retrouvera l'accès complet à l'appli et recommencera à recevoir des courses.",
@@ -1429,6 +1430,8 @@
     "statusTitle": "Statut",
     "suspendNote": "En pause : personne ne peut facturer de courses au compte. Les personnes et les badges restent.",
     "confirmSuspend": "Mettre {{name}} en pause? Personne ne pourra y facturer de courses tant que vous ne le réactivez pas.",
+    "suspendRides_one": "{{count}} course réservée y est facturée. Son passager devra payer autrement, sinon elle sera annulée avant la prise en charge. Réactiver le compte avant garde la course sur le compte.",
+    "suspendRides_other": "{{count}} courses réservées y sont facturées. Leurs passagers devront payer autrement, sinon elles seront annulées avant la prise en charge. Réactiver le compte avant garde les courses sur le compte.",
     "confirmRemoveManager": "Retirer {{email}} comme gestionnaire? Cette personne ne pourra plus se connecter à ce compte.",
     "errLoad": "Impossible de charger les comptes d'entreprise. Actualisez pour réessayer.",
     "errGeneric": "Une erreur s'est produite. Réessayez.",

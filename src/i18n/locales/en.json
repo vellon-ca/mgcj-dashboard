@@ -624,7 +624,8 @@
     "mismatchSeats": "this ride needs {{needs}} seats and this vehicle has {{has}}",
     "confirmMismatch": "Assign anyway?\n\nThis driver's vehicle may not suit the ride — {{reason}}.",
     "paymentIssue": "Payment issue: passenger told; cancels at {{time}} unless fixed",
-    "paymentIssueNoDeadline": "Payment issue: passenger told"
+    "paymentIssueNoDeadline": "Payment issue: passenger told",
+    "accountIssue": "Off {{account}}: rider told to pay another way; cancels at {{time}}"
   },
   "drivers": {
     "activateBody": "{{name}} will regain full access to the app and start receiving rides again.",
@@ -1429,6 +1430,8 @@
     "statusTitle": "Status",
     "suspendNote": "Paused: nobody can bill rides to the account. People and badges stay.",
     "confirmSuspend": "Pause {{name}}? Nobody will be able to bill rides to it until you turn it back on.",
+    "suspendRides_one": "{{count}} booked ride is billed to it. Its rider will be asked to pay another way, or it is cancelled before pickup. Turning the account back on before then keeps it on the account.",
+    "suspendRides_other": "{{count}} booked rides are billed to it. Their riders will be asked to pay another way, or they are cancelled before pickup. Turning the account back on before then keeps them on the account.",
     "confirmRemoveManager": "Remove {{email}} as a manager? They will no longer be able to sign in to this account.",
     "errLoad": "Couldn't load business accounts. Refresh to try again.",
     "errGeneric": "Something went wrong. Try again.",

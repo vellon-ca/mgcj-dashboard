@@ -208,7 +208,14 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
 
   async function setStatus(status: Account["status"]) {
     if (!account || account.status === status) return;
-    if (status === "suspended" && !window.confirm(t("accounts.confirmSuspend", { name: account.name }))) return;
+    if (status === "suspended") {
+      // Booked rides on it will need another way to pay (mgcj-app
+      // business-accounts-design.md §14).
+      const { data } = await supabase.rpc("ba_exit_impact", { p_account: account.id });
+      const n = (data ?? []).length;
+      const extra = n > 0 ? "\n\n" + t("accounts.suspendRides", { count: n }) : "";
+      if (!window.confirm(t("accounts.confirmSuspend", { name: account.name }) + extra)) return;
+    }
     const r = await call("ba_update_account", { p_account: account.id, p_status: status });
     if (r?.ok) setListVersion((v) => v + 1);
     else if (r) setError(t("accounts.errGeneric"));
