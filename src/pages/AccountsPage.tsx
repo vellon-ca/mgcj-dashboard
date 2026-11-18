@@ -47,8 +47,12 @@ interface Member {
 interface Manager {
   id: string;
   email: string;
+  /** Given on their first portal visit; null until then. */
+  name: string | null;
   created_at: string;
   last_sign_in_at: string | null;
+  /** When the invite email last went out; null for a manager added before invites. */
+  invite_sent_at: string | null;
 }
 
 interface Team {
@@ -88,6 +92,8 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
   const [creating, setCreating] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [managerEmail, setManagerEmail] = useState<string | null>(null);
+  // Managers whose invite was just asked for again: "Sent" in place of the link.
+  const [resent, setResent] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
 
   // ── account list
@@ -238,6 +244,15 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
     }
     setManagerEmail(null);
     setDetailVersion((v) => v + 1);
+  }
+
+  async function resendInvite(m: Manager) {
+    const r = await call("ba_resend_manager_invite", { p_manager: m.id });
+    if (!r) return;
+    if (r.ok) setResent((s) => new Set(s).add(m.id));
+    else if (r.reason === "too_soon") setError(t("accounts.errInviteTooSoon"));
+    else if (r.reason === "signed_in") setDetailVersion((v) => v + 1);
+    else setError(t("accounts.errGeneric"));
   }
 
   async function removeManager(m: Manager) {
@@ -540,11 +555,34 @@ export default function AccountsPage({ companyId, isAdmin, visible }: Props) {
                     managers.map((m) => (
                       <div key={m.id} className="ac-li">
                         <div className="ac-li-main">
-                          <b>{m.email}</b>
+                          {m.name ? (
+                            <>
+                              <b>{m.name}</b> <span className="ac-small">{m.email}</span>
+                            </>
+                          ) : (
+                            <b>{m.email}</b>
+                          )}
                           <div className="ac-small">
-                            {m.last_sign_in_at
-                              ? t("accounts.lastSignIn", { date: fmtDate(m.last_sign_in_at) })
-                              : t("accounts.neverSignedIn")}
+                            {m.last_sign_in_at ? (
+                              t("accounts.lastSignIn", { date: fmtDate(m.last_sign_in_at) })
+                            ) : (
+                              <>
+                                {t("accounts.neverSignedIn")}
+                                {m.invite_sent_at && ` · ${t("accounts.inviteSent", { date: fmtDate(m.invite_sent_at) })}`}
+                                {isAdmin && (
+                                  <>
+                                    {" · "}
+                                    {resent.has(m.id) ? (
+                                      t("accounts.inviteResent")
+                                    ) : (
+                                      <button className="ac-linkbtn" onClick={() => resendInvite(m)}>
+                                        {t("accounts.sendAgain")}
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            )}
                           </div>
                         </div>
                         {isAdmin && (
