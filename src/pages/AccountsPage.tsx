@@ -23,7 +23,7 @@ interface Account {
   created_at: string;
   // Phase 2a (mgcj-app 20261114030000). NULL billing_mode: no ride can be
   // billed to the account yet (validate_account_ride refuses it).
-  billing_mode: "invoice" | "card" | null;
+  billing_mode: "invoice" | "card" | "card_monthly" | null;
   company_monthly_limit_cents: number | null;
   company_ride_limit_cents: number | null;
   manager_monthly_limit_cents: number | null;
@@ -104,6 +104,12 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [activeCounts, setActiveCounts] = useState<Record<string, number>>({});
   const [owingCents, setOwingCents] = useState<Record<string, number>>({});
+  // Per ride: the card's own state. Monthly card: a declined charge matters
+  // only while a statement is still owed (a payment recorded by hand settles it).
+  const cardDeclined = (a: { id: string; billing_mode: string | null; card_state: string | null }) =>
+    a.billing_mode === "card" ? !!a.card_state
+    : a.billing_mode === "card_monthly" ? !!a.card_state && !!owingCents[a.id]
+    : false;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [managers, setManagers] = useState<Manager[]>([]);
@@ -432,16 +438,16 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                 className="ac-dot"
                 style={{
                   background:
-                    a.status === "active" && a.billing_mode === "card" && a.card_state ? "var(--c-red)"
-                    : a.status === "active" && a.billing_mode === "card" && !a.card_payment_method_id ? "var(--c-amber)"
+                    a.status === "active" && cardDeclined(a) ? "var(--c-red)"
+                    : a.status === "active" && usesCard(a.billing_mode) && !a.card_payment_method_id ? "var(--c-amber)"
                     : a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
                 }}
               />
               {a.status !== "active"
                 ? t("accounts.suspended")
-                : a.billing_mode === "card" && a.card_state
+                : cardDeclined(a)
                 ? t("accounts.cardDeclinedSub", { count: activeCounts[a.id] ?? 0 })
-                : a.billing_mode === "card" && !a.card_payment_method_id
+                : usesCard(a.billing_mode) && !a.card_payment_method_id
                 ? t("accounts.cardWaiting")
                 : owingCents[a.id]
                   ? t("accounts.owingSub", { amount: fmtMoney(owingCents[a.id]) })
@@ -880,6 +886,11 @@ function AddOnBehalf({
 // Stripe account to take cards; the card itself is only ever added by a
 // manager in the portal, so here it is read-only.
 
+// The two billing modes that charge the business's card.
+function usesCard(mode: string | null | undefined): boolean {
+  return mode === "card" || mode === "card_monthly";
+}
+
 function centsToField(c: number | null): string {
   return c == null ? "" : (c / 100).toFixed(2);
 }
@@ -910,8 +921,8 @@ function BillingCard({
   const perRideId = useId();
   const termsId = useId();
   const [terms, setTerms] = useState(account.payment_terms ?? "");
-  const [mode, setMode] = useState<"invoice" | "card">(account.billing_mode ?? "invoice");
-  const cardOffered = cardsActive || account.billing_mode === "card";
+  const [mode, setMode] = useState<"invoice" | "card" | "card_monthly">(account.billing_mode ?? "invoice");
+  const cardOffered = cardsActive || usesCard(account.billing_mode);
   const [monthly, setMonthly] = useState(centsToField(account.company_monthly_limit_cents));
   const [perRide, setPerRide] = useState(centsToField(account.company_ride_limit_cents));
   const [busy, setBusy] = useState(false);
@@ -1008,6 +1019,13 @@ function BillingCard({
               <span className="ac-small">{t("accounts.billingInvoiceNote")}</span>
             </span>
           </label>
+          <label className={`ac-opt${mode === "card_monthly" ? " on" : ""}${cardOffered ? "" : " off"}`}>
+            <input type="radio" name={radioName} checked={mode === "card_monthly"} disabled={!isAdmin || !cardOffered} onChange={() => setMode("card_monthly")} />
+            <span>
+              <span className="ac-opt-title">{t("accounts.billingCardMonthly")}</span>
+              <span className="ac-small">{cardOffered ? t("accounts.billingCardMonthlyNote") : t("accounts.billingCardUnavailable")}</span>
+            </span>
+          </label>
           <label className={`ac-opt${mode === "card" ? " on" : ""}${cardOffered ? "" : " off"}`}>
             <input type="radio" name={radioName} checked={mode === "card"} disabled={!isAdmin || !cardOffered} onChange={() => setMode("card")} />
             <span>
@@ -1016,7 +1034,7 @@ function BillingCard({
             </span>
           </label>
         </div>
-        {account.billing_mode === "card" && mode === "card" && <CardOnFile accountId={account.id} />}
+        {usesCard(account.billing_mode) && mode === account.billing_mode && <CardOnFile accountId={account.id} />}
         {account.billing_mode && mode !== account.billing_mode && (
           <div className="ac-small" style={{ marginTop: 8 }}>{t("accounts.billingSwitchNote")}</div>
         )}

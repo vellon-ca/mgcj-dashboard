@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { fmtDate } from "../i18n/format";
+import { paymentLabel } from "../lib/cardLabel";
 import { zonedDayISO } from "../lib/companyZone";
 
 // A business account's monthly statements, as the TAXI COMPANY sees them
@@ -24,6 +25,15 @@ interface Row {
   paid_cents: number;
   /** Lines already charged to the business's card (2b); never owed. */
   card_paid_cents?: number;
+  /** Monthly card: the part charged to the business's card, and where that stands. */
+  charge_cents?: number;
+  time_zone?: string;
+  charge_state?: "scheduled" | "paid" | "declined" | "not_needed" | null;
+  charge_due_at?: string | null;
+  charged_at?: string | null;
+  charge_declined_at?: string | null;
+  charge_card_brand?: string | null;
+  charge_card_last4?: string | null;
   last_paid_on: string | null;
   voided_at: string | null;
   void_reason: string | null;
@@ -43,7 +53,7 @@ interface Line {
   tax_rate_percent: number | null;
   ride_ref: string | null;
   /** card = already charged to the business's card (amounts net of any refund at issue). */
-  kind?: "invoice" | "card";
+  kind?: "invoice" | "card" | "card_monthly";
   refunded_cents?: number;
   card_last4?: string | null;
 }
@@ -51,7 +61,33 @@ interface Line {
 interface Detail {
   statement: Row & { account_id: string; account_name: string; time_zone: string };
   lines: Line[];
-  payments: { id: string; amount_cents: number; received_on: string; note: string | null }[];
+  payments: { id: string; amount_cents: number; received_on: string; note: string | null;
+    by_card?: boolean; card_brand?: string | null; card_last4?: string | null }[];
+}
+
+// Monthly card: the statement's charge to the business's card.
+const chargeOwed = (r: Row) => (r.status === "owing" || r.status === "part_paid") && (r.charge_cents ?? 0) > 0;
+const chargeScheduled = (r: Row) => chargeOwed(r) && r.charge_state === "scheduled";
+const chargeDeclined = (r: Row) => chargeOwed(r) && r.charge_state === "declined";
+// The shared "Visa ••4242" label (lib/cardLabel.ts); its fallback is the
+// business's card when the digits are unknown.
+const cardName = (brand: string | null | undefined, last4: string | null | undefined, t: (k: string, o?: Record<string, unknown>) => string) =>
+  last4
+    ? paymentLabel({ payment_method: "card", card_brand: brand, card_last4: last4 },
+        { card: t("accounts.stCardNameNone"), cash: "", account: () => "" })
+    : t("accounts.stCardNameNone");
+/** "Will be charged to … on …", "Charged to … on …", "The charge to … was declined on …". */
+function chargeLine(
+  r: Row,
+  t: (k: string, o?: Record<string, unknown>) => string,
+  fmtDate: (iso: string, o: Intl.DateTimeFormatOptions) => string,
+): string | null {
+  const day = (iso: string) => fmtDate(iso, { month: "long", day: "numeric", timeZone: r.time_zone });
+  const card = cardName(r.charge_card_brand, r.charge_card_last4, t);
+  if (r.charge_state === "paid" && r.charged_at) return t("accounts.stChargedLine", { card, date: day(r.charged_at) });
+  if (chargeDeclined(r) && r.charge_declined_at) return t("accounts.stChargeDeclinedLine", { card, date: day(r.charge_declined_at) });
+  if (chargeScheduled(r) && r.charge_due_at) return t("accounts.stChargeScheduledLine", { date: day(r.charge_due_at) });
+  return null;
 }
 
 /** A month that was all card: already paid, by the business's card. */
@@ -183,8 +219,12 @@ export default function AccountStatements({
             </span>
             <span className="as-amt">{money(r.total_cents)}</span>
             <span className="as-sub">
-              <span className="ac-dot" style={{ background: STATUS[r.status].color }} />
-              {r.status === "paid" && r.last_paid_on
+              <span className="ac-dot" style={{ background: chargeDeclined(r) ? "var(--c-red)" : STATUS[r.status].color }} />
+              {chargeDeclined(r)
+                ? t("accounts.stChargeDeclined")
+                : chargeScheduled(r) && r.charge_due_at
+                ? t("accounts.stChargeOn", { date: fmtDate(r.charge_due_at, { month: "short", day: "numeric", timeZone: r.time_zone }) })
+                : r.status === "paid" && r.last_paid_on
                 ? t("accounts.stPaidOn", { date: dateOnly(r.last_paid_on, { month: "short", day: "numeric" }) })
                 : t("accounts.stLine", {
                     status: t(statusKey(r)),
@@ -407,6 +447,11 @@ function StatementDialog({
                 </div>
               </div>
             </div>
+            {chargeLine(s, t, fmtDate) && (
+              <div className="ac-small" style={{ marginTop: 6, color: chargeDeclined(s) ? "var(--c-red-text)" : undefined }}>
+                {chargeLine(s, t, fmtDate)}
+              </div>
+            )}
             {s.status === "void" && s.voided_at && (
               <div className="ac-small" style={{ marginTop: 6 }}>
                 {t("accounts.voidedNote", { date: fmtDate(s.voided_at, { month: "short", day: "numeric" }), reason: s.void_reason ?? "" })}
@@ -476,9 +521,12 @@ function StatementDialog({
                     <div className="ac-li-main">
                       {dateOnly(p.received_on, { dateStyle: "medium" })}
                       {p.note && <span className="ac-muted"> · {p.note}</span>}
+                      {p.by_card && (
+                        <span className="ac-muted"> · {t("accounts.stChargedTo", { card: cardName(p.card_brand, p.card_last4, t) })}</span>
+                      )}
                     </div>
                     <b>{money(p.amount_cents)}</b>
-                    {isAdmin && (
+                    {isAdmin && !p.by_card && (
                       <button className="ac-linkbtn danger" onClick={() => removePayment(p)}>{t("accounts.stRemovePayment")}</button>
                     )}
                   </div>
