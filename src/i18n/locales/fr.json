@@ -1522,6 +1522,8 @@
     "cardWaiting": "En attente d'une carte",
     "cardDeclinedSub_one": "Carte refusée · {{count}} personne",
     "cardDeclinedSub_other": "Carte refusée · {{count}} personnes",
+    "cardExpiredSub_one": "Carte expirée · {{count}} personne",
+    "cardExpiredSub_other": "Carte expirée · {{count}} personnes",
     "cardOnFile": "{{brand}} se terminant par {{last4}}",
     "cardExpires": "expire {{date}}",
     "cardAddedBy": "Ajoutée par {{who}}, {{date}} · seuls les gestionnaires peuvent la changer",

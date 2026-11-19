@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { fmtDate, fmtTime } from "../i18n/format";
+import { zonedMonthKey } from "../lib/companyZone";
 import PhoneInput, { usePhoneField } from "../components/PhoneInput";
 import { formatPhoneDisplay } from "../lib/phone";
 import AccountStatements from "../components/AccountStatements";
@@ -34,6 +35,8 @@ interface Account {
   // the portal. NULL card_state = it works (or there is none yet).
   card_payment_method_id: string | null;
   card_state: "soft" | "hard" | "auth" | null;
+  card_exp_month: number | null;
+  card_exp_year: number | null;
 }
 
 /** ba_card_view (mgcj-app 20261118080000): the card and what is waiting on it. */
@@ -104,12 +107,17 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [activeCounts, setActiveCounts] = useState<Record<string, number>>({});
   const [owingCents, setOwingCents] = useState<Record<string, number>>({});
-  // Per ride: the card's own state. Monthly card: a declined charge matters
+  // Per ride: the card's own state. Monthly card (mgcj-app 20261118110000): a
+  // dead card (hard / auth) or an expired one blocks at once; a soft decline
   // only while a statement is still owed (a payment recorded by hand settles it).
-  const cardDeclined = (a: { id: string; billing_mode: string | null; card_state: string | null }) =>
+  const cardExpired = (a: Account) =>
+    a.billing_mode === "card_monthly" && !!a.card_payment_method_id && !!a.card_exp_month && !!a.card_exp_year
+    && `${a.card_exp_year}-${String(a.card_exp_month).padStart(2, "0")}` < zonedMonthKey();
+  const cardDeclined = (a: Account) =>
     a.billing_mode === "card" ? !!a.card_state
-    : a.billing_mode === "card_monthly" ? !!a.card_state && !!owingCents[a.id]
-    : false;
+    : a.billing_mode === "card_monthly"
+      ? a.card_state === "hard" || a.card_state === "auth" || (a.card_state === "soft" && !!owingCents[a.id])
+      : false;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [managers, setManagers] = useState<Manager[]>([]);
@@ -140,7 +148,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
       supabase
         .from("business_accounts")
         .select(
-          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents, payment_terms, card_payment_method_id, card_state",
+          "id, name, status, created_at, billing_mode, company_monthly_limit_cents, company_ride_limit_cents, manager_monthly_limit_cents, manager_ride_limit_cents, payment_terms, card_payment_method_id, card_state, card_exp_month, card_exp_year",
         )
         .order("name"),
       supabase.from("account_members").select("account_id").eq("status", "active"),
@@ -438,7 +446,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                 className="ac-dot"
                 style={{
                   background:
-                    a.status === "active" && cardDeclined(a) ? "var(--c-red)"
+                    a.status === "active" && (cardDeclined(a) || cardExpired(a)) ? "var(--c-red)"
                     : a.status === "active" && usesCard(a.billing_mode) && !a.card_payment_method_id ? "var(--c-amber)"
                     : a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
                 }}
@@ -447,6 +455,8 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                 ? t("accounts.suspended")
                 : cardDeclined(a)
                 ? t("accounts.cardDeclinedSub", { count: activeCounts[a.id] ?? 0 })
+                : cardExpired(a)
+                ? t("accounts.cardExpiredSub", { count: activeCounts[a.id] ?? 0 })
                 : usesCard(a.billing_mode) && !a.card_payment_method_id
                 ? t("accounts.cardWaiting")
                 : owingCents[a.id]
