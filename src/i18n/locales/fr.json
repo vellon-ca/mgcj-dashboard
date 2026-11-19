@@ -1524,6 +1524,7 @@
     "cardDeclinedSub_other": "Carte refusée · {{count}} personnes",
     "cardExpiredSub_one": "Carte expirée · {{count}} personne",
     "cardExpiredSub_other": "Carte expirée · {{count}} personnes",
+    "cardExpiringSub": "La carte expire ce mois-ci",
     "cardOnFile": "{{brand}} se terminant par {{last4}}",
     "cardExpires": "expire {{date}}",
     "cardAddedBy": "Ajoutée par {{who}}, {{date}} · seuls les gestionnaires peuvent la changer",

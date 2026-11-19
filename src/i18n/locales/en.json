@@ -1524,6 +1524,7 @@
     "cardDeclinedSub_other": "Card declined · {{count}} people",
     "cardExpiredSub_one": "Card expired · {{count}} person",
     "cardExpiredSub_other": "Card expired · {{count}} people",
+    "cardExpiringSub": "Card expires this month",
     "cardOnFile": "{{brand}} ending {{last4}}",
     "cardExpires": "expires {{date}}",
     "cardAddedBy": "Added by {{who}}, {{date}} · only managers can change it",

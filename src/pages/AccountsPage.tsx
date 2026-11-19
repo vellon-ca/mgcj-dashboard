@@ -113,6 +113,10 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
   const cardExpired = (a: Account) =>
     a.billing_mode === "card_monthly" && !!a.card_payment_method_id && !!a.card_exp_month && !!a.card_exp_year
     && `${a.card_exp_year}-${String(a.card_exp_month).padStart(2, "0")}` < zonedMonthKey();
+  // Monthly card in its expiry month: still works, but next month's charge won't.
+  const cardExpiring = (a: Account) =>
+    a.billing_mode === "card_monthly" && !!a.card_payment_method_id && !!a.card_exp_month && !!a.card_exp_year
+    && `${a.card_exp_year}-${String(a.card_exp_month).padStart(2, "0")}` === zonedMonthKey();
   const cardDeclined = (a: Account) =>
     a.billing_mode === "card" ? !!a.card_state
     : a.billing_mode === "card_monthly"
@@ -448,6 +452,7 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                   background:
                     a.status === "active" && (cardDeclined(a) || cardExpired(a)) ? "var(--c-red)"
                     : a.status === "active" && usesCard(a.billing_mode) && !a.card_payment_method_id ? "var(--c-amber)"
+                    : a.status === "active" && cardExpiring(a) ? "var(--c-amber)"
                     : a.status === "active" && a.billing_mode && !owingCents[a.id] ? "var(--c-green)" : "var(--c-amber)",
                 }}
               />
@@ -459,6 +464,8 @@ export default function AccountsPage({ companyId, isAdmin, visible, onPendingApp
                 ? t("accounts.cardExpiredSub", { count: activeCounts[a.id] ?? 0 })
                 : usesCard(a.billing_mode) && !a.card_payment_method_id
                 ? t("accounts.cardWaiting")
+                : cardExpiring(a)
+                ? t("accounts.cardExpiringSub")
                 : owingCents[a.id]
                   ? t("accounts.owingSub", { amount: fmtMoney(owingCents[a.id]) })
                   : a.billing_mode
