@@ -21,6 +21,7 @@ import ReportsPage from "./ReportsPage";
 import DiscountsPage from "./DiscountsPage";
 import SettingsPage from "./SettingsPage";
 import AnnouncementsPage from "./AnnouncementsPage";
+import AccountsPage from "./AccountsPage";
 import MessagesPage from "./MessagesPage";
 import AiPage, { IconAi } from "./AiPage";
 
@@ -44,7 +45,7 @@ import {
   rideStatusLabel as sharedRideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { canOfferRefund, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, paidByCard, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
 import DriverPicker from "../components/DriverPicker";
 import Icon from "../components/Icon";
@@ -237,6 +238,21 @@ function playAlertChime() {
 /** The long register of the flag reason, for the live dispatch card. Falls
  *  back to the generic "Problem reported" rather than the raw code: this one
  *  renders as a headline on a card a dispatcher reads mid-shift. */
+// How a ride is paid, as a word: "Cash", "Card", or the business account it is
+// billed to. An account ride must never read "Card" (or "Cash": a driver told
+// cash asks the rider for money).
+function payMethodText(r: {
+  payment_method?: string | null;
+  account_name?: string | null;
+  account_team_name?: string | null;
+}): string {
+  if (r.payment_method === "account") {
+    const name = [r.account_name, r.account_team_name].filter(Boolean).join(" · ");
+    return name ? i18next.t("rideDetail.accountNamed", { name }) : i18next.t("rideDetail.account");
+  }
+  return r.payment_method === "cash" ? i18next.t("rideDetail.cash") : i18next.t("rideDetail.card");
+}
+
 function flagLabel(code: string): string {
   const key = FLAG_REASON_KEYS[code];
   return i18next.t(key ?? "flagReason.other");
@@ -325,6 +341,16 @@ function IconDiscounts() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 12V4h8l10 10-8 8z" />
       <circle cx="7.5" cy="7.5" r="1.5" />
+    </svg>
+  );
+}
+// A building: the same mark as the business-account badge in the apps.
+function IconAccounts() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" />
+      <path d="M15 10h4a1 1 0 0 1 1 1v10" />
+      <path d="M3 21h18M8 8h3M8 12h3M8 16h3" />
     </svg>
   );
 }
@@ -1333,11 +1359,29 @@ function coverageDisplay(ride: any): { label: string; color: string } {
 // Scheduled Ride Card
 // Information only: Assign, Edit and Cancel are in the ride's detail window,
 // which a click on the card opens.
+// The business-account badge (mgcj-app business-accounts-design.md §11): an
+// outlined chip with the building mark, never a tinted wash. Shown for a
+// passenger who is an active member of an active account (ba_badges_for).
+function AccountBadge({ name }: { name: string }) {
+  return (
+    <span className="db-acct-badge" title={name}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16" />
+        <path d="M15 10h4a1 1 0 0 1 1 1v10" />
+        <path d="M3 21h18" />
+      </svg>
+      <span className="db-acct-badge-name">{name}</span>
+    </span>
+  );
+}
+
 function ScheduledRideCard({
   ride,
+  accountName,
   onCardClick,
 }: {
   ride: any;
+  accountName?: string;
   onCardClick: () => void;
 }) {
   const { t } = useTranslation();
@@ -1368,6 +1412,7 @@ function ScheduledRideCard({
       </div>
       <div className="db-ride-name">
         {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
+        {accountName && <AccountBadge name={accountName} />}
       </div>
       <div className="db-ride-route">
         {ride.pickup_address} → {ride.dropoff_address}
@@ -1404,7 +1449,17 @@ function ScheduledRideCard({
           className="db-pending-badge danger"
         >
           <Icon name="alert" />{" "}
-          {ride.payment_deadline_at
+          {ride.account_issue === "card_declined" || ride.account_issue === "no_card"
+            ? t(ride.account_issue === "card_declined" ? "dispatch.accountCardDeclined" : "dispatch.accountNoCard", {
+                account: ride.account_name ?? "",
+                time: ride.payment_deadline_at ? shortTime(ride.payment_deadline_at) : "",
+              })
+            : ride.account_issue
+            ? t("dispatch.accountIssue", {
+                account: ride.account_name ?? "",
+                time: ride.payment_deadline_at ? shortTime(ride.payment_deadline_at) : "",
+              })
+            : ride.payment_deadline_at
             ? t("dispatch.paymentIssue", { time: shortTime(ride.payment_deadline_at) })
             : t("dispatch.paymentIssueNoDeadline")}
         </div>
@@ -1525,6 +1580,29 @@ export default function DashboardPage({
   const driverIconCacheRef = useRef<Map<string, google.maps.Icon>>(new Map());
 
   const [rides, setRides] = useState<Ride[]>([]);
+  // passenger profile id -> business account name, for the badge on ride cards.
+  const [accountBadges, setAccountBadges] = useState<Record<string, string>>({});
+  const badgeIdsKey = Array.from(new Set(rides.map((r) => r.passenger_id).filter(Boolean)))
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (!badgeIdsKey) return;
+    let alive = true;
+    supabase
+      .rpc("ba_badges_for", { p_profiles: badgeIdsKey.split(",") })
+      .then(({ data, error }) => {
+        // A failed lookup leaves the cards as they were: a badge is a hint.
+        if (!alive || error) return;
+        const next: Record<string, string> = {};
+        for (const b of (data ?? []) as { profile_id: string; account_name: string }[]) {
+          next[b.profile_id] ??= b.account_name;
+        }
+        setAccountBadges(next);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [badgeIdsKey]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   // Real per-driver verdicts for the ride whose assign picker is open, from
   // check-ride-conflicts. Keyed by driver id. Empty until the call returns —
@@ -1569,6 +1647,10 @@ export default function DashboardPage({
   );
   const [showMessages, setShowMessages] = useState(initialView === "messages");
   const [showAi, setShowAi] = useState(initialView === "ai");
+  const [showAccounts, setShowAccounts] = useState(initialView === "accounts");
+  // Business applications waiting for a decision. Dispatch gets no pushes, so
+  // this badge on the Accounts icon is the only signal one has arrived.
+  const [pendingApplications, setPendingApplications] = useState(0);
   const [driverChatUnreadCount, setDriverChatUnreadCount] = useState(0);
 
   // ── Driver trail (location history) ─────────────────────────────────────
@@ -1815,6 +1897,23 @@ export default function DashboardPage({
   const bookField = usePhoneField();
   const [bookPassengerName, setBookPassengerName] = useState("");
   const [bookPassengerRegistered, setBookPassengerRegistered] = useState(false);
+  // The looked-up passenger's business account, for the badge beside "registered".
+  const [bookPassengerAccount, setBookPassengerAccount] = useState<string | null>(null);
+  // Business accounts the looked-up passenger is an active member of, and how
+  // this booking is billed: "cash", or an account id. The account is
+  // pre-selected (Victor 2026-11-14): dispatch knows from the call how to bill.
+  // An account ride is booked through book-account-ride, which prices it
+  // itself (no discount, no custom price) and checks the account's limits.
+  const [bookAccounts, setBookAccounts] = useState<{ account_id: string; account_name: string }[]>([]);
+  const [bookBillTo, setBookBillTo] = useState<string>("cash");
+  const [bookAccountQuote, setBookAccountQuote] = useState<{
+    key: string;
+    fare: number;
+    fee: number;
+    total: number;
+    totalCents: number;
+  } | null>(null);
+  const [bookAccountQuoteError, setBookAccountQuoteError] = useState<string | null>(null);
   // The looked-up passenger, so the fare preview can ask the server about
   // THEIR student discount and their own limits on the picked code.
   const [bookPassengerId, setBookPassengerId] = useState<string | null>(null);
@@ -2059,7 +2158,7 @@ export default function DashboardPage({
       !showSettings &&
       !showAnnouncements &&
       !showMessages &&
-      !showAi &&
+      !showAi && !showAccounts &&
       !selectedDriver &&
       googleMapRef.current
     ) {
@@ -2071,7 +2170,7 @@ export default function DashboardPage({
         applyCompanyFrameRef.current?.();
       }, 50);
     }
-  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, showAi, selectedDriver]);
+  }, [showAnalytics, showReports, showDiscounts, showSettings, showAnnouncements, showMessages, showAi, showAccounts, selectedDriver]);
 
   // --- the dispatcher's own opening view -------------------------------------
   const flashTimerRef = useRef<number | null>(null);
@@ -2151,6 +2250,7 @@ export default function DashboardPage({
     showAnnouncements,
     showMessages,
     showAi,
+    showAccounts,
   ]);
 
   // Browser back/forward: apply whatever view the path now points at.
@@ -2169,6 +2269,17 @@ export default function DashboardPage({
   useEffect(() => {
     fetchStaticConfig();
     const i = setInterval(fetchStaticConfig, 300_000);
+    return () => clearInterval(i);
+  }, []);
+
+  useEffect(() => {
+    const load = () =>
+      supabase.rpc("ba_list_applications").then(({ data, error }) => {
+        if (error) return;
+        setPendingApplications(((data ?? []) as { status: string }[]).filter((a) => a.status === "pending").length);
+      });
+    load();
+    const i = setInterval(load, 60_000);
     return () => clearInterval(i);
   }, []);
 
@@ -3482,12 +3593,168 @@ export default function DashboardPage({
   // that clears the phone field and an Escape that doesn't get born: the chip
   // would stay on the last country used, and `clear()` resetting it is the
   // whole reason this field's copy differs from the app's.
+  // ── Booking on a business account ──────────────────────────────
+  const bookAccount =
+    bookBillTo !== "cash" ? bookAccounts.find((a) => a.account_id === bookBillTo) ?? null : null;
+  const bookAccountTrip =
+    bookAccount && bookPassengerId && bookPickupCoords && bookDropoffCoords
+      ? {
+          business_account_id: bookAccount.account_id,
+          passenger_id: bookPassengerId,
+          pickup: { lat: bookPickupCoords.lat, lng: bookPickupCoords.lng, address: bookPickup.trim() },
+          dropoff: { lat: bookDropoffCoords.lat, lng: bookDropoffCoords.lng, address: bookDropoff.trim() },
+          vehicle_class_id: bookVehicleClassId || null,
+          requires_wheelchair: bookWheelchair,
+        }
+      : null;
+  const bookAccountKey = bookAccountTrip
+    ? JSON.stringify([
+        bookAccountTrip.business_account_id, bookAccountTrip.passenger_id,
+        bookAccountTrip.pickup.lat, bookAccountTrip.pickup.lng,
+        bookAccountTrip.dropoff.lat, bookAccountTrip.dropoff.lng,
+        bookAccountTrip.vehicle_class_id,
+      ])
+    : null;
+  const shownAccountQuote =
+    bookAccountQuote && bookAccountQuote.key === bookAccountKey ? bookAccountQuote : null;
+
+  useEffect(() => {
+    // The server's price for this trip on the account: what the business is
+    // billed, sent back as expected_total_cents so nobody bills a figure
+    // dispatch did not quote the caller.
+    setBookAccountQuoteError(null);
+    if (!bookingOpen || !bookAccountTrip || !bookAccountKey) return;
+    let cancelled = false;
+    const key = bookAccountKey;
+    const timer = setTimeout(async () => {
+      const { data, error } = await invokeFunction("book-account-ride", { ...bookAccountTrip, quote_only: true });
+      if (cancelled) return;
+      if (error || !data?.ok) {
+        setBookAccountQuoteError(data?.code ?? "error");
+        return;
+      }
+      setBookAccountQuote({
+        key,
+        fare: Number(data.fare),
+        fee: Number(data.booking_fee),
+        total: Number(data.total),
+        totalCents: Number(data.total_cents),
+      });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // bookAccountTrip is rebuilt every render; the key carries what it holds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingOpen, bookAccountKey]);
+
+  /** book-account-ride's refusals (and the trigger's), as one sentence each. */
+  function accountRefusal(code: string | null | undefined, name: string): string {
+    const key: Record<string, string> = {
+      "account.notMember": "booking.acctNotMember",
+      "account.notFound": "booking.acctNotMember",
+      "account.suspended": "booking.acctSuspended",
+      "account.noBilling": "booking.acctNoBilling",
+      "account.cardModeUnavailable": "booking.acctNoBilling",
+      "account.limitRide": "booking.acctLimitRide",
+      "account.limitMonthly": "booking.acctLimitMonthly",
+      "schedule.past": "booking.acctSchedulePast",
+      "schedule.tooFar": "booking.acctScheduleTooFar",
+      "fare.noRoute": "booking.noPrice",
+      "driver.notFound": "booking.errDriverUnavailable",
+      "passenger.notFound": "booking.acctNotMember",
+    };
+    return t(key[code ?? ""] ?? "booking.acctFailed", { name });
+  }
+
+  async function createAccountBooking() {
+    if (!bookAccount || !bookAccountTrip) {
+      setBookError(t("booking.acctNotMember", { name: bookAccount?.account_name ?? "" }));
+      return;
+    }
+    const quote = shownAccountQuote;
+    if (!quote) {
+      setBookError(bookAccountQuoteError
+        ? accountRefusal(bookAccountQuoteError, bookAccount.account_name)
+        : t("booking.noPrice"));
+      return;
+    }
+    setBookLoading(true);
+    setBookError(null);
+    try {
+      const scheduledAt = bookScheduled ? fromDateTimeLocal(bookScheduled).toISOString() : null;
+      const { data, error } = await invokeFunction("book-account-ride", {
+        ...bookAccountTrip,
+        scheduled_at: scheduledAt,
+        driver_id: bookDriver || null,
+        expected_total_cents: quote.totalCents,
+      });
+      if (error) {
+        setBookError(error);
+        return;
+      }
+      if (!data?.ok) {
+        if (data?.code === "fare.changed" && bookAccountKey) {
+          setBookAccountQuote({
+            key: bookAccountKey,
+            fare: Number(data.fare),
+            fee: Number(data.booking_fee),
+            total: Number(data.total),
+            totalCents: Number(data.total_cents),
+          });
+          setBookError(t("booking.acctPriceChanged"));
+          return;
+        }
+        setBookError(accountRefusal(data?.code, bookAccount.account_name));
+        return;
+      }
+      const rideId = data.ride_id as string;
+      // Same as a cash booking with a driver: the ride was inserted already
+      // offered to them, and dispatch-assign-ride pushes them and stamps
+      // offered_at.
+      if (bookDriver) {
+        const { error: notifyError } = await invokeFunction("dispatch-assign-ride", {
+          ride_id: rideId,
+          driver_id: bookDriver,
+          confirm_mismatch: true,
+        });
+        if (notifyError) {
+          console.error("[booking] dispatch-assign-ride", notifyError);
+          alert(t("booking.errDriverNotNotified"));
+        }
+      }
+      logDispatchEvent({
+        companyId: profile.company_id!,
+        dispatcherId: profile.id,
+        eventType: "ride.created",
+        details: {
+          passenger_name: bookPassengerName,
+          pickup_address: bookPickup,
+          dropoff_address: bookDropoff,
+          fare: Number(data.fare),
+          scheduled: !!bookScheduled,
+          driver_id: bookDriver || null,
+          business_account: bookAccount.account_name,
+        },
+      });
+      resetBookingForm();
+      fetchRides();
+    } finally {
+      setBookLoading(false);
+    }
+  }
+
   const closeBooking = useCallback(() => {
     setBookingOpen(false);
     setBookError(null);
     setBookFareError(false);
     bookField.clear();
     setBookPassengerRegistered(false);
+    setBookPassengerId(null);
+    setBookPassengerAccount(null);
+    setBookAccounts([]);
+    setBookBillTo("cash");
     // `bookField` itself is a fresh object every render; `clear` is the only
     // part of it this touches and it is stable.
   }, [bookField.clear]);
@@ -3520,6 +3787,36 @@ export default function DashboardPage({
     return () => document.removeEventListener("keydown", onKey);
   }, [bookingOpen, rideDetailIsModal, closeBooking]);
 
+  // Everything the booking form holds, back to empty, after a booking.
+  function resetBookingForm() {
+    setBookingOpen(false);
+    bookField.clear();
+    setBookPassengerName("");
+    setBookPickup("");
+    setBookPickupCoords(null);
+    setBookDropoff("");
+    setBookDropoffCoords(null);
+    setBookFare("");
+    setBookFareError(false);
+    setBookCustom(false);
+    setBookCustomReason("");
+    setBookQuote(null);
+    setBookPassengerRegistered(false);
+    setBookDiscountCode("");
+    setBookVehicleClassId("");
+    setBookDistanceMetres(null);
+    setBookBaseFare(null);
+    setBookDiscountLine(null);
+    setBookPassengerId(null);
+    setBookPassengerAccount(null);
+    setBookDriver("");
+    setBookScheduled("");
+    setBookAccounts([]);
+    setBookBillTo("cash");
+    setBookAccountQuote(null);
+    setBookAccountQuoteError(null);
+  }
+
   async function createManualBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!bookPickupCoords) {
@@ -3550,6 +3847,10 @@ export default function DashboardPage({
             : t("dispatch.mismatchSeats", { needs: cls?.capacity ?? "?", has: chosen.driver.seats ?? "?" });
         if (!confirm(t("dispatch.confirmMismatch", { reason }))) return;
       }
+    }
+    if (bookBillTo !== "cash") {
+      await createAccountBooking();
+      return;
     }
     if (bookCustom) {
       const custom = parseFloat(bookFare);
@@ -3796,27 +4097,7 @@ export default function DashboardPage({
           driver_id: bookDriver || null,
         },
       });
-      setBookingOpen(false);
-      bookField.clear();
-      setBookPassengerName("");
-      setBookPickup("");
-      setBookPickupCoords(null);
-      setBookDropoff("");
-      setBookDropoffCoords(null);
-      setBookFare("");
-      setBookFareError(false);
-      setBookCustom(false);
-      setBookCustomReason("");
-      setBookQuote(null);
-      setBookPassengerRegistered(false);
-      setBookDiscountCode("");
-      setBookVehicleClassId("");
-      setBookDistanceMetres(null);
-      setBookBaseFare(null);
-      setBookDiscountLine(null);
-      setBookPassengerId(null);
-      setBookDriver("");
-      setBookScheduled("");
+      resetBookingForm();
       fetchRides();
     } catch (e: any) {
       setBookError(e.message);
@@ -4216,7 +4497,7 @@ export default function DashboardPage({
     });
   }
 
-  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "ai" | "main") {
+  function navigateTo(dest: "analytics" | "reports" | "discounts" | "settings" | "announcements" | "messages" | "ai" | "accounts" | "main") {
     setShowAnalytics(dest === "analytics");
     setShowReports(dest === "reports");
     setShowDiscounts(dest === "discounts");
@@ -4224,6 +4505,7 @@ export default function DashboardPage({
     setShowAnnouncements(dest === "announcements");
     setShowMessages(dest === "messages");
     setShowAi(dest === "ai");
+    setShowAccounts(dest === "accounts");
   }
 
   // Collapse the current tab/overlay state into the single active view. Overlay
@@ -4236,6 +4518,7 @@ export default function DashboardPage({
     if (showAnnouncements) return "announcements";
     if (showMessages) return "messages";
     if (showAi) return "ai";
+    if (showAccounts) return "accounts";
     return tab;
   }
 
@@ -4485,6 +4768,7 @@ export default function DashboardPage({
       </div>
       <div className="db-ride-name">
         {(ride as any).passenger?.name ?? t("common.unknown")}
+        {accountBadges[ride.passenger_id] && <AccountBadge name={accountBadges[ride.passenger_id]} />}
       </div>
       <div className="db-ride-route">
         {ride.pickup_address} → {ride.dropoff_address}
@@ -4591,6 +4875,8 @@ export default function DashboardPage({
               ? t("nav.messages")
               : showAi
                 ? t("nav.ai")
+              : showAccounts
+                ? t("nav.accounts")
               // Was `tab.charAt(0).toUpperCase() + tab.slice(1)` — a label
               // COMPUTED from a code identifier, so the English never appeared
               // as a string anywhere and no scanner of literals could see it.
@@ -4686,6 +4972,7 @@ export default function DashboardPage({
         .db-nav-label { font-size: 13px; font-weight: 500; color: var(--c-text-2); transition: color 0.12s; }
         .db-nav-item:hover .db-nav-label, .db-nav-item.active .db-nav-label { color: var(--c-text); }
         .db-nav-item.active .db-nav-label { font-weight: 600; }
+        .db-nav-count { position: absolute; top: -6px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: var(--c-brand-fill); color: var(--c-on-brand); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
         .db-nav-bottom { padding: 8px 0; border-top: 1px solid var(--c-border); width: 100%; display: flex; flex-direction: column; }
         .db-nav-profile { display: flex; align-items: center; gap: 11px; width: 100%; height: 48px; padding: 0 19px; margin-bottom: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--c-border); flex-shrink: 0; }
         .db-nav-avatar { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: var(--c-surface-alt); color: var(--c-text); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
@@ -4757,6 +5044,9 @@ export default function DashboardPage({
         .db-status-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--dot, var(--c-text-2)); }
         .db-ride-time { font-size: 11px; color: var(--c-text-2); }
         .db-ride-name { font-size: 13px; font-weight: 600; color: var(--c-text); margin-bottom: 3px; }
+        .db-acct-badge { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: 1px; max-width: 160px; border: 1px solid var(--c-border-strong); border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--c-text-2); text-transform: none; letter-spacing: 0; }
+        .db-acct-badge svg { flex-shrink: 0; }
+        .db-acct-badge-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .db-ride-addr { font-size: 11px; color: var(--c-text-2); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .db-ride-addr.dest { color: var(--c-text); }
         .db-ride-fare { font-size: 12px; font-weight: 600; color: var(--c-text-2); margin-top: 4px; }
@@ -4888,6 +5178,10 @@ export default function DashboardPage({
         .db-modal-input { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; font-family: system-ui, -apple-system, sans-serif; transition: border-color 0.15s; }
         .db-modal-input:focus { border-color: var(--c-brand); }
         .db-modal-input::placeholder { color: var(--c-text-3); }
+        .db-billto { display: flex; border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
+        .db-billto button { flex: 1; padding: 8px 6px; background: none; border: none; font-size: 13px; color: var(--c-text-2); cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
+        .db-billto button + button { border-left: 1px solid var(--c-border); }
+        .db-billto button.on { background: var(--c-surface-sel); box-shadow: inset 0 0 0 1.5px var(--c-brand); color: var(--c-brand); font-weight: 600; }
         .db-modal-select { background: var(--c-input); border: 1px solid var(--c-border); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--c-text); outline: none; width: 100%; cursor: pointer; font-family: system-ui, -apple-system, sans-serif; }
         .db-modal-select:disabled { opacity: 0.55; cursor: not-allowed; }
         .db-modal-hint { font-size: 11px; color: var(--c-text-2); margin-top: 4px; font-family: system-ui, -apple-system, sans-serif; }
@@ -5138,7 +5432,7 @@ export default function DashboardPage({
             {NAV_ITEMS.map(({ tab: navTab, labelKey }) => (
               <button
                 key={navTab}
-                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi ? " active" : ""}`}
+                className={`db-nav-item${tab === navTab && !showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts ? " active" : ""}`}
                 onClick={() => {
                   setTab(navTab);
                   navigateTo("main");
@@ -5149,6 +5443,28 @@ export default function DashboardPage({
                 {navExpanded && <span className="db-nav-label">{t(labelKey)}</span>}
               </button>
             ))}
+            <button
+              className={`db-nav-item${showAccounts ? " active" : ""}`}
+              aria-label={
+                pendingApplications > 0
+                  ? `${t("nav.accounts")}, ${t("nav.applicationsWaiting", { count: pendingApplications })}`
+                  : undefined
+              }
+              onClick={() => {
+                navigateTo("accounts");
+                setSelectedDriver(null);
+              }}
+            >
+              <span className="db-nav-icon">
+                <IconAccounts />
+                {pendingApplications > 0 && (
+                  <span className="db-nav-count" aria-hidden="true">
+                    {pendingApplications > 9 ? "9+" : pendingApplications}
+                  </span>
+                )}
+              </span>
+              {navExpanded && <span className="db-nav-label">{t("nav.accounts")}</span>}
+            </button>
             <button
               className={`db-nav-item${showAnnouncements ? " active" : ""}`}
               onClick={() => {
@@ -5306,7 +5622,7 @@ export default function DashboardPage({
                 ? (selectedDriver.profile?.name ?? t("rideDetail.driver"))
                 : topbarTitle}
             </span>
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver && (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts && !selectedDriver && (
               <div className="db-stat-row">
                 <div className="db-stat">
                   <span className="db-stat-value">
@@ -5340,7 +5656,7 @@ export default function DashboardPage({
                 </div>
               </div>
             )}
-            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !selectedDriver ? (
+            {!showAnalytics && !showReports && !showDiscounts && !showSettings && !showAnnouncements && !showMessages && !showAi && !showAccounts && !selectedDriver ? (
               <>
                 {/* Always present, so "nothing needs me" is a readable state
                     rather than an absence. Turns red only for act_now. */}
@@ -5405,6 +5721,15 @@ export default function DashboardPage({
           >
             {profile.company_id && (
               <SettingsPage companyId={profile.company_id} adminId={profile.id} isAdmin={isAdmin} />
+            )}
+          </div>
+
+          <div
+            className="db-overlay"
+            style={{ display: showAccounts ? "flex" : "none" }}
+          >
+            {profile.company_id && (
+              <AccountsPage companyId={profile.company_id} isAdmin={isAdmin} visible={showAccounts} onPendingApplications={setPendingApplications} />
             )}
           </div>
 
@@ -5524,7 +5849,7 @@ export default function DashboardPage({
             className="db-body"
             style={{
               display:
-                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages || showAi ? "none" : "flex",
+                showAnalytics || showReports || showDiscounts || showSettings || showAnnouncements || showMessages || showAi || showAccounts ? "none" : "flex",
               position: "relative",
             }}
           >
@@ -5595,6 +5920,7 @@ export default function DashboardPage({
                         </div>
                         <div className="db-ride-name">
                           {(ride as any).passenger?.name ?? t("dispatch.unknownPassenger")}
+                          {accountBadges[ride.passenger_id] && <AccountBadge name={accountBadges[ride.passenger_id]} />}
                         </div>
                         <div className="db-ride-route">
                           {ride.pickup_address} → {ride.dropoff_address}
@@ -5714,6 +6040,7 @@ export default function DashboardPage({
                           <ScheduledRideCard
                             key={ride.id}
                             ride={ride}
+                            accountName={accountBadges[ride.passenger_id]}
                             onCardClick={() => setRideDetail(ride)}
                           />
                         ))}
@@ -6330,7 +6657,7 @@ export default function DashboardPage({
                         {passengerTotalText(rd)}
                       </span>
                       <span className="db-live-chip">
-                        {rd.payment_method === "cash" ? t("rideDetail.cash") : t("rideDetail.card")}
+                        {payMethodText(rd)}
                       </span>
                     </div>
 
@@ -6414,6 +6741,20 @@ export default function DashboardPage({
                       data: { id: string; name: string | null } | null;
                     };
                     setBookPassengerId(data?.id ?? null);
+                    setBookPassengerAccount(null);
+                    setBookAccounts([]);
+                    setBookBillTo("cash");
+                    if (data?.id) {
+                      const { data: badges } = await supabase.rpc("ba_badges_for", { p_profiles: [data.id] });
+                      const list = ((badges ?? []) as { account_id: string; account_name: string }[])
+                        .slice()
+                        .sort((a, b) => a.account_name.localeCompare(b.account_name));
+                      if (list[0]) {
+                        setBookPassengerAccount(list[0].account_name);
+                        setBookAccounts(list);
+                        setBookBillTo(list[0].account_id);
+                      }
+                    }
                     if (data?.name) {
                       setBookPassengerName(data.name);
                       setBookPassengerRegistered(true);
@@ -6427,6 +6768,9 @@ export default function DashboardPage({
                   onEdit={() => {
                     setBookPassengerRegistered(false);
                     setBookPassengerId(null);
+                    setBookPassengerAccount(null);
+                    setBookAccounts([]);
+                    setBookBillTo("cash");
                   }}
                 />
                 <div className="db-phone-hint">{t("common.phoneCountryHint")}</div>
@@ -6460,6 +6804,9 @@ export default function DashboardPage({
                     >
                       {t("booking.ifNotRegistered")}
                     </span>
+                  )}
+                  {bookPassengerRegistered && bookPassengerAccount && (
+                    <AccountBadge name={bookPassengerAccount} />
                   )}
                 </label>
                 <input
@@ -6531,93 +6878,161 @@ export default function DashboardPage({
                   </span>
                 )}
               </div>
-              <div>
-                {/* The price block (booking-fee-design.md). The usual price is
-                    the server's and is not typed; "Change price" opens a custom
-                    fare with a required reason. Interim layout until the new-ride
-                    form is redesigned. */}
-                <label className="db-modal-label">
-                  {t("booking.price")}
-                  {bookFareLoading && (
-                    <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
-                      {t("booking.calculating")}
-                    </span>
-                  )}
-                </label>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
-                  <span style={{ color: "var(--c-text-2)" }}>
-                    {bookCustom ? t("booking.usualFare") : t("booking.fare")}
-                  </span>
-                  <span style={bookCustom ? { color: "var(--c-text-2)" } : undefined}>
-                    {bookBaseFare != null ? `$${bookBaseFare.toFixed(2)}` : "—"}
-                  </span>
+              {/* Bill to: only for a passenger on a business account, the
+                  account first and pre-selected (Victor 2026-11-14). */}
+              {bookPassengerRegistered && bookAccounts.length > 0 && (
+                <div>
+                  <label className="db-modal-label">{t("booking.billTo")}</label>
+                  <div className="db-billto" role="radiogroup" aria-label={t("booking.billTo")}>
+                    {bookAccounts.map((a) => (
+                      <button
+                        key={a.account_id}
+                        type="button"
+                        role="radio"
+                        aria-checked={bookBillTo === a.account_id}
+                        className={bookBillTo === a.account_id ? "on" : ""}
+                        onClick={() => setBookBillTo(a.account_id)}
+                      >
+                        {a.account_name}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={bookBillTo === "cash"}
+                      className={bookBillTo === "cash" ? "on" : ""}
+                      onClick={() => setBookBillTo("cash")}
+                    >
+                      {t("rideDetail.cash")}
+                    </button>
+                  </div>
                 </div>
-                {bookCustom && (
-                  <>
-                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customFare")}</label>
-                    <input
-                      className="db-modal-input"
-                      placeholder="0.00"
-                      type="number"
-                      step="0.01"
-                      value={bookFare}
-                      onChange={(e) => setBookFare(e.target.value)}
-                    />
-                    <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
-                    <input
-                      className="db-modal-input"
-                      placeholder={t("booking.customReasonPlaceholder")}
-                      maxLength={200}
-                      value={bookCustomReason}
-                      onChange={(e) => setBookCustomReason(e.target.value)}
-                    />
-                  </>
-                )}
-                {bookDiscountLine && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      marginTop: 4,
-                      color: bookDiscountLine.kind === "ok" ? "var(--c-green)" : "var(--c-amber-text)",
+              )}
+              {bookAccount ? (
+                <div>
+                  {/* An account ride's price is the server's (book-account-ride):
+                      no custom price and no discount (Victor 2026-11-14). */}
+                  <label className="db-modal-label">
+                    {t("booking.price")}
+                    {bookAccountTrip && !shownAccountQuote && !bookAccountQuoteError && (
+                      <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
+                        {t("booking.calculating")}
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                    <span style={{ color: "var(--c-text-2)" }}>{t("booking.fare")}</span>
+                    <span>{shownAccountQuote ? `$${shownAccountQuote.fare.toFixed(2)}` : "—"}</span>
+                  </div>
+                  {shownAccountQuote && shownAccountQuote.fee > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                      <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
+                      <span>${shownAccountQuote.fee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
+                    <span>{t("booking.billedTo", { name: bookAccount.account_name })}</span>
+                    <span>{shownAccountQuote ? `$${shownAccountQuote.total.toFixed(2)}` : "—"}</span>
+                  </div>
+                  {bookAccountQuoteError ? (
+                    <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
+                      {accountRefusal(bookAccountQuoteError, bookAccount.account_name)}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 4 }}>
+                      {t("booking.acctPriceNote")}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {/* The price block (booking-fee-design.md). The usual price is
+                      the server's and is not typed; "Change price" opens a custom
+                      fare with a required reason. Interim layout until the new-ride
+                      form is redesigned. */}
+                  <label className="db-modal-label">
+                    {t("booking.price")}
+                    {bookFareLoading && (
+                      <span style={{ fontSize: 10, color: "var(--c-text-2)", fontWeight: 400, marginLeft: 6 }}>
+                        {t("booking.calculating")}
+                      </span>
+                    )}
+                  </label>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                    <span style={{ color: "var(--c-text-2)" }}>
+                      {bookCustom ? t("booking.usualFare") : t("booking.fare")}
+                    </span>
+                    <span style={bookCustom ? { color: "var(--c-text-2)" } : undefined}>
+                      {bookBaseFare != null ? `$${bookBaseFare.toFixed(2)}` : "—"}
+                    </span>
+                  </div>
+                  {bookCustom && (
+                    <>
+                      <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customFare")}</label>
+                      <input
+                        className="db-modal-input"
+                        placeholder="0.00"
+                        type="number"
+                        step="0.01"
+                        value={bookFare}
+                        onChange={(e) => setBookFare(e.target.value)}
+                      />
+                      <label className="db-modal-label" style={{ marginTop: 6 }}>{t("booking.customReason")}</label>
+                      <input
+                        className="db-modal-input"
+                        placeholder={t("booking.customReasonPlaceholder")}
+                        maxLength={200}
+                        value={bookCustomReason}
+                        onChange={(e) => setBookCustomReason(e.target.value)}
+                      />
+                    </>
+                  )}
+                  {bookDiscountLine && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        marginTop: 4,
+                        color: bookDiscountLine.kind === "ok" ? "var(--c-green)" : "var(--c-amber-text)",
+                      }}
+                    >
+                      {bookDiscountLine.text}
+                    </div>
+                  )}
+                  {bookQuote && bookQuote.fee > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
+                      <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
+                      <span>${bookQuote.fee.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {bookQuote && (
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
+                      <span>{t("booking.passengerPays")}</span>
+                      <span>${bookQuote.pays.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {bookFareError && (
+                    <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
+                      {t("booking.noPrice")}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="db-link-btn"
+                    style={{ marginTop: 4, fontSize: 12, background: "none", border: 0, padding: 0, color: "var(--c-accent)", cursor: "pointer" }}
+                    onClick={() => {
+                      if (bookCustom) {
+                        setBookCustom(false);
+                        setBookCustomReason("");
+                        if (bookBaseFare != null) setBookFare(bookBaseFare.toFixed(2));
+                      } else {
+                        setBookCustom(true);
+                      }
                     }}
                   >
-                    {bookDiscountLine.text}
-                  </div>
-                )}
-                {bookQuote && bookQuote.fee > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "2px 0" }}>
-                    <span style={{ color: "var(--c-text-2)" }}>{t("booking.bookingFee")}</span>
-                    <span>${bookQuote.fee.toFixed(2)}</span>
-                  </div>
-                )}
-                {bookQuote && (
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 600, padding: "4px 0", borderTop: "1px solid var(--c-border)", marginTop: 2 }}>
-                    <span>{t("booking.passengerPays")}</span>
-                    <span>${bookQuote.pays.toFixed(2)}</span>
-                  </div>
-                )}
-                {bookFareError && (
-                  <div style={{ fontSize: 11, color: "var(--c-amber-text)", marginTop: 4 }}>
-                    {t("booking.noPrice")}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className="db-link-btn"
-                  style={{ marginTop: 4, fontSize: 12, background: "none", border: 0, padding: 0, color: "var(--c-accent)", cursor: "pointer" }}
-                  onClick={() => {
-                    if (bookCustom) {
-                      setBookCustom(false);
-                      setBookCustomReason("");
-                      if (bookBaseFare != null) setBookFare(bookBaseFare.toFixed(2));
-                    } else {
-                      setBookCustom(true);
-                    }
-                  }}
-                >
-                  {bookCustom ? t("booking.useUsualPrice") : t("booking.changePrice")}
-                </button>
-              </div>
+                    {bookCustom ? t("booking.useUsualPrice") : t("booking.changePrice")}
+                  </button>
+                </div>
+              )}
               {vehicleClasses.length > 1 && (
                 <div>
                   <label className="db-modal-label">{t("drivers.vehicleClass")}</label>
@@ -6667,10 +7082,11 @@ export default function DashboardPage({
                 </label>
                 <select
                   className="db-modal-select"
-                  value={bookDiscountCode}
+                  value={bookAccount ? "" : bookDiscountCode}
                   onChange={(e) => setBookDiscountCode(e.target.value)}
+                  disabled={!!bookAccount}
                 >
-                  <option value="">{t("booking.noDiscount")}</option>
+                  <option value="">{bookAccount ? t("booking.acctNoDiscount") : t("booking.noDiscount")}</option>
                   {availableDiscountCodes.map((c) => (
                     <option key={c.id} value={c.code}>
                       {c.code}
@@ -6746,7 +7162,11 @@ export default function DashboardPage({
                   type="submit"
                   disabled={bookLoading}
                 >
-                  {bookLoading ? t("drivers.creating") : t("booking.createRide")}
+                  {bookLoading
+                    ? t("drivers.creating")
+                    : bookAccount && shownAccountQuote
+                      ? t("booking.createOnAccount", { amount: shownAccountQuote.total.toFixed(2) })
+                      : t("booking.createRide")}
                 </button>
               </div>
             </form>
@@ -7160,11 +7580,9 @@ export default function DashboardPage({
                       : []),
                     [
                       t("rideDetail.payment"),
-                      rideDetail.payment_method === "cash"
-                        ? t("rideDetail.cash")
-                        : t("rideDetail.card"),
+                      payMethodText(rideDetail),
                     ],
-                    ...(rideDetail.payment_method === "card" && settlementRouteOf(rideDetail)
+                    ...(paidByCard(rideDetail) && settlementRouteOf(rideDetail)
                       ? ([
                           [
                             t("rideDetail.vellonFee"),

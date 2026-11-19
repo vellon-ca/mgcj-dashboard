@@ -31,7 +31,7 @@ import {
   rideStatusLabel,
   SETTLEMENT_ROUTE_KEYS,
 } from "../lib/labels";
-import { canOfferRefund, isDirectCharge, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
+import { canOfferRefund, isDirectCharge, paidByCard, settlementFigures, settlementRouteOf } from "../lib/rideSettlement";
 import RefundRideModal from "../components/RefundRideModal";
 import Icon from "../components/Icon";
 
@@ -71,6 +71,10 @@ interface DriverStat {
   earnings: number;
   cashEarnings: number;
   cardEarnings: number;
+  // Fares on rides billed to a business account (payment_method 'account').
+  // The driver collected nothing, so this is what the company owes them on
+  // top of card payouts (business-accounts-design.md, phase 2a).
+  accountEarnings: number;
   cancelRate: number;
   cancelled: number;
   avgFare: number;
@@ -828,8 +832,10 @@ export default function AnalyticsPage({
     cancelRate: 0,
     cashRevenue: 0,
     cardRevenue: 0,
+    accountRevenue: 0,
     cashRides: 0,
     cardRides: 0,
+    accountRides: 0,
     revenueToday: 0,
     revenueWeek: 0,
     revenueMonth: 0,
@@ -909,6 +915,18 @@ export default function AnalyticsPage({
     cash_fee_tax: number;
   } | null>(null);
   const [cashSettlementLoading, setCashSettlementLoading] = useState(true);
+  // Account lane (business accounts, phase 2a): rides billed to a business.
+  // The driver collected nothing and Vellon took nothing at the door, so
+  // Vellon's fee AND the whole booking fee are owed to Vellon, on its monthly
+  // invoice (company_account_settlement, mgcj-app 20261114030000).
+  const [accountSettlement, setAccountSettlement] = useState<{
+    rides: number;
+    fares: number;
+    fee: number;
+    feeTax: number;
+    bookingFees: number;
+    bookingFeeTax: number;
+  } | null>(null);
   // Card fee breakdown (company_settles view). Gross fares decomposed into what
   // the company kept (net) vs what Vellon and Stripe took, over settled rides.
   // Reconciles: gross = net + vellon_fee + stripe_fee. Only fetched/used when the
@@ -1184,8 +1202,15 @@ export default function AnalyticsPage({
             (s: number, r: any) => s + (r.fare_final ?? r.fare_estimate ?? 0),
             0,
           ),
+        // Card is card only: an account ride used to land here (`!== "cash"`).
         cardRevenue: completed(periodRides)
-          .filter((r: any) => r.payment_method !== "cash")
+          .filter((r: any) => r.payment_method === "card")
+          .reduce(
+            (s: number, r: any) => s + (r.fare_final ?? r.fare_estimate ?? 0),
+            0,
+          ),
+        accountRevenue: completed(periodRides)
+          .filter((r: any) => r.payment_method === "account")
           .reduce(
             (s: number, r: any) => s + (r.fare_final ?? r.fare_estimate ?? 0),
             0,
@@ -1194,7 +1219,10 @@ export default function AnalyticsPage({
           (r: any) => r.payment_method === "cash",
         ).length,
         cardRides: completedPeriod.filter(
-          (r: any) => r.payment_method !== "cash",
+          (r: any) => r.payment_method === "card",
+        ).length,
+        accountRides: completedPeriod.filter(
+          (r: any) => r.payment_method === "account",
         ).length,
         revenueToday: sum(
           allRidesData.filter((r: any) => new Date(r.created_at) >= todayStart),
@@ -1272,7 +1300,13 @@ export default function AnalyticsPage({
               0,
             );
           const cardEarn = comp
-            .filter((r: any) => r.payment_method !== "cash")
+            .filter((r: any) => r.payment_method === "card")
+            .reduce(
+              (s: number, r: any) => s + (r.fare_final ?? r.fare_estimate ?? 0),
+              0,
+            );
+          const accountEarn = comp
+            .filter((r: any) => r.payment_method === "account")
             .reduce(
               (s: number, r: any) => s + (r.fare_final ?? r.fare_estimate ?? 0),
               0,
@@ -1298,6 +1332,7 @@ export default function AnalyticsPage({
             earnings: earn,
             cashEarnings: cashEarn,
             cardEarnings: cardEarn,
+            accountEarnings: accountEarn,
             cancelRate: dr.length ? (canc.length / dr.length) * 100 : 0,
             cancelled: canc.length,
             avgFare: comp.length ? earn / comp.length : 0,
@@ -1446,10 +1481,16 @@ export default function AnalyticsPage({
       else if (period === "month") startDate = startOfMonth(now);
       else startDate = startOfYear(now);
 
-      const { data, error } = await supabase.rpc("company_cash_settlement", {
-        p_from: startDate.toISOString(),
-        p_to: now.toISOString(),
-      });
+      const [{ data, error }, acct] = await Promise.all([
+        supabase.rpc("company_cash_settlement", {
+          p_from: startDate.toISOString(),
+          p_to: now.toISOString(),
+        }),
+        supabase.rpc("company_account_settlement", {
+          p_from: startDate.toISOString(),
+          p_to: now.toISOString(),
+        }),
+      ]);
       if (fetchId !== settlementFetchId.current) return;
       if (error) {
         console.error("[fetchCashSettlement]", error.message);
@@ -1461,6 +1502,20 @@ export default function AnalyticsPage({
           cash_fares: Number(row?.cash_fares ?? 0),
           cash_fee_owed: Number(row?.cash_fee_owed ?? 0),
           cash_fee_tax: Number(row?.cash_fee_tax ?? 0),
+        });
+      }
+      if (acct.error) {
+        console.error("[fetchCashSettlement] account lane", acct.error.message);
+        setAccountSettlement(null);
+      } else {
+        const a = acct.data?.[0];
+        setAccountSettlement({
+          rides: Number(a?.account_rides ?? 0),
+          fares: Number(a?.account_fares ?? 0),
+          fee: Number(a?.account_fee_owed ?? 0),
+          feeTax: Number(a?.account_fee_tax ?? 0),
+          bookingFees: Number(a?.account_booking_fees ?? 0),
+          bookingFeeTax: Number(a?.account_booking_fee_tax ?? 0),
         });
       }
     } finally {
@@ -1571,7 +1626,9 @@ export default function AnalyticsPage({
         .from("rides")
         .select("id, ride_ref, completed_at, created_at, fare_final, transfer_amount_cents, driver_id, settlement_route, settlement_resolved_at, stripe_dispute_id, platform_fee_percent_at_completion, stripe_fee, stripe_charge_account_id, application_fee_cents, application_fee_returned_cents, stripe_processing_fee_cents, refunded_amount_cents")
         .eq("company_id", companyId)
-        .eq("payment_method", "card")
+        // Every fare paid through Stripe: a passenger's card, or a business's
+        // card (2b), as company_settlement_rollup counts them.
+        .or("payment_method.eq.card,and(payment_method.eq.account,account_billing.eq.card)")
         .eq("status", "completed")
         .gte("completed_at", startDate.toISOString())
         .lt("completed_at", now.toISOString())
@@ -1981,7 +2038,11 @@ export default function AnalyticsPage({
 
   // One name for a payment on every receipt surface: "Visa ••4242", "Cash".
   const payLabel = (row: Parameters<typeof paymentLabel>[0]) =>
-    paymentLabel(row, { card: t("rideDetail.card"), cash: t("rideDetail.cash") });
+    paymentLabel(row, {
+      card: t("rideDetail.card"),
+      cash: t("rideDetail.cash"),
+      account: (name) => (name ? t("rideDetail.accountNamed", { name }) : t("rideDetail.account")),
+    });
 
   function printReceipt(
     inv: ReceiptRow,
@@ -2139,7 +2200,7 @@ export default function AnalyticsPage({
       const settledRoute = settlementRouteOf(ride);
       const figures = settlementFigures(ride);
       const settlementHtml =
-        ride.payment_method === "card" && settledRoute
+        paidByCard(ride) && settledRoute
           ? `
         <div style="margin-bottom: 16px; background: #FFF7ED; border: 1px dashed #FDBA74; border-radius: 10px; padding: 14px;">
           <p style="font-size: 11px; font-weight: 600; color: #9A3412; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em;">${esc(t("receipt.internalSettlement"))}</p>
@@ -2292,7 +2353,7 @@ export default function AnalyticsPage({
     const rows = driverStats
       .map(
         (d) =>
-          `<tr><td>${esc(d.name)}</td><td>${d.rides}</td><td>$${d.earnings.toFixed(2)}</td><td>$${d.cashEarnings.toFixed(2)}</td><td>$${d.cardEarnings.toFixed(2)}</td><td>$${d.avgFare.toFixed(2)}</td><td>${d.cancelRate.toFixed(1)}%</td><td>${d.avgRating?.toFixed(1) ?? "—"}</td></tr>`,
+          `<tr><td>${esc(d.name)}</td><td>${d.rides}</td><td>$${d.earnings.toFixed(2)}</td><td>$${d.cashEarnings.toFixed(2)}</td><td>$${d.cardEarnings.toFixed(2)}</td><td>$${d.accountEarnings.toFixed(2)}</td><td>$${d.avgFare.toFixed(2)}</td><td>${d.cancelRate.toFixed(1)}%</td><td>${d.avgRating?.toFixed(1) ?? "—"}</td></tr>`,
       )
       .join("");
     const periodLabel = t(`analytics.period.${period}`);
@@ -2309,12 +2370,13 @@ export default function AnalyticsPage({
         <div class="kpi"><div class="kpi-label">${esc(t("analytics.thisYear"))}</div><div class="kpi-value">$${totals.revenueYear.toFixed(2)}</div></div>
         <div class="kpi"><div class="kpi-label">${esc(t("analytics.cashRides"))}</div><div class="kpi-value">$${totals.cashRevenue.toFixed(2)}</div></div>
         <div class="kpi"><div class="kpi-label">${esc(t("analytics.cardRides"))}</div><div class="kpi-value">$${totals.cardRevenue.toFixed(2)}</div></div>
+        ${totals.accountRides > 0 ? `<div class="kpi"><div class="kpi-label">${esc(t("analytics.accountRides"))}</div><div class="kpi-value">$${totals.accountRevenue.toFixed(2)}</div></div>` : ""}
       </div>
       ${chartSVG ? `<div class="section-title">${esc(t("analytics.revenueOverTime"))}${period === "today" ? ` · ${esc(t("analytics.byHour"))}` : ""}</div><div style="margin-bottom:24px">${chartSVG}</div>` : ""}
       <div class="section-title">${esc(t("analytics.driverEarningsFor", { period: periodLabel }))}</div>
-      <table><thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelRate"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan='8' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
-      <tfoot><tr class="pg-spacer-foot"><td colspan="8"></td></tr></tfoot></table>
+      <table><thead><tr class="pg-spacer"><td colspan="9"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("rideDetail.account"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelRate"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan='9' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
+      <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot></table>
       ${approvalBlock()}
     `,
       label,
@@ -2473,6 +2535,7 @@ export default function AnalyticsPage({
         t("csv.earnings"),
         t("rideDetail.cash"),
         t("rideDetail.card"),
+        t("rideDetail.account"),
         t("csv.avgFare"),
         t("csv.cancelRate"),
         t("csv.avgRating"),
@@ -2484,6 +2547,7 @@ export default function AnalyticsPage({
         `$${d.earnings.toFixed(2)}`,
         `$${d.cashEarnings.toFixed(2)}`,
         `$${d.cardEarnings.toFixed(2)}`,
+        `$${d.accountEarnings.toFixed(2)}`,
         `$${d.avgFare.toFixed(2)}`,
         `${d.cancelRate.toFixed(1)}%`,
         d.avgRating?.toFixed(1) ?? "",
@@ -2644,6 +2708,7 @@ export default function AnalyticsPage({
         <td style="color:#15803d;font-weight:600">$${d.earnings.toFixed(2)}</td>
         <td>$${d.cashEarnings.toFixed(2)}</td>
         <td>$${d.cardEarnings.toFixed(2)}</td>
+        <td>$${d.accountEarnings.toFixed(2)}</td>
         <td>$${d.avgFare.toFixed(2)}</td>
         <td>${d.cancelRate.toFixed(1)}%</td>
         <td>${d.avgRating?.toFixed(1) ?? "—"}</td>
@@ -2657,9 +2722,9 @@ export default function AnalyticsPage({
         <div class="kpi"><div class="kpi-label">${esc(t("analytics.totalEarnings"))}</div><div class="kpi-value">$${totalEarnings.toFixed(2)}</div></div>
       </div>
       <table>
-        <thead><tr class="pg-spacer"><td colspan="8"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelPct"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan='8' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
-        <tfoot><tr class="pg-spacer-foot"><td colspan="8"></td></tr></tfoot>
+        <thead><tr class="pg-spacer"><td colspan="9"></td></tr><tr><th>${esc(t("csv.driver"))}</th><th>${esc(t("csv.rides"))}</th><th>${esc(t("csv.earnings"))}</th><th>${esc(t("rideDetail.cash"))}</th><th>${esc(t("rideDetail.card"))}</th><th>${esc(t("rideDetail.account"))}</th><th>${esc(t("csv.avgFare"))}</th><th>${esc(t("csv.cancelPct"))}</th><th>${esc(t("csv.avgRating"))}</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan='9' style='color:#9ca3af'>${esc(t("analytics.noDataPeriod"))}</td></tr>`}</tbody>
+        <tfoot><tr class="pg-spacer-foot"><td colspan="9"></td></tr></tfoot>
       </table>
       ${approvalBlock()}
     `, label);
@@ -3289,12 +3354,12 @@ export default function AnalyticsPage({
                   {/* Cash vs card split */}
                   <div className="an-chart-card" style={{ marginBottom: 16 }}>
                     <div className="an-chart-title">
-                      {t("analytics.cashVsCard")} · {periodPhrase}
+                      {totals.accountRides > 0 ? t("analytics.howPaid") : t("analytics.cashVsCard")} · {periodPhrase}
                     </div>
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
+                        gridTemplateColumns: totals.accountRides > 0 ? "1fr 1fr 1fr" : "1fr 1fr",
                         gap: 12,
                       }}
                     >
@@ -3397,6 +3462,41 @@ export default function AnalyticsPage({
                           {t("analytics.viaStripe")}
                         </div>
                       </div>
+                      {/* Rides billed to a business account (phase 2a): shown
+                          only when there are some, so a company without
+                          accounts sees the two cards it always had. */}
+                      {totals.accountRides > 0 && (
+                        <div
+                          style={{
+                            background: "var(--c-bg)",
+                            borderRadius: 10,
+                            padding: "14px 16px",
+                            border: "1px solid var(--c-border-subtle)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "var(--c-text-2)",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.06em",
+                              marginBottom: 6,
+                            }}
+                          >
+                            {t("rideDetail.account")}
+                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 700, color: "var(--c-text)" }}>
+                            ${totals.accountRevenue.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 4 }}>
+                            {t("analytics.ridesCount", { count: totals.accountRides })}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--c-text-2)", marginTop: 6 }}>
+                            {t("analytics.billedToBusinesses")}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -3487,6 +3587,7 @@ export default function AnalyticsPage({
                               "csv.earnings",
                               "rideDetail.cash",
                               "rideDetail.card",
+                              "rideDetail.account",
                               "csv.avgFare",
                               "csv.cancelRate",
                             ].map((h) => (
@@ -3521,6 +3622,7 @@ export default function AnalyticsPage({
                               >
                                 ${d.cardEarnings.toFixed(2)}
                               </td>
+                              <td className="an-td">${d.accountEarnings.toFixed(2)}</td>
                               <td className="an-td">${d.avgFare.toFixed(2)}</td>
                               <td
                                 className={`an-td${d.cancelRate > 20 ? " red" : ""}`}
@@ -3531,6 +3633,11 @@ export default function AnalyticsPage({
                           ))}
                         </tbody>
                       </table>
+                    )}
+                    {driverStats.some((d) => d.accountEarnings > 0) && (
+                      <div style={{ fontSize: 12, color: "var(--c-text-2)", marginTop: 10, lineHeight: 1.5 }}>
+                        {t("analytics.accountColumnNote")}
+                      </div>
                     )}
                   </div>
 
@@ -4170,6 +4277,59 @@ export default function AnalyticsPage({
                   )}
                 </>
               )}
+
+              {/* ═══ 1c. Account lane ═══
+                  Rides billed to a business account. Shown only when the
+                  period has some, so a company without accounts sees no
+                  change. What the businesses still owe on their statements
+                  arrives with statements (stage 6). */}
+              {!cashSettlementLoading && accountSettlement && accountSettlement.rides > 0 && (() => {
+                const a = accountSettlement;
+                const billed = a.fares + a.bookingFees + a.bookingFeeTax;
+                const owed = a.fee + a.feeTax + a.bookingFees + a.bookingFeeTax;
+                return (
+                  <>
+                    <div className="an-section-header" style={{ marginTop: 32 }}>
+                      <div className="an-section-title">{t("settle.accountRides")}</div>
+                    </div>
+                    <div className="an-scope-note" style={{ marginTop: -12, marginBottom: 16 }}>
+                      {t("settle.accountScope")}
+                    </div>
+                    <div className="an-set-hero" style={{ gridTemplateColumns: "1.5fr 1fr 1fr" }}>
+                      <div className="an-hero-card lead">
+                        <div className="an-hero-label">{t("settle.billedToBusinesses")}</div>
+                        <div className="an-hero-value">${billed.toFixed(2)}</div>
+                        <div className="an-hero-sub">
+                          {t("analytics.ridesCount", { count: a.rides })} ·{" "}
+                          {t("settle.faresPlusBookingFees", {
+                            fares: a.fares.toFixed(2),
+                            fees: (a.bookingFees + a.bookingFeeTax).toFixed(2),
+                          })}
+                        </div>
+                      </div>
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">{t("settle.vellonFeeOnAccount")}</div>
+                        <div className="an-hero-value">${a.fee.toFixed(2)}</div>
+                        <div className="an-hero-sub">
+                          {periodPhrase}
+                          {a.feeTax > 0 && ` · ${t("settle.plusTax", { amount: a.feeTax.toFixed(2) })}`}
+                        </div>
+                      </div>
+                      <div className="an-hero-card">
+                        <div className="an-hero-label">{t("settle.owedToVellon")}</div>
+                        <div className="an-hero-value" style={{ color: "var(--c-amber-text)" }}>
+                          ${owed.toFixed(2)}
+                        </div>
+                        <div className="an-hero-sub">
+                          {t("settle.owedToVellonSub", {
+                            fees: (a.bookingFees + a.bookingFeeTax).toFixed(2),
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* ═══ 2. Needs attention (all-time, unresolved) ═══ */}
               <div className="an-section-header" style={{ marginTop: 32 }}>
@@ -5417,7 +5577,7 @@ export default function AnalyticsPage({
                     : "—",
                 ],
                 [t("analytics.col.payment"), payLabel(rideDetail.ride)],
-                ...(rideDetail.ride.payment_method === "card" && settlementRouteOf(rideDetail.ride)
+                ...(paidByCard(rideDetail.ride) && settlementRouteOf(rideDetail.ride)
                   ? ([
                       [
                         t("rideDetail.vellonFee"),
